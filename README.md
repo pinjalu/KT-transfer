@@ -64,17 +64,17 @@ Refresh is manual. Short transient failures get bounded retries; longer rate-lim
 
 ## How it works
 
-The browser calls the FastAPI backend. For each scan, the backend launches the fixed local MCP server through standard input/output. Its selected repository and branch are fixed at launch. The server's GitHub connector resolves the commit, lists the manifest in pages and reads allowed blobs. The backend stores bounded chunks in SQLite FTS5. For each question, it verifies access, retrieves excerpts and asks Ollama for a cited explanation. It stores feedback locally.
+The browser calls the FastAPI backend. For each read, the backend launches the fixed local MCP server through standard input/output. Every platform's scope is fixed at that launch: the repository and branch, the one Jira project, and the list of Slack channels. A tool argument naming anything outside that scope is refused by the server, and credentials are handed to it at launch so no token is held in the request path. The server's GitHub connector resolves the commit, lists the manifest in pages and reads allowed blobs; its Jira and Slack connectors list what an account can see and read only what was pinned. The backend stores bounded chunks in SQLite FTS5. For each question, it verifies access, retrieves excerpts and asks Ollama for a cited explanation. It stores feedback locally.
 
 | File | Responsibility |
 |---|---|
 | `pka/web.py` | Local browser API, input validation, same-origin boundary |
 | `pka/service.py` | Scan lifecycle, access checks, retrieval-to-answer workflow |
 | `pka/mcp_client.py` | Actual SDK client and fixed tool allowlist |
-| `pka/mcp_server.py` | Four read-only GitHub MCP tools |
+| `pka/mcp_server.py` | Ten read-only MCP tools across GitHub, Jira and Slack; scope fixed at launch |
 | `pka/connectors/github.py` | GET-only GitHub calls, limits, retries and source restrictions |
 | `pka/connectors/base.py` | Interface for later connectors and safe errors |
-| `pka/connectors/jira.py`, `slack.py` | Explicitly disabled placeholders |
+| `pka/connectors/jira.py`, `slack.py` | GET-only Jira and Slack reads, reached only through the MCP server |
 | `pka/index.py` | Chunking, SQLite snapshots, search and feedback |
 | `pka/static/` | Plain HTML, CSS and JavaScript interface |
 | `tests/test_core.py` | Fixture-based and protocol tests |

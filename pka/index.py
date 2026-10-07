@@ -18,18 +18,77 @@ SYNONYMS = {
     'setup':['install','requirements','startup','readme'], 'start':['startup','run','readme'],
     'permission':['authorisation','authorization','role','access'],
     'error':['exception','raise','catch','error'], 'test':['pytest','spec','test'],
+    # Jira and Slack content sits in the same index as the code, and people ask about it in
+    # their own words: ticket for what Jira calls an issue, decision for what Slack recorded.
+    'ticket':['issue','story','bug','task','jira'], 'issue':['ticket','bug','story','task'],
+    'bug':['defect','issue','error','fix'], 'requirement':['acceptance','criteria','story','spec'],
+    'decision':['agreed','decided','proposal','discussion'],
+    'discussion':['thread','message','channel','slack'],
 }
 
 
 TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|testing)/|(^|/)test_[^/]*$|_test\.[A-Za-z]+$|\.(test|spec)\.[A-Za-z]+$', re.I)
+# Copied-in component libraries and generated bundles are in the repository but nobody wrote
+# them here, so they are evidence about a dependency rather than about this project.
+VENDOR_PATH = re.compile(r'(^|/)(components/ui|ui/components|third_?party|external|generated)/|'
+                         r'\.(min|bundle|generated)\.[A-Za-z]+$', re.I)
+ISSUE_KEY = re.compile(r'\b([A-Za-z][A-Za-z0-9_]{0,20})-(\d{1,6})\b')
 MIN_CHUNK_CHARS = 80
 PATH_MATCH_BONUS = 1.5
 MAX_TEST_SOURCES = 2
+MAX_VENDOR_SOURCES = 1
+# A match of sixty characters is not something a reader can judge, so a short chunk is grown
+# from its neighbours in the same file until it carries enough to read.
+WIDEN_TO_CHARS = 1400
+WIDEN_MAX_LINES = 60
 
 
 def words(text: str) -> list[str]:
+    # SCRUM-17 split into scrum and 17 matches any chunk that happens to contain either, so the
+    # key is kept whole as well. Asking about one named ticket is otherwise impossible.
+    keys = [a.lower() + b for a, b in ISSUE_KEY.findall(text)]
     text = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', text)
-    return re.findall(r'[A-Za-z0-9]+', text.lower())
+    return re.findall(r'[A-Za-z0-9]+', text.lower()) + keys
+
+
+def widen(row: dict, siblings) -> tuple[str, int, int]:
+    """Grow a short match outwards into the lines around it, inside the documented excerpt size.
+
+    Boundary splitting produces many small pieces: a heading, a one line helper, a decorator.
+    Five of those filled a prompt with a few hundred characters out of a budget of several
+    thousand, so the model was answering from almost nothing. Ranking still happens on the
+    small piece, which is the precise part; only what gets read is widened. The piece that
+    matched stays inside the result and the line numbers follow what is actually returned,
+    so a citation still points at the lines the reader is shown.
+    """
+    text, start, end = row['text'], row['start'], row['end']
+    if len(text) >= WIDEN_TO_CHARS or not siblings:
+        return text, start, end
+    ordered = sorted(siblings, key=lambda s: s['start'])
+    here = next((i for i, s in enumerate(ordered)
+                 if s['start'] == start and s['end'] == end), None)
+    if here is None:
+        return text, start, end
+    low = high = here
+    growing = True
+    while growing and len(text) < WIDEN_TO_CHARS:
+        growing = False
+        if high + 1 < len(ordered):
+            following = ordered[high + 1]
+            if (len(text) + len(following['text']) + 1 <= LIMITS.chunk_chars
+                    and following['end'] - start + 1 <= WIDEN_MAX_LINES):
+                # Neighbours are not always touching: a run of blank lines belongs to no chunk
+                # because an empty one is never stored. Those lines go back in, otherwise the
+                # line numbers would stop describing the text and a citation would point astray.
+                text += '\n' * (following['start'] - end) + following['text']
+                end, high, growing = following['end'], high + 1, True
+        if low and len(text) < WIDEN_TO_CHARS:
+            preceding = ordered[low - 1]
+            if (len(text) + len(preceding['text']) + 1 <= LIMITS.chunk_chars
+                    and end - preceding['start'] + 1 <= WIDEN_MAX_LINES):
+                text = preceding['text'] + '\n' * (start - preceding['end']) + text
+                start, low, growing = preceding['start'], low - 1, True
+    return text, start, end
 
 
 def chunk_file(path: str, content: str) -> list[dict]:
@@ -237,7 +296,9 @@ class Index:
             vocab.update(words(r['path']))
             vocab.update(words(r['symbols'] or ''))
             vocab.update(words(r['text']))
-        vocab = {w for w in vocab if len(w) > 2}
+        # A number carries meaning however short it is: issue 17, version 3, port 80. Dropping
+        # everything under three characters made every ticket number an unknown word.
+        vocab = {w for w in vocab if len(w) > 2 or w.isdigit()}
         self._vocab = (scan_id, vocab)
         return vocab
 
@@ -266,7 +327,10 @@ class Index:
             near = []
             if len(t) >= 5:
                 stem = t[:max(4, len(t) - 3)]
-                near = sorted(w for w in vocab if w.startswith(stem))[:2]
+                # Alphabetical order turned tickt into ticks. Closest in length is a better
+                # guess at what was meant than whichever candidate happens to sort first.
+                near = sorted((w for w in vocab if w.startswith(stem)),
+                              key=lambda w: (abs(len(w) - len(t)), w))[:2]
                 if not near:
                     # A typist rarely gets the first letter wrong, and without that guard
                     # "winner" is read as "inner", which is a different word entirely.
@@ -293,30 +357,49 @@ class Index:
             rows = db.execute('''SELECT c.*, bm25(search,5,4,1) AS rank FROM search
                 JOIN chunks c ON c.id=search.rowid WHERE search MATCH ? AND c.scan_id=?
                 ORDER BY rank LIMIT 60''',(expression,scan['id'])).fetchall()
+            # Ranking is sharper on small pieces, but reading needs more than the piece that
+            # matched, so every candidate file's chunks are kept to grow the excerpt from.
+            paths = sorted({r['path'] for r in rows})
+            neighbours = {}
+            if paths:
+                placeholders = ','.join('?' * len(paths))
+                for n in db.execute('SELECT path,start,end,text FROM chunks WHERE scan_id=? '
+                                    'AND path IN (' + placeholders + ') ORDER BY path,start',
+                                    (scan['id'], *paths)).fetchall():
+                    neighbours.setdefault(n['path'], []).append(n)
         # BM25 divides by document length, so a long chunk that repeats a word can outrank a file
         # whose folder is named after it. Someone asking about bug investigation wants
         # bug_investigation/, so reward a path that carries the words that were asked for.
         wanted = set(expanded)
         rows = sorted(rows, key=lambda r: r['rank'] - PATH_MATCH_BONUS * len(wanted & set(words(r['path']))))
         # Keep multiple relevant files and a bounded prompt. No model-selected tools.
-        def choose(min_chars: int, test_cap: int) -> list[dict]:
-            selected, counts, budget, tests = [], {}, 0, 0
+        def choose(min_chars: int, test_cap: int, vendor_cap: int) -> list[dict]:
+            selected, counts, budget, tests, vendored = [], {}, 0, 0, 0
             for row in rows:
                 d = dict(row)
-                # BM25 favours short documents, so a one line chunk such as "class Store:" can
-                # outrank the implementation while carrying nothing a reader can use.
-                if len(d['text'].strip()) < min_chars:
-                    continue
                 # A test is real evidence and sometimes the clearest specification, but a question
                 # about how something works should be answered mostly from the code that does it.
                 is_test = bool(TEST_PATH.search(d['path']))
                 if is_test and tests >= test_cap:
                     continue
-                if counts.get(d['path'],0) >= 2 or budget+len(d['text']) > LIMITS.context_chars:
+                # A copied-in component library answers questions about itself very well and
+                # crowds out the project, so at most one such excerpt is ever shown.
+                is_vendor = bool(VENDOR_PATH.search(d['path']))
+                if is_vendor and vendored >= vendor_cap:
+                    continue
+                if counts.get(d['path'],0) >= 2:
+                    continue
+                d['text'], d['start'], d['end'] = widen(d, neighbours.get(d['path'], ()))
+                # Checked after widening, because a short chunk that grew is now worth reading
+                # and the budget has to account for what is actually sent.
+                if len(d['text'].strip()) < min_chars:
+                    continue
+                if budget+len(d['text']) > LIMITS.context_chars:
                     continue
                 counts[d['path']] = counts.get(d['path'],0)+1
                 budget += len(d['text'])
                 tests += is_test
+                vendored += is_vendor
                 d['source_id'] = 'S'+str(len(selected)+1)
                 d['url'] = d.get('url') or (None if scan.get('demo') else (
                     'https://github.com/'+scan['repo']+'/blob/'+scan['commit']+'/'+quote(d['path'],safe='/')+
@@ -326,7 +409,8 @@ class Index:
                     break
             return selected
         # Prefer substantial, non-test evidence; fall back rather than return nothing at all.
-        return choose(MIN_CHUNK_CHARS, MAX_TEST_SOURCES) or choose(0, LIMITS.max_sources)
+        return (choose(MIN_CHUNK_CHARS, MAX_TEST_SOURCES, MAX_VENDOR_SOURCES)
+                or choose(0, LIMITS.max_sources, LIMITS.max_sources))
     def record_answer(self, scan_id, question, response, elapsed):
         with self.db() as db:
             return db.execute('INSERT INTO answers(scan_id,question,response,elapsed,created) VALUES(?,?,?,?,?)',

@@ -12,7 +12,7 @@ from pka.config import LIMITS, now, normalise_repo, validate_selection
 from pka.connectors.base import SourceError
 from pka.connectors.fixture import FixtureSource, COMMIT, FILES
 from pka.connectors.github import GitHubSource, exclusion
-from pka.index import Index, chunk_file
+from pka.index import Index, chunk_file, words
 from pka.mcp_client import connect, TOOL_NAMES
 from pka.service import Service, ollama_answer
 from pka.web import create_app
@@ -506,7 +506,11 @@ def test_selecting_a_platform_never_grants_access(monkeypatch):
     assert row['status']==registry.PLANNED and not row['credentials_present']
     assert row['connection']=='not implemented yet'
     from pka.mcp_client import TOOL_NAMES
-    assert not any(n.startswith(('jira','slack')) for n in TOOL_NAMES), 'only GitHub tools are registered'
+    # Every platform is reached through the MCP server, so its tools exist whatever is ticked.
+    # What a tick cannot do is put a credential or a scope in place, which is what reading needs.
+    assert any(n.startswith('jira') for n in TOOL_NAMES)
+    assert any(n.startswith('slack') for n in TOOL_NAMES)
+    assert all(n.startswith(('github_','jira_','slack_')) for n in TOOL_NAMES)
 
 def test_unknown_platform_is_refused():
     from pka.connectors import registry
@@ -1153,6 +1157,18 @@ def test_changing_the_branch_also_clears_the_snapshot(index):
     index.configure({'repo':'acme/shop','branch':'develop','platforms':['github']})
     assert index.active_scan() is None
 
+def counting_connector(calls, channels):
+    """An MCP session that records every channel listing, to prove the cache is doing its job."""
+    class Session:
+        async def slack_channels(self):
+            calls.append('slack_channels')
+            return channels
+    @asynccontextmanager
+    async def factory(settings, demo=False):
+        yield Session()
+    return factory
+
+
 def test_the_platform_listing_is_not_fetched_on_every_poll(tmp_path, monkeypatch):
     """The browser polls every few seconds. Asking Slack each time earns a rate limit."""
     from pka import credentials
@@ -1160,12 +1176,10 @@ def test_the_platform_listing_is_not_fetched_on_every_poll(tmp_path, monkeypatch
     monkeypatch.setattr(credentials,'ENV_PATH',tmp_path/'.env')
     monkeypatch.setenv('SLACK_USER_TOKEN','xoxp-test')
     calls = []
-    class Counting:
-        def __init__(self, token, transport=None): calls.append(token)
-        async def channels(self): return [{'id':'C1','name':'engineering','private':False,'member':True,'members':3}]
-    import pka.web as web
-    monkeypatch.setattr(web,'SlackSource',Counting)
-    client = TestClient(create_app(False, tmp_path/'cache.sqlite3'), base_url='http://localhost:8000')
+    client = TestClient(create_app(False, tmp_path/'cache.sqlite3',
+        connector_factory=counting_connector(calls,
+            [{'id':'C1','name':'engineering','private':False,'member':True,'members':3}])),
+        base_url='http://localhost:8000')
     H = {'x-pka-request':'1'}
     for _ in range(5):
         body = client.get('/api/slack/channels', headers=H).json()
@@ -1178,12 +1192,8 @@ def test_new_credentials_discard_the_cached_listing(tmp_path, monkeypatch):
     monkeypatch.setattr(credentials,'ENV_PATH',tmp_path/'.env')
     monkeypatch.setenv('SLACK_USER_TOKEN','xoxp-test')
     calls = []
-    class Counting:
-        def __init__(self, token, transport=None): calls.append(token)
-        async def channels(self): return []
-    import pka.web as web
-    monkeypatch.setattr(web,'SlackSource',Counting)
-    client = TestClient(create_app(False, tmp_path/'cache2.sqlite3'), base_url='http://localhost:8000')
+    client = TestClient(create_app(False, tmp_path/'cache2.sqlite3',
+        connector_factory=counting_connector(calls, [])), base_url='http://localhost:8000')
     H = {'x-pka-request':'1'}
     client.get('/api/slack/channels', headers=H)
     client.post('/api/credentials', json={'values':{'SLACK_CLIENT_ID':'new-id'}}, headers=H)
@@ -1266,3 +1276,108 @@ def test_a_source_says_it_needs_an_index_only_after_its_own_setup(tmp_path, monk
     from pka.index import Index
     Index(tmp_path/'wiz.sqlite3').configure_source('jira',{'project':'ENG'})
     assert 'scan a repository' in rows_for(client)['jira']['pending'], 'then the missing index'
+
+
+def test_short_match_is_widened_with_its_neighbours(index):
+    """A two line match is not something a reader can judge, so it grows from the same file."""
+    scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
+    body='\n'.join(f'    step_{n} = compute({n})' for n in range(40))
+    index.activate(1,chunk_file('pipeline.py',
+        'def prepare():\n    return 1\n\n\ndef run_pipeline():\n'+body+'\n\n\ndef finish():\n    return 2\n'),scan)
+    hit=next(s for s in index.search('run_pipeline',scan) if s['path']=='pipeline.py')
+    assert len(hit['text'])>400, 'the excerpt must carry more than the line that matched'
+    assert hit['text'].count('\n')+1 == hit['end']-hit['start']+1, 'line numbers must follow the text'
+    assert 'run_pipeline' in hit['text'], 'the piece that matched has to stay in the excerpt'
+    assert len(hit['text'])<=LIMITS.chunk_chars and hit['end']-hit['start']+1<=60
+
+
+def test_one_question_fills_more_of_the_context_budget(index):
+    """Five fragments used to send a few hundred characters out of several thousand."""
+    scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
+    source=''.join(f'def handler_{n}(request):\n    return process(request, {n})\n\n\n' for n in range(12))
+    index.activate(1,chunk_file('handlers.py',source),scan)
+    found=index.search('how does the request handler process a request',scan)
+    assert found and sum(len(s['text']) for s in found)>900
+    assert sum(len(s['text']) for s in found)<=LIMITS.context_chars
+
+
+def test_issue_key_and_number_survive_the_question(index):
+    """Asking about SCRUM-17 has to reach SCRUM-17, not every block containing 17."""
+    scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
+    index.activate(1,chunk_file('pay.py','def retry_payment():\n    return attempt_17_times()'),scan)
+    index.replace_source(1,'jira/',[
+        {'path':'jira/SCRUM-17','start':1,'end':1,'symbols':'SCRUM-17 payment retry',
+         'text':'SCRUM-17: Payment retry gives up too early\nType Bug, status Done.','split':False,'url':'u17'},
+        {'path':'jira/SCRUM-4','start':1,'end':1,'symbols':'SCRUM-4 login',
+         'text':'SCRUM-4: Add a login page\nType Story, status Done.','split':False,'url':'u4'}])
+    assert 'scrum17' in words('what does SCRUM-17 say'), 'the key is kept whole as one token'
+    assert '17' in index.vocabulary(1), 'a two character number must not be dropped from the vocabulary'
+    info={}
+    found=index.search('what does SCRUM-17 say',scan,info)
+    assert found[0]['path']=='jira/SCRUM-17', 'the named ticket must rank first'
+    assert '17' not in info['unknown']
+
+
+def test_copied_in_component_library_cannot_crowd_out_the_project(index):
+    """Vendored UI files answer about themselves very well and used to take every slot."""
+    scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
+    chunks=[]
+    for name in ('dialog','alert-dialog','radio-group','select','popover'):
+        chunks+=chunk_file(f'frontend-src/components/ui/{name}.tsx',
+            f'export function Dialog() {{\n  // dialog dialog dialog modal open close\n  return render_{name.replace("-","_")}()\n}}')
+    chunks+=chunk_file('app.py','def open_dialog(request):\n    # our own dialog handling lives here\n    return show_modal(request)')
+    index.activate(1,chunks,scan)
+    found=index.search('how does the dialog open',scan)
+    vendored=[s for s in found if 'components/ui' in s['path']]
+    assert len(vendored)<=1, 'at most one excerpt may come from a copied-in library'
+    assert any(s['path']=='app.py' for s in found), "the project's own code must still be reachable"
+
+
+def test_every_platform_is_registered_read_only_on_the_real_server():
+    """Jira and Slack go through the same server, the same allowlist and the same annotations."""
+    async def scenario():
+        async with connect({'repo':'demo/example-shop','branch':'main'},True) as client:
+            tools=(await client.session.list_tools()).tools
+            assert {t.name for t in tools}==TOOL_NAMES
+            assert all(t.annotations.readOnlyHint and not t.annotations.destructiveHint for t in tools)
+            for name in ('jira_write_issue','slack_post_message','slack_join_channel'):
+                with pytest.raises(SourceError):await client.call(name)
+    run(scenario())
+
+
+def test_the_server_refuses_a_channel_outside_the_allowlist_it_was_launched_with():
+    """The allowlist is fixed at launch, so asking for another channel cannot widen the scope."""
+    settings={'repo':'acme/shop','branch':'main',
+              'slack':{'channels':[{'id':'C001','name':'engineering'}],'workspace':'acme'}}
+    async def scenario():
+        async with connect(settings,False) as client:
+            with pytest.raises(SourceError) as outside:
+                await client.slack_messages('C999')
+            assert outside.value.code=='scope'
+            # The listed one gets past the scope gate and is then stopped by the missing token,
+            # which is what proves the refusal above came from the allowlist and not the token.
+            with pytest.raises(SourceError) as listed:
+                await client.slack_messages('C001')
+            assert listed.value.code!='scope'
+    run(scenario())
+
+
+def test_the_server_refuses_jira_when_no_project_was_chosen():
+    """Reading needs a project pinned at launch, not a project named in a tool argument."""
+    async def scenario():
+        async with connect({'repo':'acme/shop','branch':'main'},False) as client:
+            with pytest.raises(SourceError) as exc:
+                await client.jira_begin_read()
+            assert exc.value.code=='scope'
+    run(scenario())
+
+
+def test_reading_slack_and_jira_no_longer_handles_a_token_in_the_request_path():
+    """The web layer passes a scope, never a credential; the server is given those at launch."""
+    web_source=pathlib.Path('pka/web.py').read_text(encoding='utf-8')
+    assert 'SlackSource' not in web_source and 'JiraSource' not in web_source
+    service_source=pathlib.Path('pka/service.py').read_text(encoding='utf-8')
+    assert 'SlackSource(' not in service_source and 'JiraSource(' not in service_source
+    client_source=pathlib.Path('pka/mcp_client.py').read_text(encoding='utf-8')
+    for name in ('JIRA_API_TOKEN','SLACK_USER_TOKEN','PKA_JIRA_PROJECT','PKA_SLACK_CHANNELS'):
+        assert name in client_source, f'{name} must be handed to the server at launch'

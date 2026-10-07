@@ -15,8 +15,6 @@ from pka.config import ROOT, LIMITS, data_dir, validate_selection
 from pka import credentials, oauth
 from pka.connectors import registry
 from pka.connectors.base import SourceError
-from pka.connectors.jira import JiraSource
-from pka.connectors.slack import SlackSource
 from pka.index import Index
 from pka.overview import TOPICS
 from pka.service import Service
@@ -46,7 +44,7 @@ class Feedback(BaseModel):
     sufficiency: Literal['sufficient','partly sufficient','insufficient','not assessed']
 
 
-def create_app(demo=False, db_path=None):
+def create_app(demo=False, db_path=None, connector_factory=None):
     # A listing is fetched from the platform and then reused for a short while. Without this the
     # browser's status poll asks Slack and Jira for the same list every few seconds, which earns
     # a rate limit and makes the page look broken.
@@ -63,6 +61,17 @@ def create_app(demo=False, db_path=None):
         listings[key] = (time.time(), value)
         return value
 
+    async def via_connector(method, **kwargs):
+        """Ask the MCP server, so a credential never has to be handled in the request path.
+
+        A listing runs before a repository or a scope has been chosen, so only what the server
+        needs to start is passed; the repository reader is built on demand and is not touched.
+        """
+        cfg = index.settings() or {}
+        scope = {'repo':cfg.get('repo',''), 'branch':cfg.get('branch','main')}
+        async with service.connector_factory(scope, demo) as source:
+            return await getattr(source, method)(**kwargs)
+
     index = Index(db_path or data_dir()/('demo.sqlite3' if demo else 'index.sqlite3'))
     index.recover()
     if not index.settings():
@@ -74,7 +83,8 @@ def create_app(demo=False, db_path=None):
                 index.configure({'repo':repo,'branch':branch})
             except ValueError:
                 pass
-    service = Service(index,demo)
+    service = (Service(index,demo,connector_factory=connector_factory) if connector_factory
+               else Service(index,demo))
     @asynccontextmanager
     async def lifespan(app):
         yield
@@ -320,7 +330,7 @@ def create_app(demo=False, db_path=None):
         found = cached('slack')
         if found is None:
             try:
-                found = remember('slack', await SlackSource(token).channels())
+                found = remember('slack', await via_connector('slack_channels'))
             except SourceError as exc:
                 return {'connected':True,'channels':[],'chosen':saved.get('channels',[]),
                         'workspace':saved.get('workspace',''),'reason':str(exc)}
@@ -361,8 +371,9 @@ def create_app(demo=False, db_path=None):
             raise HTTPException(409,'Connect Slack first.')
         cfg = index.settings() or {}
         saved = cfg.get('slack') or {}
+        # The token is not passed on. It is handed to the MCP server at launch instead.
         service.task = asyncio.create_task(
-            service.read_slack(token, saved.get('workspace',''), saved.get('channels',[])))
+            service.read_slack(saved.get('workspace',''), saved.get('channels',[])))
         return {'started':True,'channels':len(saved.get('channels',[]))}
 
     def jira_credentials():
@@ -380,7 +391,7 @@ def create_app(demo=False, db_path=None):
         found = cached('jira')
         if found is None:
             try:
-                found = remember('jira', await JiraSource(site, email, token).projects())
+                found = remember('jira', await via_connector('jira_projects'))
             except SourceError as exc:
                 return {'connected':True,'projects':[],'chosen':saved,'reason':str(exc)}
         return {'connected':True,'projects':found,'chosen':saved,'reason':'',
@@ -410,7 +421,8 @@ def create_app(demo=False, db_path=None):
         key = (cfg.get('jira') or {}).get('project','')
         if not key:
             raise HTTPException(409,'Choose a Jira project first.')
-        service.task = asyncio.create_task(service.read_jira(site, email, token, key))
+        # Only the key travels. The site, email and token go to the MCP server at launch.
+        service.task = asyncio.create_task(service.read_jira(key))
         return {'started':True,'project':key}
 
     @app.get('/api/overview')
