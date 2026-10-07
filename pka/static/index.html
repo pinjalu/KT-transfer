@@ -1,11 +1,345 @@
 <!doctype html>
-<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Project Knowledge Assistant</title><link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script></head>
-<body><header><div class="brand">PK<span>A</span></div><div><p class="eyebrow">YOUR PROJECT, EXPLAINED</p><h1>Project Knowledge Assistant</h1></div><span class="pill">Stage 1 · Read only</span></header>
-<main><div id="modeBanner" class="banner" hidden></div><div id="error" class="error" role="alert" hidden></div>
-<section class="intro"><h2>Find your way through the code.</h2><p>Ask a question in ordinary English. Get a simple explanation with the exact code and documents behind it.</p></section>
-<div class="layout"><aside><section class="card"><p class="eyebrow">01 / CONNECT</p><h2>Your repository</h2>
-<form id="configForm"><label for="repo">GitHub repository</label><input id="repo" placeholder="acme/shop or https://github.com/acme/shop" maxlength="400" required autocomplete="off"><label for="branch">Branch</label><input id="branch" value="main" maxlength="200" required><button id="saveConfig" class="secondary" type="submit">Save repository</button></form><p id="credential" class="muted"></p><p class="small">Paste the repository address from your browser or type <code>owner/repository</code>; either is accepted and the saved value is shortened to <code>owner/repository</code>. Private repository? Add your read-only token to the local <code>.env</code> file, then restart. Never enter it in a question.</p></section>
-<section class="card"><p class="eyebrow">02 / COLLECT</p><h2>Scan status <span id="scanBadge" class="badge">Not scanned</span></h2><p id="scanPhase">Save a repository to begin.</p><progress id="scanProgress" max="1" value="0"></progress><div class="metrics"><div><b id="readCount">0</b><span>Files read</span></div><div><b id="skipCount">0</b><span>Skipped</span></div><div><b id="failCount">0</b><span>Failed</span></div></div><div class="buttonRow"><button id="scanButton">Start / refresh scan</button><button id="cancelButton" class="secondary" hidden>Cancel</button></div><p id="freshness" class="small"></p><p id="commit" class="small mono"></p><details><summary>Coverage and size limits</summary><p id="limits" class="small"></p><p class="small">UTF-8 source and documentation only. Generated files, dependency folders, lock files, potential secret files, binaries and symlinks are excluded. Large functions may be split. A complete scan means the supported scope within these limits.</p></details><details id="fileDetails"><summary>Files read, skipped and failed</summary><ul id="files" class="fileList"></ul><button id="moreFiles" class="secondary" hidden>Show more</button></details></section></aside>
-<section class="card questionCard"><p class="eyebrow">03 / UNDERSTAND</p><h2>What would you like to know?</h2><form id="askForm"><label for="question" class="srOnly">Your project question</label><textarea id="question" maxlength="600" rows="3" placeholder="How does login work?" required></textarea><div class="askBar"><span id="model" class="small"></span><button id="askButton" type="submit">Ask about this project <span aria-hidden="true">→</span></button></div></form><div class="suggestions"><button data-question="How does login work?">Login flow</button><button data-question="How do I set up and start the project?">Setup steps</button><button data-question="Where are database models defined?">Database models</button></div><div id="answer" aria-live="polite"><div class="empty"><div class="emptyIcon">{ }</div><h3>Start with one question</h3><p>Scan your repository, then ask about a feature, a business rule or something you are trying to understand.</p></div></div><section id="feedback" hidden><h3>Help assess this answer</h3><div class="feedbackFields"><label>Answer quality<select id="rating"><option>not assessed</option><option>correct</option><option>partially correct</option><option>incorrect</option></select></label><label>Were the retrieved sources enough?<select id="sufficiency"><option>not assessed</option><option>sufficient</option><option>partly sufficient</option><option>insufficient</option></select></label></div><button id="feedbackButton" class="secondary">Save feedback</button><span id="feedbackStatus" class="small" role="status"></span></section></section></div>
-<footer>Local, single-user prototype · GitHub → MCP → SQLite search → Ollama<br>Project overview, Jira and Slack are planned for later stages.</footer></main></body></html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project Knowledge Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+            <line x1="12" y1="13" x2="12" y2="16"></line>
+          </svg>
+          <span>PKA</span>
+        </div>
+        <div class="header-titles">
+          <h1>Project Knowledge Assistant</h1>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="status-indicator"></span>
+        <span class="pill">Stage 1 & 2 · Read-Only MCP</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-container">
+    <div id="modeBanner" class="banner" hidden></div>
+    <div id="error" class="error" role="alert" hidden></div>
+
+
+    <!-- STEP 1 - choose the platforms and connect each one -->
+    <section id="viewSelect" class="view">
+      <div class="step-head">
+        <p class="eyebrow">STEP 1 OF 2</p>
+        <h2>Which platforms does this project use?</h2>
+        <p class="muted">Tick the ones this project uses, then connect each in turn. Ticking a
+          platform records that it is used. It never grants access on its own.</p>
+      </div>
+      <div id="platformChoices" class="platform-choices"></div>
+      <p id="selectNote" class="small muted"></p>
+      <div class="buttonRow">
+        <button id="toWorkspace" class="btn btn-primary" type="button" disabled>
+          <span>Next: project overview and questions</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- STEP 1b - the connection details for one platform -->
+    <section id="viewConnect" class="view" hidden>
+      <div class="step-head">
+        <button id="backToSelect" class="btn btn-secondary back-btn" type="button">
+          <span>Back to platforms</span>
+        </button>
+        <p class="eyebrow">CONNECT</p>
+        <h2 id="connectTitle">Connect</h2>
+        <p id="connectReads" class="muted"></p>
+      </div>
+      <div class="connect-grid">
+        <div>
+          <section class="card">
+            <div class="card-header"><div><h3>Connection details</h3></div></div>
+            <div id="platforms"></div>
+            <p id="platformNote" class="small muted"></p>
+          </section>
+        
+
+        </div>
+        <div>
+<section class="card config-card">
+          <div class="card-header">
+            <div class="step-badge">01</div>
+            <div>
+              <h3>Connect Repository</h3>
+            </div>
+          </div>
+          
+          <form id="configForm" class="form-group">
+            <div class="input-field">
+              <label for="repo">GitHub Repository</label>
+              <div class="input-wrapper">
+                <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                <input id="repo" placeholder="owner/repository or URL" maxlength="400" required autocomplete="off">
+              </div>
+            </div>
+
+            <div class="input-field">
+              <label for="branch">Branch</label>
+              <div class="input-wrapper">
+                <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+                <input id="branch" maxlength="200" placeholder="main" required autocomplete="off">
+              </div>
+            </div>
+
+            <button id="saveConfig" class="btn btn-secondary full-width" type="submit">
+              <span>Save Repository</span>
+            </button>
+          </form>
+
+          <div class="credential-info">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            <p id="credential" class="muted"></p>
+          </div>
+
+          
+
+          
+
+          
+
+          <details class="help-details">
+            <summary>
+              <span>Repository guide</span>
+              <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </summary>
+            <div class="details-content">
+              <p class="small">Paste repository URL or <code>owner/repo</code>. Add token to <code>.env</code> for private repos.</p>
+            </div>
+          </details>
+        </section>
+
+        <!-- 02 / COLLECT -->
+        <section class="card scan-card">
+          <div class="card-header">
+            <div class="step-badge">02</div>
+            <div class="header-with-badge">
+              <h3>Snapshot & Scan</h3>
+              <span id="scanBadge" class="badge">Not scanned</span>
+            </div>
+          </div>
+
+          <div class="scan-status-box">
+            <p id="scanPhase" class="scan-phase">Save a repository to begin.</p>
+            <div class="progress-container">
+              <progress id="scanProgress" max="1" value="0"></progress>
+            </div>
+          </div>
+
+          <div class="metrics">
+            <div class="metric-item success">
+              <b id="readCount">0</b>
+              <span>Read</span>
+            </div>
+            <div class="metric-item warning">
+              <b id="skipCount">0</b>
+              <span>Skipped</span>
+            </div>
+            <div class="metric-item danger">
+              <b id="failCount">0</b>
+              <span>Failed</span>
+            </div>
+          </div>
+
+          <div class="buttonRow">
+            <button id="scanButton" class="btn btn-primary full-width">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              <span>Start / Refresh Scan</span>
+            </button>
+            <button id="cancelButton" class="btn btn-danger" hidden>Cancel</button>
+          </div>
+
+          <div class="scan-meta-group">
+            <p id="freshness" class="small meta-item"></p>
+            <p id="commit" class="small mono meta-item"></p>
+          </div>
+
+          <details class="help-details">
+            <summary>
+              <span>Limits & scope</span>
+              <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </summary>
+            <div class="details-content">
+              <p id="limits" class="small"></p>
+            </div>
+          </details>
+
+          <details id="fileDetails" class="help-details">
+            <summary>
+              <span>Processed files</span>
+              <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </summary>
+            <div class="details-content">
+              <ul id="files" class="fileList"></ul>
+              <button id="moreFiles" class="btn btn-secondary btn-sm full-width mt-2" hidden>Show more</button>
+            </div>
+          </details>
+        </section>
+          <div id="jiraBlock" class="platform-block" hidden>
+            <label class="platform-label">Jira project to read</label>
+            <p id="jiraState" class="small muted"></p>
+            <div id="jiraProjects" class="slack-channels"></div>
+            <div class="buttonRow">
+              <button id="readJira" class="btn btn-primary" type="button">Read this project</button>
+            </div>
+          </div>
+<div id="slackBlock" class="platform-block" hidden>
+            <label class="platform-label">Slack channels to read</label>
+            <p id="slackState" class="small muted"></p>
+            <div class="input-field">
+              <label for="slackWorkspace">Workspace name (for message links)</label>
+              <input id="slackWorkspace" maxlength="100" placeholder="acme" autocomplete="off">
+            </div>
+            <div id="slackChannels" class="slack-channels"></div>
+            <div class="buttonRow">
+              <button id="saveChannels" class="btn btn-secondary" type="button">Save channels</button>
+              <button id="readSlack" class="btn btn-primary" type="button">Start reading</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="buttonRow">
+        <button id="doneConnecting" class="btn btn-primary" type="button">
+          <span>Done, back to platforms</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- STEP 2 - read the project and ask about it -->
+    <section id="viewWorkspace" class="view" hidden>
+      <div class="step-head">
+        <button id="backToSelectTwo" class="btn btn-secondary back-btn" type="button">
+          <span>Back to platforms</span>
+        </button>
+        <p class="eyebrow">STEP 2 OF 2</p>
+        <h2>Your project</h2>
+      </div>
+            <div class="workspace-grid">
+        <div class="workspace-left">
+<section class="card overview-card" id="overviewCard">
+          <div class="card-header border-bottom">
+            <div class="header-left">
+              <div class="step-badge overview-badge-icon">00</div>
+              <div>
+                <div class="header-with-badge">
+                  <h3>Project Overview</h3>
+                  <span id="overviewBadge" class="badge">Not built</span>
+                </div>
+                <p id="overviewState" class="card-subtitle">Scan a repository, then build an overview.</p>
+              </div>
+            </div>
+            <button id="overviewButton" class="btn btn-secondary btn-sm">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              <span>Build Overview</span>
+            </button>
+          </div>
+          <div id="overviewBody" class="overview-body"></div>
+        </section>
+
+        <!-- 03 / QUESTION & ANSWER -->
+        </div>
+        <div class="workspace-right">
+        <section class="card question-card">
+          <div class="card-header border-bottom">
+            <div class="header-left">
+              <div class="step-badge question-badge-icon">03</div>
+              <div>
+                <h3>Ask Questions</h3>
+                <p class="card-subtitle">Query code logic, architecture, setup, or data models</p>
+              </div>
+            </div>
+          </div>
+
+          <form id="askForm" class="ask-form">
+            <div class="textarea-wrapper">
+              <label for="question" class="srOnly">Your project question</label>
+              <textarea id="question" maxlength="600" rows="2" placeholder="e.g. How does login work? Where are database models defined?" required></textarea>
+            </div>
+
+            <div class="askBar">
+              <div class="model-info">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                <span id="model" class="small"></span>
+              </div>
+              <button id="askButton" class="btn btn-primary" type="submit">
+                <span>Ask Question</span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              </button>
+            </div>
+          </form>
+
+          <div class="suggestions-container">
+            <div class="suggestions">
+              <button data-question="How does login work?" class="suggestion-chip">🔐 Login Flow</button>
+              <button data-question="How do I set up and start the project?" class="suggestion-chip">🚀 Setup Steps</button>
+              <button data-question="Where are database models defined?" class="suggestion-chip">🗄️ Models</button>
+              <button data-question="What are the main entry points?" class="suggestion-chip">⚡ Entry Points</button>
+            </div>
+          </div>
+
+          <div id="answer" class="answer-container" aria-live="polite">
+            <div class="empty">
+              <h3>Ready for your question</h3>
+              <p>Scan your repository above, then type a question or choose a prompt to get an answer.</p>
+            </div>
+          </div>
+
+          <section id="feedback" class="feedback-section" hidden>
+            <div class="feedback-header">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
+              <h4>Rate Answer</h4>
+            </div>
+            <div class="feedbackFields">
+              <div class="select-field">
+                <label for="rating">Answer Quality</label>
+                <select id="rating">
+                  <option value="not assessed">Not Assessed</option>
+                  <option value="correct">Correct</option>
+                  <option value="partially correct">Partially Correct</option>
+                  <option value="incorrect">Incorrect</option>
+                </select>
+              </div>
+              <div class="select-field">
+                <label for="sufficiency">Sources Sufficiency</label>
+                <select id="sufficiency">
+                  <option value="not assessed">Not Assessed</option>
+                  <option value="sufficient">Sufficient</option>
+                  <option value="partly sufficient">Partly Sufficient</option>
+                  <option value="insufficient">Insufficient</option>
+                </select>
+              </div>
+            </div>
+            <div class="feedback-actions">
+              <button id="feedbackButton" class="btn btn-secondary btn-sm">Save Feedback</button>
+              <span id="feedbackStatus" class="small text-muted" role="status"></span>
+            </div>
+          </section>
+        </section>
+
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

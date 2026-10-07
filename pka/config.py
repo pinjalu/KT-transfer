@@ -78,6 +78,13 @@ class Limits:
     chunk_chars: int = 1800
     context_chars: int = 7200
     max_sources: int = 5
+    slack_max_channels: int = 20
+    slack_max_messages: int = 600
+    slack_max_pages: int = 10
+    slack_max_threads: int = 40
+    jira_max_issues: int = 300
+    jira_max_pages: int = 10
+    jira_max_comments: int = 20
 
 LIMITS = Limits()
 
