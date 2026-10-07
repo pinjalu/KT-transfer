@@ -1109,10 +1109,14 @@ def test_readiness_changes_once_the_scope_is_chosen(tmp_path, monkeypatch):
     client = TestClient(create_app(False, db), base_url='http://localhost:8000')
     H = {'x-pka-request':'1'}
     client.post('/api/config', json={'repo':'acme/shop','branch':'main','platforms':['github','slack_user']}, headers=H)
+    index = Index(db)
+    scan_id = index.new_scan({'status':'running','repo':'acme/shop'})
+    index.activate(scan_id, chunk_file('app.py','def go():\n    return 1'),
+                   {'status':'complete','repo':'acme/shop','commit':COMMIT,'finished':now()})
     before = {p['key']: p for p in client.get('/api/platforms', headers=H).json()['platforms']}['slack_user']
     assert before['connected'] is True, 'the token is present'
     assert before['ready'] is False and 'channels' in before['pending']
-    Index(db).configure_source('slack', {'channels':[{'id':'C001','name':'engineering'}],'workspace':'acme'})
+    index.configure_source('slack', {'channels':[{'id':'C001','name':'engineering'}],'workspace':'acme'})
     after = {p['key']: p for p in client.get('/api/platforms', headers=H).json()['platforms']}['slack_user']
     assert after['ready'] is True and after['pending'] == ''
 
@@ -1234,3 +1238,31 @@ def test_checking_access_reports_who_signed_in():
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json={'displayName':'Dana','accountId':'abc'}))
     source = JiraSource('https://acme.atlassian.net','a@b.c','good',transport)
     assert run(source.check_access()) == {'name':'Dana','account':'abc'}
+
+def test_nothing_is_ticked_before_the_reader_ticks_it(tmp_path, monkeypatch):
+    """A fresh project must not pre-select a platform on the reader's behalf."""
+    client = wizard_client(tmp_path, monkeypatch)
+    rows = rows_for(client)
+    assert not any(r['selected'] for r in rows.values()), 'no platform starts ticked'
+
+def test_the_saved_selection_is_exactly_what_was_ticked(tmp_path, monkeypatch):
+    """Ticking only Slack must not quietly add GitHub back to the list."""
+    client = wizard_client(tmp_path, monkeypatch)
+    H = {'x-pka-request':'1'}
+    client.post('/api/config', json={'repo':'acme/shop','branch':'main','platforms':['slack_user']}, headers=H)
+    rows = rows_for(client)
+    assert rows['slack_user']['selected'] is True
+    assert rows['github']['selected'] is False, 'GitHub must not be added back on its own'
+
+def test_a_source_says_it_needs_an_index_only_after_its_own_setup(tmp_path, monkeypatch):
+    """The reader should be told the step they can actually take next."""
+    client = wizard_client(tmp_path, monkeypatch)
+    H = {'x-pka-request':'1'}
+    monkeypatch.setenv('JIRA_SITE','https://acme.atlassian.net')
+    monkeypatch.setenv('JIRA_EMAIL','a@b.c')
+    monkeypatch.setenv('JIRA_API_TOKEN','t'*20)
+    client.post('/api/config', json={'repo':'acme/shop','branch':'main','platforms':['jira']}, headers=H)
+    assert 'project' in rows_for(client)['jira']['pending'], 'its own setup comes first'
+    from pka.index import Index
+    Index(tmp_path/'wiz.sqlite3').configure_source('jira',{'project':'ENG'})
+    assert 'scan a repository' in rows_for(client)['jira']['pending'], 'then the missing index'

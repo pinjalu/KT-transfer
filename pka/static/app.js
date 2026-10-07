@@ -189,7 +189,7 @@ async function saveChoice() {
     await api('config', {
       repo: $('repo').value.trim() || (state && state.settings ? state.settings.repo : ''),
       branch: $('branch').value.trim() || (state && state.settings ? state.settings.branch : 'main'),
-      platforms: keys.includes('github') ? keys : ['github'].concat(keys)
+      platforms: keys
     });
   } catch (e) {
     if (!/OWNER\/REPOSITORY|repository address/i.test(e.message)) { error(e.message); return; }

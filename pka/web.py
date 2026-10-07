@@ -176,8 +176,6 @@ def create_app(demo=False, db_path=None):
         except ValueError as exc:
             applog.warn('config.rejected', reason=exc)
             raise HTTPException(422,str(exc)) from None
-        if 'github' not in platforms:
-            platforms = ['github'] + platforms   # the repository scan is what the index is built from
         applog.event('config.saved', repo=repo, branch=branch, platforms=','.join(platforms),
                      typed_chars=len(selection.repo))
         async with service.lock:
@@ -231,17 +229,23 @@ def create_app(demo=False, db_path=None):
             if not scan:
                 return False, 'Scan the repository.'
             return True, ''
+        # Its own setup comes first, because that is what the reader can act on here. Only once
+        # that is done does the missing index become the thing in the way.
         if key == 'jira':
             if not row['credentials_present']:
                 return False, 'Add the site address, email and API token.'
             if not (cfg.get('jira') or {}).get('project'):
                 return False, 'Choose a project to read.'
+            if not scan:
+                return False, 'Add GitHub and scan a repository, so there is an index to add these issues to.'
             return True, ''
         if key == 'slack_user':
             if not row.get('connected'):
                 return False, 'Add the client id and secret, then press Connect.'
             if not (cfg.get('slack') or {}).get('channels'):
                 return False, 'Choose the channels to read.'
+            if not scan:
+                return False, 'Add GitHub and scan a repository, so there is an index to add these messages to.'
             return True, ''
         return bool(row['credentials_present']), 'Add the credentials for this platform.'
 
@@ -249,7 +253,7 @@ def create_app(demo=False, db_path=None):
     async def platforms(request: Request):
         credentials.refresh()   # before describing, so an edit in the file is reflected at once
         cfg = index.settings() or {}
-        rows = registry.describe(cfg.get('platforms') or ['github'])
+        rows = registry.describe(cfg.get('platforms') or [])
         # Show the exact address this browser will send, so it can be registered without guessing.
         base = str(request.base_url).rstrip('/')
         scan = index.active_scan()
