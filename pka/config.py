@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os
 import re
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -102,3 +102,17 @@ def log_dir() -> Path:
 
 
 KEEP_LOGS = 20
+
+
+def source_url(repo: str, commit: str, path: str, start: int | None = None, end: int | None = None) -> str:
+    """A github.com address for one indexed path, pinned to the scanned commit.
+
+    Built here rather than in each caller because retrieval, the overview, the deterministic
+    facts and the reading order all have to agree on the same address for the same lines.
+    """
+    if not repo or not commit:
+        return ''
+    link = 'https://github.com/' + repo + '/blob/' + commit + '/' + quote(path, safe='/')
+    if start:
+        link += f'#L{start}' + (f'-L{end}' if end and end != start else '')
+    return link

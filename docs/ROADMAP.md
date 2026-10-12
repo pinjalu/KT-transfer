@@ -8,11 +8,35 @@ One GitHub repository and branch; commit-pinned scans; a real MCP client/server;
 
 Acceptance gate: install on the target Windows/Python 3.10 environment, scan the chosen repository, verify the commit and line links, ask known questions using the real Ollama model, and test an expired/revoked token. Fixture and protocol checks are included. Do not treat fixture results as live model accuracy.
 
-## Stage 2 — beginner-friendly overview, implemented
+## Stage 2 — beginner-friendly overview, implemented; revised 8 October 2026
 
 Build an overview workflow from evidence about purpose, technologies, modules, documented setup/startup, important flows and suggested reading order. Gather evidence separately for each topic, cite sources and expose missing information. Do not infer business goals from names alone. Cache by commit and invalidate after refresh. Do not claim repository-wide understanding from a few excerpts.
 
 Acceptance: a developer can follow only documented setup instructions, find important entry points, inspect every reference and see which overview sections lack evidence. Confirm that collected instructions are presented as documentation, never executed automatically.
+
+The revision separates what can be read from what has to be explained. Anything a file states
+outright, meaning the declared dependencies, the route declarations, the defined commands, the
+tables and data shapes, the names of the settings read from the environment and the documents
+the project ships, is now read out of the indexed text and shown with the file and line it came
+from, because asking a small model to report a fact that is written down invites it to get the
+fact wrong. The model keeps only the prose, split across more and narrower topics, and what it
+returns is checked for repetition, for citations that point at everything at once, and for
+statements that cannot be found in the excerpt they name. Every citation, every fact and every
+entry in the reading order links to the source at the scanned commit.
+
+It is also presented as a handover rather than a report. The overview had become complete and
+still gone unread, so it now runs one step at a time in the order somebody would actually
+explain the project: what it is, its shape, what uses what, getting it running, one request
+followed through, and the reading order last. Three diagrams carry the parts a picture tells
+faster than a paragraph, and they are derived from imports, routes and paths rather than
+described, so an arrow is evidence of a line in a file.
+
+Remaining for this stage: run the revised overview against a real Ollama model on a repository
+other than the one used here, and judge whether the narrower topics and the merged retrieval
+have actually improved the prose, rather than only the facts and diagrams beside it. Look at
+the rendered page, which has not been seen. Then watch somebody who does not know the project
+use the walkthrough, because whether the steps are in the right order is the one thing no test
+here can establish.
 
 ## Stage 3 — Jira task explanations, reading implemented, not yet verified live
 
@@ -32,7 +56,18 @@ Acceptance: a real recorded decision is distinguishable from an unanswered sugge
 
 ## Later improvements — evidence-led
 
-Evaluate ordinary-language questions first. If relevant code is repeatedly missed, compare lexical search with a small local embedding model behind the retrieval interface. Measure source relevance and answer quality separately using human-labelled cases; never substitute a model confidence score for accuracy.
+Evaluate ordinary-language questions first. The comparison between word matching and a small
+local embedding model is now available to run rather than still to be built: `pka/embed.py` sits
+behind the retrieval interface as the plan required, is off unless `PKA_EMBED_MODEL` names a
+model, and adds its candidates to the existing ranking instead of replacing it. Nothing has been
+measured yet, so nothing is claimed. The comparison worth running is the same one this plan
+already described: a set of human-labelled questions, scored for source relevance and answer
+quality separately, with the setting on and off. Until that exists, leaving it off is the
+honest default.
+
+Measure source relevance and answer quality separately using human-labelled cases; never substitute a model confidence score for accuracy. The overview's per-statement support measure is a
+retrieval-side check on whether a sentence appears in the excerpt it cites, not a judgement of
+whether the sentence is true, and it must not be reported as an accuracy score.
 
 Consider incremental refresh, resumable scans, import/call-graph expansion, language-specific parsers, persistent evaluation history without retained restricted excerpts, or a larger local model only when an observed limitation justifies the additional cost. No such features are represented as implemented.
 

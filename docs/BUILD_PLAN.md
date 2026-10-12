@@ -1,0 +1,372 @@
+# Build plan against the ten-phase chart and the ten UI mockups
+
+Written 9 October 2026. Two documents arrived that are not the same thing as the roadmap already
+in this repo: a phase chart naming 126 functionality titles across ten phases, and ten screen
+mockups for a product called KT Assistant. This file maps both against what is actually built,
+then sets a build order.
+
+The backend is already FastAPI (`pka/web.py`, `fastapi==0.142.2`). Nothing needs to be moved onto
+FastAPI. What is missing is roughly a third of the functionality in the chart and all ten screens.
+
+## Headline
+
+| | Count | Share |
+|---|---|---|
+| Done | 46 | 37% |
+| Partly done | 33 | 26% |
+| Not started | 47 | 37% |
+| **Total titles in the chart** | **126** | |
+
+Of the ten screens, none exist. The current interface is a three-step wizard (select platform,
+connect, workspace) in `pka/static/index.html` and `pka/static/app.js`, not a sidebar application
+with ten destinations. The backend behind four of the ten screens is largely ready; the other six
+need new backend work before a screen is worth drawing.
+
+## Phase by phase
+
+### Phase 01, Foundation and GitHub — 20 of 20 done
+
+Everything in this phase is built and was accepted live on 6 October. GitHub MCP tools, access
+checks, commit-pinned snapshots, file listing and reading, repository and branch selection,
+exclusion rules, progress and cancellation, change detection, local storage, search, Ollama
+answers, sources, missing-information reporting, overview and reading order, feedback, interrupted
+scan recovery, logs, the connection doctor and demo mode.
+
+### Phase 02, Jira and Slack connections — 13 of 13 written, Jira unverified live
+
+All seven Jira titles and all six Slack titles have code. Two caveats carried over from
+STATUS.md and they matter: no live Jira site has ever accepted the credentials used here, so
+every Jira behaviour is evidence from mocks only. And the Slack bot token path is still a
+placeholder; only the user token path works.
+
+### Phase 03, Reliable current project knowledge — 4 done, 9 partly, 5 not started
+
+| Title | State |
+|---|---|
+| Test live GitHub, Jira and Slack connections | Partly. GitHub only. |
+| Evaluate answer quality | Not started. No labelled question set exists. |
+| Recheck Jira and Slack access before using information | Not started. Freshness checks are GitHub only. |
+| Refresh saved information and cached answers | Partly. Overview caches by commit; nothing else. |
+| Improve background jobs, cancellation and retries | Partly. |
+| Show import coverage and incomplete reads | Done. |
+| Improve connection screens and source labels | Not started. This is mockup 02. |
+| Complete final acceptance and update documentation | Not started. |
+| Provide inspectable evidence for important claims | Done. |
+| Label illustrative scenarios separately from actual facts | Partly. Asked of the model, not enforced. |
+| Explain supported parts when some information is missing | Done. |
+| Show what was checked and what remains unknown | Done. `gaps` in `pka/facts.py`. |
+| Identify unavailable, outdated or conflicting sources | Partly. Unavailable yes, conflicting no. |
+| Add automatic, incremental or resumable imports | Partly. Recovery exists, incremental does not. |
+| Detect changes across connected project sources | Partly. GitHub commit comparison only. |
+| Refresh affected relationships and KT explanations | Not started. |
+| Remove deleted or no-longer-permitted information | Partly. Slack and Jira replace on read. |
+| Show when project knowledge was last refreshed | Partly. Per source, not per project. |
+
+### Phase 04, Project sources and discovery — 2 done, 6 partly, 4 not started
+
+Three of the fourteen sources named in the requirements document are connected. Pull requests,
+commit history, live database contents, application logs and monitoring data are all absent, and
+`KT_REQUIREMENTS.md` already says so. Documentation, API specification and build configuration are
+covered only in the sense that those files live inside the scanned repository, which answers what
+the code says and nothing about what happened when it ran.
+
+On the business half: technologies and components are read from files and are solid. Project
+purpose is a model-written topic. Project users and main features are not derived at all, and both
+appear on mockup 03 as filled sections.
+
+### Phase 05, Connections between project parts — 2 done, 5 partly, 3 not started
+
+The import graph in `pka/diagram.py` is real and the file cards in `pka/roles.py` are exact,
+because both are read from import lines rather than written by a model. What is missing is a level
+down: calls between functions rather than imports between files, explanations of individual
+functions and classes, and the conditions and business rules inside them. Requirements linked to
+pull requests and tests cannot be done at all until pull requests are read.
+
+### Phase 06, Complete feature explanations — 0 done, 3 partly, 13 not started
+
+The weakest phase, and the reason is a single missing idea. There is no concept of a feature.
+A route, the files reached from it, the table it writes and the ticket that asked for it are each
+already known separately. Nothing groups them under one name. Every one of the six titles under
+"Explain features with relevant examples" waits on that, and so does mockup 05 in its entirety.
+
+API and database explanation stops at declaration level: `pka/facts.py` finds every route with its
+method, path and line, and every table with its line, but not inputs, validation, outputs, field
+relationships or what a query changes. External services are named with the line that reaches for
+them, which is the "why and when" title; failure behaviour and test environments are not derivable
+from a static read and need either documentation or logs.
+
+### Phase 07, Requirements and team decisions — 1 done, 3 partly, 4 not started
+
+Jira issues are read whole, with description and comments, and sit in the same index as the code.
+What does not exist is anything that takes one issue and explains it: no per-issue endpoint, no
+requirement extraction, no table comparing each requirement against evidence in the code, no open
+questions list. That is mockup 06 end to end.
+
+Slack decisions are one model-written topic inside the overview. Separating agreed from proposed
+from historical, and surfacing conflicting points, is asked of a 1.7B model rather than derived.
+Mockup 07 shows it as a first-class browsable list with status chips.
+
+### Phase 08, Tests, failures and troubleshooting — 0 done, 1 partly, 9 not started
+
+Test files are found and each file card says whether a test imports it. Nothing explains why a test
+matters, what scenario it covers, or what would fail. Problem investigation does not exist in any
+form. Mockup 09 is the whole phase on one screen.
+
+### Phase 09, Learning modes and complete KT — 4 done, 4 partly, 3 not started
+
+The three reader modes are built and working (`MODE_SHOWS` in `pka/static/app.js`), and switching
+between them for the same content works. That is four titles done outright.
+
+Deployment and operations stop at listing container, pipeline and hosting files as files. The KT
+walkthrough exists as eighteen ordered steps in `pka/overview.py`, which covers the structure
+title partly, but the per-feature KT section needs the feature concept from Phase 06.
+
+### Phase 10, Team use and further improvements — 0 done, 2 partly, 6 not started
+
+Deliberately not started. `ROADMAP.md` names a gate before multiple users, and that gate has not
+been passed: no authentication, no sessions, no per-user permission checks, no audit records. The
+application is single user and local on purpose.
+
+Semantic search is built and off by default and has never been measured. A larger local model is a
+configuration change (`OLLAMA_MODEL`) rather than work.
+
+## Screen by screen
+
+| Mockup | Backend ready | What is missing |
+|---|---|---|
+| 01 Home | Partly | Recent project changes feed, knowledge gaps summary, feature list, learning cards |
+| 02 Connections | Mostly | Import history, per-source last read, "more sources" slots |
+| 03 Project overview | Mostly | "Who uses it", "Main features", feature-shaped sections |
+| 04 Ask assistant | Yes | Conversation history, follow-ups, the two-part feedback row |
+| 05 Feature explorer | No | Everything. Needs the feature concept first. |
+| 06 Jira tasks | No | Per-issue explanation, requirement table, related evidence, open questions |
+| 07 Team decisions | No | Decision extraction, status classification, conflict detection |
+| 08 Architecture | Mostly | Tabs for APIs, database, external services, deployment; node detail panel |
+| 09 Troubleshooting | No | Symptom input, cause ranking, where to check, suggested checks and tests |
+| 10 Settings | No | Team, permissions, model settings, refresh schedule, activity log |
+
+## Build order
+
+Thirteen steps in four milestones. The order puts visible progress first where the backend already
+supports it, then stops and builds the one missing idea that half the remaining chart hangs off.
+
+### Milestone A, shell and what already works
+
+1. **Application shell.** Sidebar with ten destinations, client-side routing, breadcrumbs, project
+   selector, the design tokens from the mockups, served by the existing FastAPI app. Keep the
+   current wizard reachable as first-run onboarding inside Connections rather than deleting it.
+2. **Connections, mockup 02.** Re-skin the existing configuration and scan controls. Add import
+   history, per-source last-read times and the read-only badge. New endpoint for import history.
+3. **Project overview, mockup 03.** Re-skin the existing overview payload into the mockup layout.
+   Add "Who uses it" and "Main features" as new derived sections.
+4. **Ask assistant and Architecture, mockups 04 and 08.** Both read payloads that already exist.
+   Architecture needs the four extra tabs and the node detail panel wired to `pka/facts.py`.
+
+### Milestone B, the feature concept
+
+This is the keystone. Nothing in the second half of the chart moves without it.
+
+5. **`pka/features.py`.** Derive features by clustering routes, the files reachable from them
+   through the existing import graph, the tables those files touch, and the Jira issues whose keys
+   appear in them. Name each cluster from its route path and its ticket summaries. Mark every
+   membership as confirmed or possible, the same distinction the diagrams already make.
+6. **Feature explorer, mockup 05.** Overview, Flow, APIs and data, Tests, Known problems. The flow
+   is a per-feature version of the request journey already in `pka/diagram.py`.
+7. **Deeper API, database and service explanation.** Phase 06's remaining titles: request and
+   response shapes, validation, field relationships, what a query changes, service call sites and
+   their recorded outcomes.
+
+### Milestone C, requirements, decisions and problems
+
+8. **Jira task investigation, mockup 06.** Per-issue explanation endpoint, requirement extraction
+   from description and acceptance criteria, an evidence match per requirement against the index,
+   and an open questions list from what found no evidence.
+9. **Team decisions, mockup 07.** Decision extraction from Slack threads, classification into
+   agreed, proposed and historical, implementation evidence from the code, conflicting points.
+10. **Troubleshooting and test explanation, mockup 09.** Symptom to cause ranking from the feature
+    graph, where to check, suggested checks, and relevant tests marked as existing or suggested.
+
+### Milestone D, freshness, home, settings, more sources
+
+11. **Change detection and incremental refresh.** Phase 03's remaining titles. This is what fills
+    the "Recent project changes" feed on Home with something real.
+12. **Home and Settings, mockups 01 and 10.** Home last because it summarises everything above.
+13. **More sources, then multiple users.** Phase 04's pull requests, commit history, documentation
+    and logs. Phase 10's authentication gate last, and only against the conditions already written
+    in `ROADMAP.md`.
+
+## Two things to decide before step 1
+
+**Frontend stack.** The repository is Python only with no Node toolchain, and the current interface
+is hand-written HTML, CSS and JavaScript served straight from `pka/static/`. The mockups are
+achievable either way. Adding React and a build step buys component structure and costs a toolchain
+on a Windows machine that currently needs nothing but Python and Ollama.
+
+**Where to start.** Step 1 gives something to look at within a day and re-skins work that already
+exists. Step 5 is the keystone and unblocks the largest share of what is pending, but produces
+nothing visible until step 6.
+
+## Progress
+
+Decided on 9 October 2026: React with Vite for the interface, and steps 1 and 5 built in
+parallel. The parallel risk, that the explorer screen would be built against a guessed payload,
+is handled by agreeing the shape first in [FEATURE_CONTRACT.md](FEATURE_CONTRACT.md).
+
+### Step 1, application shell — done
+
+`frontend/` holds a React application built by Vite into `pka/static/ui/`, served by the existing
+FastAPI process. Sidebar with all ten destinations, client-side routing with a server fallback so
+reloading on `/connections` works, breadcrumbs, the design tokens read off the mockups, and the
+shared primitives every screen reuses: card, chip, tabs, segmented control, confidence label,
+missing-information block, empty state and source link.
+
+Two things in the existing application constrained this and neither was weakened to make the
+interface work. The response carries `script-src 'self'; style-src 'self'`, so nothing may be
+inlined; `assetsInlineLimit` is zero and the production bundle is external files only. And every
+`/api/` request must carry `x-pka-request: 1` and an origin matching the server's own, so the
+single API client adds the header and the dev server proxy rewrites the origin.
+
+Home and Connections are live against real endpoints. Both state what they cannot show rather
+than filling the space: Home has no feature list and no change feed, and says why for each.
+Connections reports import history as not yet served over HTTP, naming where the logs are written.
+The other eight screens render a placeholder naming the step that builds them and what it will
+hold, which is deleted as each one lands.
+
+### Step 5, the feature concept — first cut done
+
+`pka/features.py` clusters routes by what they are about, follows the import graph out two hops
+to find the files a route reaches, and attaches the tables, services, tests and tickets belonging
+to those files. `diagram.import_edges` was added so the feature walk and the drawn import graph
+resolve imports the same way: an arrow on the diagram and a file inside a feature both mean a real
+import line at a known line number.
+
+A ticket key written inside a file is `confirmed` and carries the file and line; a ticket that
+only shares a word with the feature name is `possible` and says so. A test joins a feature by
+importing one of its files, never by having a similar name. A feature that found no tests, no
+storage or no ticket reports each as a gap with what was checked.
+
+Ten tests cover it, and the whole suite is at 238 passing. Against the real index on disk it
+derives one feature from the two routes that repository declares, with the flow
+`WEBSOCKET /api/live` to `game.py` to `storage.py` to the `rooms` table, every step a real line.
+
+What this first cut does not do: a feature starts at a route, so a project declaring no routes
+produces no features, which the payload states rather than leaving to be noticed. No prose is
+written for a feature yet. Only outcomes that are derivable are returned, so the three outcome
+cards on mockup 05 arrive as one until a model writes the other two and they are labelled
+illustrative.
+
+### Step 4, Ask assistant — done
+
+Built next and ahead of its place in the order, because making the new interface the default at
+`/` had left the product's main function reachable only at `/legacy`.
+
+The screen renders what the answer actually carries rather than the shape the mockup drew. The
+mockup shows a model-structured answer, with a simple explanation, a numbered example and a what
+happens next. The backend returns a flat list of checked statements, so that is what is shown,
+each with its citations and its support mark. A statement whose content was not found in the
+excerpt it cites is marked, in red, with the excerpt one click away, and a statement naming
+nothing from this project is marked as well. Both marks already existed in `pka/overview.py`
+and had nowhere to appear.
+
+The three reader modes decide how much working is shown, never what the answer is, and the
+screen says so next to them. Beginner hides citations and excerpts, Developer shows everything
+including the repetition and citation checks, Architect sits between.
+
+One test was added: the answer response is asserted field by field against the names
+`frontend/src/lib/answer.ts` reads, so renaming one fails the suite rather than leaving a blank
+panel in the browser. The suite is at 239 passing.
+
+### Step 3, Project overview — done
+
+The mockup's layout over the payload that already existed, with three panels corrected to what
+the project can actually establish.
+
+"Who uses it" is drawn on the mockup as two filled cards. Nothing derives it. Users are only
+knowable from a readme, a ticket or a discussion that names them, and deriving them from file
+names is the guess this product exists to refuse, so the panel states that instead of being
+filled. "Main features" is filled, from the step 5 derivation, and is empty with its reason on a
+project that declares no routes. "Getting started" carries the setup prose and, underneath it,
+the commands read straight out of the files with their lines, because a command that is written
+down should not be retyped by a model.
+
+Statement rendering moved into `frontend/src/components/Statements.tsx` and the question screen
+now uses it too, so the support mark and the names-nothing-from-this-project mark look the same
+wherever a model-written sentence appears. Both marks were already computed in
+`pka/overview.py` and had never been shown anywhere.
+
+Two tests were added: the overview payload asserted field by field against the names
+`frontend/src/lib/overview.ts` reads, and a check that a topic which found no evidence stays in
+the payload rather than being dropped, since the screen relies on it being there to say so. The
+suite is at 241 passing.
+
+### Step 2, Connections completed — done
+
+The Jira and Slack panels are real, and import history is served over HTTP for the first time.
+
+Jira: the project list is fetched, one project is chosen and saved, and reading is started with
+its progress shown. Slack: the channel list is fetched, channels are ticked against the limit the
+backend enforces, the allowlist is saved and reading is started. Both panels carry the caveat that
+belongs to them, in the interface rather than in a document: Slack does not resolve a message
+author to a name because that needs a permission this does not request, and reading again replaces
+what was read before.
+
+Import history, `GET /api/import-history`, lists the per-run reports `write_scan_log` has always
+written to `data/logs` and that nothing could read without opening the folder. A run that failed
+is listed exactly like one that succeeded, because that is the one somebody needs. A second
+endpoint serves one report's text, and the name is matched against the pattern this application
+writes before it is ever joined to a path. Two tests cover it, one of them asserting that
+`pka.log`, an encoded `..` and a crafted name that merely ends in `.log` are all refused and that
+a file outside the log folder is never served. The suite is at 243 passing.
+
+### Jira is live after all
+
+Running against the real credentials on this machine, `GET /api/jira/projects` returned
+`SCRUM, My PM Team` over the live Atlassian API. `docs/STATUS.md` still records that the
+credentials were rejected with AUTHENTICATED_FAILED and that every Jira check is against mocks.
+That is now out of date for authentication and for listing projects. It is not yet out of date for
+reading issues, which has still never been exercised against a live site. Worth closing properly
+by reading the SCRUM project and recording what came back.
+
+### Fixed after first use of the Connections screen
+
+Clicking Read issues before any scan existed printed a traceback on the console and showed
+nothing at all on the page. Two separate faults.
+
+The screen offered the button at all. Jira issues and Slack messages are stored against a scan,
+so there is nowhere to put them until one exists. Both read buttons are now disabled until a scan
+has succeeded, and both panels say why rather than just going grey.
+
+Underneath that, every background read was started with `asyncio.create_task` and never awaited,
+so when one raised, the exception went to the event loop as an unretrieved task. The browser had
+already been answered "started" and then polled a progress field that stayed empty for ever, and
+the only sign of the failure was on a console the user is not expected to be reading. All four
+background jobs, scan, overview, Slack and Jira, now run through `Service.background`, which keeps
+the failure for the status endpoint to report, clears the progress fields whatever happens so a
+read that dies cannot leave the page spinning, and keeps an internal message out of the interface.
+Four tests cover it, including the exact sequence that produced the traceback. The suite is at
+247 passing.
+
+### Ollama failures told apart
+
+Every way of failing to reach Ollama produced one sentence, "Ollama is unavailable or timed out.
+Start Ollama and check the model", which sent a reader looking for a stopped service when the
+service was running. Three causes with three different remedies now say which one happened: not
+running, with the command to start it; still answering after 180 seconds, which a larger model on
+a slow machine genuinely needs; and HTTP 404, which is Ollama saying it has no such model, with
+the exact pull command.
+
+Underneath that, the first request after Ollama starts can be refused while the model loads.
+That is a cold start, not a broken installation, and the only sign of it was the first topic of an
+overview failing while the next seven worked. A connection level failure is now retried once
+after three seconds, which removes the whole class of first request failures. A read timeout is
+not retried, because waiting 180 seconds twice helps nobody.
+
+Found by the new message within a minute of writing it: this machine's `ollama list` shows
+`gemma3:4b`, and asking for it returns `model 'gemma3:4b' not found`. The manifest is there and
+the data behind it is not, so it needs pulling again. The old message would have blamed the
+connection. Four tests cover the retry and the three messages. The suite is at 260 passing.
+
+### Next
+
+Step 6 builds the feature explorer on the contract above. Step 4's architecture half, the
+three derived diagrams, is the remaining re-skin.

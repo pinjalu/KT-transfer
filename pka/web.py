@@ -11,12 +11,13 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from pka import applog
-from pka.config import ROOT, LIMITS, data_dir, validate_selection
+from pka.config import ROOT, KEEP_LOGS, LIMITS, data_dir, log_dir, validate_selection
 from pka import credentials, oauth
 from pka.connectors import registry
 from pka.connectors.base import SourceError
+from pka import facts, features
 from pka.index import Index
-from pka.overview import TOPICS
+from pka.overview import reading_order, topics_for
 from pka.service import Service
 
 class Selection(BaseModel):
@@ -142,9 +143,19 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         if service.busy() or (service.task and not service.task.done()):
             raise HTTPException(409,'Another scan or answer is in progress. Wait or cancel the scan.')
 
+    # The built React interface, if it has been built. `npm run build` in frontend/ writes it.
+    # Without it the original single-page interface is still served, so a checkout with no Node
+    # toolchain still runs.
+    UI = ROOT/'pka/static/ui/index.html'
+    LEGACY = ROOT/'pka/static/index.html'
+
     @app.get('/')
     async def home():
-        return FileResponse(ROOT/'pka/static/index.html')
+        return FileResponse(UI if UI.exists() else LEGACY)
+
+    @app.get('/legacy')
+    async def legacy():
+        return FileResponse(LEGACY)
 
     @app.get('/api/status')
     async def status():
@@ -156,6 +167,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                 'limits':asdict(LIMITS),'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
                 'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
                 'warning':service.access_warning,'ready':index.active_scan() is not None,
+                'job_error':service.job_error,'job_name':service.job_name,
                 'jira_reading':service.jira_progress is not None,
                 'jira_progress':service.jira_progress,
                 'slack_reading':service.slack_progress is not None,
@@ -198,7 +210,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         idle()
         if not index.settings():
             raise HTTPException(409,'Save a repository and branch first.')
-        service.task = asyncio.create_task(service.scan())
+        service.task = asyncio.create_task(service.background('scan',service.scan()))
         return {'started':True}
 
     @app.post('/api/scan/cancel')
@@ -372,8 +384,8 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         cfg = index.settings() or {}
         saved = cfg.get('slack') or {}
         # The token is not passed on. It is handed to the MCP server at launch instead.
-        service.task = asyncio.create_task(
-            service.read_slack(saved.get('workspace',''), saved.get('channels',[])))
+        service.task = asyncio.create_task(service.background('slack',
+            service.read_slack(saved.get('workspace',''), saved.get('channels',[]))))
         return {'started':True,'channels':len(saved.get('channels',[]))}
 
     def jira_credentials():
@@ -422,7 +434,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         if not key:
             raise HTTPException(409,'Choose a Jira project first.')
         # Only the key travels. The site, email and token go to the MCP server at launch.
-        service.task = asyncio.create_task(service.read_jira(key))
+        service.task = asyncio.create_task(service.background('jira',service.read_jira(key)))
         return {'started':True,'project':key}
 
     @app.get('/api/overview')
@@ -431,6 +443,17 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         if not scan:
             return {'available':False,'reason':'Run a successful scan first.'}
         cached = index.overview(scan['commit'])
+        if cached:
+            # The reading order is derived from the indexed paths and no model touches it, so
+            # there is no reason for a reader to be shown an old one. It was cached inside a
+            # payload that only a model rebuild replaces, which meant a correction to it could
+            # not reach anybody without paying for that rebuild: after a fix stopped Jira issues
+            # being offered as files to read, the stale list kept offering them. Derived at the
+            # moment it is asked for instead, which is one query and a sort.
+            cached = {**cached,
+                      'reading_order':reading_order(index.code_paths(scan['id']),
+                                                    repo='' if demo else scan['repo'],
+                                                    commit='' if demo else scan['commit'])}
         return {'available':bool(cached),'building':service.overview_progress is not None,
                 'progress':service.overview_progress,'overview':cached,
                 'reason':'' if cached else 'No overview has been built for this commit yet.'}
@@ -440,8 +463,10 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         idle()
         if not index.active_scan():
             raise HTTPException(409,'Run a successful scan before building the overview.')
-        service.task = asyncio.create_task(service.build_overview())
-        return {'started':True,'topics':len(TOPICS)}
+        scan = index.active_scan()
+        present = {p for p in ('slack/','jira/') if index.source_blocks(scan['id'],p)}
+        service.task = asyncio.create_task(service.background('overview',service.build_overview()))
+        return {'started':True,'topics':len(topics_for(present))}
 
     @app.post('/api/ask')
     async def ask(question: Question):
@@ -450,6 +475,75 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             raise HTTPException(422,'Enter a question.')
         return await service.ask(question.question.strip())
 
+    # A scan writes one plain-text report per run to data/logs. They were only readable by
+    # opening the folder, so a run that went wrong left nothing visible in the application.
+    LOG_NAME = re.compile(r'scan-(\d{4})-([a-z]+)-(.+)\.log')
+
+    def read_header(path):
+        """The key/value block write_scan_log puts at the top of every report."""
+        header = {}
+        try:
+            with path.open(encoding='utf-8') as handle:
+                for line in handle:
+                    if not line.strip():
+                        break
+                    parts = line.rstrip('\n').split('   ',1)
+                    if len(parts) == 2:
+                        header[parts[0].strip()] = parts[1].strip()
+        except OSError:
+            return {}
+        return header
+
+    @app.get('/api/import-history')
+    async def import_history():
+        runs = []
+        for path in sorted(log_dir().glob('scan-*.log'), reverse=True):
+            found = LOG_NAME.fullmatch(path.name)
+            if not found:
+                continue
+            header = read_header(path)
+            runs.append({'file':path.name,'scan_id':int(found.group(1)),'status':found.group(2),
+                         'repo':header.get('repository',''),'branch':header.get('branch',''),
+                         'commit':header.get('commit',''),'started':header.get('started',''),
+                         'finished':header.get('finished',''),
+                         'read':header.get('files read',''),'skipped':header.get('skipped',''),
+                         'failed':header.get('failed',''),'error':header.get('error','')})
+        cfg = index.settings() or {}
+        return {'runs':runs,'kept':KEEP_LOGS,
+                'slack_read_at':(cfg.get('slack') or {}).get('read_at',''),
+                'jira_read_at':(cfg.get('jira') or {}).get('read_at',''),
+                'note':'Only repository scans write a report. Slack and Jira reads record the time '
+                       'they last ran, not a per-run report.'}
+
+    @app.get('/api/import-history/{name}')
+    async def import_log(name: str):
+        # The name must be one this application wrote. Anything else never becomes a path.
+        if not LOG_NAME.fullmatch(name):
+            raise HTTPException(404,'No such import report.')
+        path = log_dir()/name
+        if not path.is_file():
+            raise HTTPException(404,'No such import report.')
+        return {'name':name,'text':path.read_text(encoding='utf-8')[:200_000]}
+
+    @app.get('/api/features')
+    async def feature_list():
+        scan = index.active_scan()
+        if not scan:
+            return {'available':False,'reason':'Run a successful scan first.','features':[]}
+        payload = features.derive(index,scan,facts.derive(index,scan))
+        return {'available':True,'reason':'',**features.listing(payload)}
+
+    @app.get('/api/features/{feature_id}')
+    async def feature_detail(feature_id: str):
+        scan = index.active_scan()
+        if not scan:
+            raise HTTPException(409,'Run a successful scan first.')
+        payload = features.derive(index,scan,facts.derive(index,scan))
+        found = next((f for f in payload['features'] if f['id'] == feature_id),None)
+        if not found:
+            raise HTTPException(404,'No feature by that name was derived from this scan.')
+        return features.detail(found)
+
     @app.post('/api/feedback')
     async def feedback(item: Feedback):
         if not index.feedback(item.answer_id,item.rating,item.sufficiency):
@@ -457,4 +551,14 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         return {'saved':True}
 
     app.mount('/static',StaticFiles(directory=ROOT/'pka/static'),name='static')
+
+    # The interface routes in the browser, so reloading on /connections asks this server for a
+    # path it has no handler for. Hand back the same page and let the router read the address.
+    # Registered last, so every real route above still wins, and it never answers /api or /static.
+    @app.get('/{path:path}')
+    async def ui_route(path: str):
+        if path.startswith(('api/','static/')) or not UI.exists():
+            raise HTTPException(404,'Not found.')
+        return FileResponse(UI)
+
     return app

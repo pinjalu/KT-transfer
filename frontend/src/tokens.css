@@ -1,0 +1,73 @@
+/* Colours, spacing and type read off the ten mockups. One place, so a screen never invents a
+   shade of its own. */
+:root {
+  --sidebar: #0f2b3d;
+  --sidebar-deep: #0b2232;
+  --sidebar-text: #cfe0ea;
+  --sidebar-text-dim: #8aa7b8;
+  --sidebar-active: #116b6b;
+  --sidebar-hover: #16394d;
+
+  --page: #f4f7f9;
+  --surface: #ffffff;
+  --border: #e2e8ef;
+  --border-strong: #cbd6e0;
+
+  --ink: #10212e;
+  --ink-soft: #46606f;
+  --ink-dim: #6e8595;
+
+  --accent: #0f6e6e;
+  --accent-deep: #0b5858;
+  --accent-wash: #e6f4f3;
+  --link: #0d6e8c;
+
+  --ok: #1a7f52;
+  --ok-wash: #e4f5ec;
+  --warn: #b26b00;
+  --warn-wash: #fdf3e0;
+  --bad: #b3261e;
+  --bad-wash: #fdeceb;
+  --info-wash: #eaf1fb;
+  --violet: #6b4fc4;
+  --violet-wash: #efeafc;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --shadow: 0 1px 2px rgba(16, 33, 46, 0.06), 0 1px 3px rgba(16, 33, 46, 0.04);
+  --shadow-lift: 0 4px 16px rgba(16, 33, 46, 0.1);
+
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 20px; --s6: 24px; --s7: 32px; --s8: 40px;
+
+  --sidebar-w: 248px;
+  --font: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--page);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--ink); line-height: 1.25; }
+h1 { font-size: 30px; letter-spacing: -0.4px; }
+h2 { font-size: 19px; }
+h3 { font-size: 15px; }
+p { margin: 0; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; cursor: pointer; }
+code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }

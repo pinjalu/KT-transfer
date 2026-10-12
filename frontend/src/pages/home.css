@@ -1,0 +1,59 @@
+.home-ask {
+  display: flex; align-items: center; gap: var(--s3);
+  margin-bottom: var(--s6);
+}
+.home-ask-icon {
+  position: absolute; margin-left: var(--s4); color: var(--ink-dim);
+  display: flex; pointer-events: none;
+}
+.home-ask-input {
+  flex: 1; padding: 13px var(--s4) 13px 46px; font: inherit;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink);
+}
+.home-ask-input::placeholder { color: var(--ink-dim); }
+.home-ask .btn { padding: 13px var(--s5); }
+
+.home-grid { align-items: start; }
+
+.learn-list { list-style: none; margin: 0; padding: 0; }
+.learn-row {
+  display: flex; align-items: flex-start; gap: var(--s4);
+  padding: var(--s4) 0; border-bottom: 1px solid var(--border);
+  color: inherit; text-decoration: none;
+}
+.learn-list li:last-child .learn-row { border-bottom: 0; padding-bottom: 0; }
+.learn-row:hover { text-decoration: none; }
+.learn-row:hover .learn-title { text-decoration: underline; }
+.learn-n {
+  width: 28px; height: 28px; flex: none; border-radius: 50%;
+  background: var(--accent-wash); color: var(--accent-deep);
+  display: grid; place-items: center; font-weight: 700; font-size: 13px;
+}
+.learn-text { display: grid; gap: 3px; flex: 1; }
+.learn-title { color: var(--link); font-weight: 600; }
+.learn-plain { color: var(--ink-soft); font-size: 13px; }
+.learn-arrow { color: var(--border-strong); display: flex; align-self: center; }
+
+.source-list, .change-list { list-style: none; margin: 0; padding: 0; }
+.source-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
+  padding: var(--s4) 0; border-bottom: 1px solid var(--border);
+}
+.source-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.source-id { display: grid; gap: 2px; min-width: 0; }
+.source-name { font-weight: 600; }
+.source-scope {
+  font-size: 12.5px; color: var(--ink-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.change-row { display: flex; gap: var(--s3); padding: var(--s3) 0; }
+.change-icon { color: var(--ink-dim); display: flex; flex: none; margin-top: 2px; }
+.change-title { font-weight: 600; }
+.change-title code { background: var(--page); padding: 1px 5px; border-radius: 4px; }
+.change-plain { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+.change-note {
+  margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--ink-dim);
+}

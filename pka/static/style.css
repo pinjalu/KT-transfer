@@ -801,7 +801,11 @@ progress::-webkit-progress-value {
   .main-container { overflow: auto; }
   .layout { grid-template-columns: 1fr; height: auto; }
   .mainCol { height: auto; overflow: visible; }
-  .overview-card { max-height: 350px; }
+  /* The overview is the longest thing on the page now: seven groups of facts, eight written
+     sections and the reading order. Trapping that in a 350px window meant scrolling a small
+     box inside a page that scrolls, so the page takes the scrolling and the card grows. */
+  .overview-card { max-height: none; min-height: 0; }
+  .overview-body { max-height: none; overflow: visible; }
   .question-card { height: auto; }
 }
 
@@ -1392,4 +1396,493 @@ progress::-webkit-progress-value {
   background: #f1f8f4;
   border: 1px solid #cfe6da;
   color: #1d6b4a;
+}
+
+/* PAGE 2 - CITATION LINKS, FACT GROUPS AND SEARCH DIAGNOSTICS */
+.citation-link {
+  display: inline-block;
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 2px;
+  vertical-align: middle;
+  border-radius: 3px;
+}
+
+.citation-link:hover {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.support-flag {
+  display: inline-block;
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.overview-group-head {
+  margin: 14px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--border);
+}
+
+.overview-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 2px;
+}
+
+.facts-card {
+  background: #fcfdff;
+}
+
+.fact-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fact-list li {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 3px 8px;
+  border-left: 2px solid var(--bg-subtle);
+  word-break: break-word;
+}
+
+.fact-name {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a.fact-name:hover {
+  text-decoration: underline;
+}
+
+.fact-detail {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.search-note {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-top: 8px;
+}
+
+.search-note p {
+  margin: 2px 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.reading-file-list a.fact-name {
+  font-weight: 700;
+}
+
+/* PAGE 2 - THE WALKTHROUGH */
+.walk-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.step-rail {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.step-pill {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.step-pill:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.step-pill-done {
+  background: var(--primary-light);
+  color: var(--primary);
+  border-color: var(--primary-light);
+}
+
+.step-pill-on {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.walk-head {
+  margin-bottom: 12px;
+}
+
+.walk-count {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 2px;
+}
+
+.walk-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 6px;
+  line-height: 1.25;
+}
+
+/* The handover line. This is the sentence a colleague would actually say, so it is set apart
+   from the model's prose and never mixed in with it. */
+.walk-kt {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-main);
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 9px 12px;
+  margin: 0;
+}
+
+.walk-moves {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.walk-moves .btn {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* PAGE 2 - DIAGRAMS */
+.diagram-card {
+  background: #fbfdff;
+  border-color: #cbd9e8;
+}
+
+.dg-holder {
+  overflow-x: auto;
+  padding: 4px 0 8px;
+}
+
+.dg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.dg-box {
+  fill: #ffffff;
+  stroke: #cbd5e1;
+  stroke-width: 1.2;
+}
+
+.dg-node:hover .dg-box {
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+
+.dg-label {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  fill: var(--text-main);
+  text-anchor: middle;
+}
+
+.dg-sub {
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  fill: var(--text-muted);
+  text-anchor: middle;
+}
+
+.dg-node a { text-decoration: none; cursor: pointer; }
+.dg-node a:hover .dg-label { fill: var(--primary); }
+
+.dg-route .dg-box { fill: #f0fdf4; stroke: #86efac; }
+.dg-store .dg-box { fill: #fffbeb; stroke: #fcd34d; }
+.dg-outside .dg-box { fill: #f1f5f9; stroke: #94a3b8; stroke-dasharray: 4 3; }
+.dg-group .dg-box { fill: var(--primary-light); stroke: #93c5fd; }
+.dg-more .dg-box { fill: #f8fafc; stroke-dasharray: 3 3; }
+
+.dg-edge {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 1.4;
+}
+
+.dg-head { fill: #94a3b8; }
+
+.dg-count {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  fill: var(--text-muted);
+  text-anchor: middle;
+}
+
+.dg-note { margin-top: 2px; font-style: normal; }
+
+/* The stack diagram is elements rather than drawing, so it wraps on a narrow screen. */
+.dg-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dg-band {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #ffffff;
+  padding: 8px 10px;
+}
+
+.dg-band-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.dg-band-number {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.dg-band-names { flex: 1; min-width: 0; }
+
+.dg-band-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.dg-band-plain {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 1px 0 0;
+  line-height: 1.45;
+}
+
+.dg-band-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+  padding-left: 29px;
+}
+
+.dg-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+  text-decoration: none;
+}
+
+a.dg-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.dg-chip-where {
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.dg-chip-more {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+
+/* An arrow between two files that import each other. It travels under the boxes rather than
+   back through them, and is dashed so it reads as the exception it is. */
+.dg-edge-back {
+  stroke: #d97706;
+  stroke-dasharray: 5 3;
+}
+
+/* A step whose written explanation has not arrived yet. Its diagrams and facts are already
+   there, so it is reachable, just marked as not finished. */
+.step-pill-waiting {
+  border-style: dashed;
+  color: var(--text-light);
+}
+
+.step-pill-waiting.step-pill-on {
+  border-style: solid;
+  color: #ffffff;
+}
+
+/* PAGE 2 - WHO THE EXPLANATION IS FOR */
+.mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.mode-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.mode-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.mode-button {
+  border: none;
+  background: transparent;
+  padding: 4px 13px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mode-button:hover { color: var(--primary); }
+
+.mode-button-on {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.mode-blurb {
+  flex: 1 1 200px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* PAGE 2 - ONE CARD PER IMPORTANT FILE */
+.role-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #ffffff;
+  padding: 7px 10px;
+  margin-top: 6px;
+}
+
+.role-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.role-purpose {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-main);
+  margin: 3px 0 0;
+}
+
+.role-purpose-none {
+  color: var(--text-light);
+  font-style: normal;
+}
+
+.role-holds {
+  font-size: 11.5px;
+  color: #0369a1;
+  margin: 2px 0 0;
+  line-height: 1.45;
+}
+
+.role-wires {
+  font-size: 11.5px;
+  margin: 2px 0 0;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.role-wire-label {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* A sentence that names nothing from this project. */
+.generic-flag {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
 }

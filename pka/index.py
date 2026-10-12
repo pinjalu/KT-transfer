@@ -6,8 +6,8 @@ import json
 from pathlib import PurePosixPath
 import re
 import sqlite3
-from urllib.parse import quote
-from pka.config import LIMITS, now
+from pka import embed
+from pka.config import LIMITS, now, source_url
 
 STOP = set('how does do did the a an is are was were it in on of to for and or can i we my this that work works please explain what where when why with from'.split())
 SYNONYMS = {
@@ -33,6 +33,10 @@ TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|testing)/|(^|/)test_[^/]*$|
 VENDOR_PATH = re.compile(r'(^|/)(components/ui|ui/components|third_?party|external|generated)/|'
                          r'\.(min|bundle|generated)\.[A-Za-z]+$', re.I)
 ISSUE_KEY = re.compile(r'\b([A-Za-z][A-Za-z0-9_]{0,20})-(\d{1,6})\b')
+# Slack and Jira content shares the chunk table with the repository's files, told apart only by
+# the prefix its path carries. Written once, here, so a caller that needs to tell them apart
+# cannot drift from the ones that stored them.
+SOURCE_PREFIXES = ('slack/', 'jira/')
 MIN_CHUNK_CHARS = 80
 PATH_MATCH_BONUS = 1.5
 MAX_TEST_SOURCES = 2
@@ -41,6 +45,21 @@ MAX_VENDOR_SOURCES = 1
 # from its neighbours in the same file until it carries enough to read.
 WIDEN_TO_CHARS = 1400
 WIDEN_MAX_LINES = 60
+# Reciprocal rank fusion's damping constant. Sixty is the usual choice and keeps a single
+# first place from dominating a chunk that several queries agree on further down.
+RRF_K = 60
+# Two floors decide which near neighbours count as evidence at all. The absolute one throws
+# out a chunk pointing the other way. The relative one is what actually does the work, because
+# how close "unrelated" sits to zero depends entirely on the embedding model: real models put
+# two unrelated paragraphs around 0.4, not around 0. Keeping only what scores most of what the
+# best match scored is a judgement the model's own scale makes for us.
+SEMANTIC_FLOOR = 0.15
+SEMANTIC_MARGIN = 0.6
+
+
+def is_source_path(path: str) -> bool:
+    """True for a Slack message or a Jira issue, false for a file in the repository."""
+    return path.startswith(SOURCE_PREFIXES)
 
 
 def words(text: str) -> list[str]:
@@ -146,6 +165,8 @@ class Index:
             CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, scan_id INTEGER, path TEXT,
                 start INTEGER, end INTEGER, text TEXT, symbols TEXT, split INTEGER);
             CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path, symbols, text, tokenize='porter unicode61');
+            CREATE TABLE IF NOT EXISTS vectors (chunk_id INTEGER PRIMARY KEY, scan_id INTEGER,
+                vector BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS overviews (commit_sha TEXT PRIMARY KEY, scan_id INTEGER,
                 payload TEXT, created TEXT);
             CREATE TABLE IF NOT EXISTS answers (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, question TEXT,
@@ -187,7 +208,7 @@ class Index:
             if (current.get('repo'), current.get('branch')) == (merged.get('repo'), merged.get('branch')):
                 return
             # The snapshot belonged to the old repository, so it cannot answer for the new one.
-            for table in ('chunks','search','answers','overviews','scans'):
+            for table in ('chunks','search','answers','overviews','scans','vectors'):
                 db.execute('DELETE FROM '+table)
             db.execute('UPDATE active SET scan_id=NULL')
     def configure_source(self, name, value):
@@ -230,6 +251,7 @@ class Index:
         with self.db() as db:
             db.execute('DELETE FROM search')
             db.execute('DELETE FROM chunks')
+            db.execute('DELETE FROM vectors')
             for c in chunks:
                 cur = db.execute('INSERT INTO chunks(scan_id,path,start,end,text,symbols,split) VALUES(?,?,?,?,?,?,?)',
                     (scan_id,c['path'],c['start'],c['end'],c['text'],c['symbols'],int(c['split'])))
@@ -241,7 +263,7 @@ class Index:
             db.execute('DELETE FROM overviews WHERE commit_sha<>?',(detail.get('commit',''),))
     def replace_source(self, scan_id, prefix, blocks):
         """Swap in this scan's Slack content, leaving the code snapshot alone.
-
+    
         Reading again replaces what was read before rather than adding to it, so a message that
         was deleted or a channel that was removed from the list cannot linger in answers.
         """
@@ -250,6 +272,8 @@ class Index:
                 'SELECT id FROM chunks WHERE scan_id=? AND path LIKE ?',(scan_id,prefix+'%')).fetchall()]
             for chunk_id in stale:
                 db.execute('DELETE FROM search WHERE rowid=?',(chunk_id,))
+            for chunk_id in stale:
+                db.execute('DELETE FROM vectors WHERE chunk_id=?',(chunk_id,))
             db.execute('DELETE FROM chunks WHERE scan_id=? AND path LIKE ?',(scan_id,prefix+'%'))
             for block in blocks:
                 cur = db.execute(
@@ -270,7 +294,7 @@ class Index:
     def invalidate(self):
         with self.db() as db:
             db.execute('UPDATE active SET scan_id=NULL')
-            for table in ('chunks','search','answers','overviews'):
+            for table in ('chunks','search','answers','overviews','vectors'):
                 db.execute('DELETE FROM '+table)
     def recover(self):
         with self.db() as db:
@@ -343,37 +367,121 @@ class Index:
                 unknown.append(t)
         return list(dict.fromkeys(used)), unknown, corrections
 
-    def search(self, question: str, scan: dict, info: dict | None = None) -> list[dict]:
+    def _terms(self, question: str, scan: dict, info: dict | None = None):
+        """Turn what was typed into the words this snapshot actually contains."""
         asked = list(dict.fromkeys(t for t in words(question) if t not in STOP))[:16]
         # resolve already folds in aliases and spelling, so tokens are the final search terms
         tokens, unknown, corrections = self.resolve(asked, self.vocabulary(scan['id']))
-        expanded = tokens
         if info is not None:
-            info.update(asked=asked, terms=tokens, unknown=unknown, corrections=corrections)
-        if not expanded:
+            info.setdefault('asked', []).extend(x for x in asked if x not in info['asked'])
+            info.setdefault('terms', []).extend(x for x in tokens if x not in info['terms'])
+            info.setdefault('unknown', []).extend(x for x in unknown if x not in info['unknown'])
+            info.setdefault('corrections', {}).update(corrections)
+        return tokens
+
+    def _ranked(self, db, tokens: list[str], scan: dict) -> list[dict]:
+        """One query's candidate chunks, best first, before anything is widened or capped."""
+        if not tokens:
             return []
-        expression = ' OR '.join('"'+t+'"' for t in expanded)
-        with self.db() as db:
-            rows = db.execute('''SELECT c.*, bm25(search,5,4,1) AS rank FROM search
-                JOIN chunks c ON c.id=search.rowid WHERE search MATCH ? AND c.scan_id=?
-                ORDER BY rank LIMIT 60''',(expression,scan['id'])).fetchall()
-            # Ranking is sharper on small pieces, but reading needs more than the piece that
-            # matched, so every candidate file's chunks are kept to grow the excerpt from.
-            paths = sorted({r['path'] for r in rows})
-            neighbours = {}
-            if paths:
-                placeholders = ','.join('?' * len(paths))
-                for n in db.execute('SELECT path,start,end,text FROM chunks WHERE scan_id=? '
-                                    'AND path IN (' + placeholders + ') ORDER BY path,start',
-                                    (scan['id'], *paths)).fetchall():
-                    neighbours.setdefault(n['path'], []).append(n)
+        expression = ' OR '.join('"'+t+'"' for t in tokens)
+        rows = db.execute('''SELECT c.*, bm25(search,5,4,1) AS rank FROM search
+            JOIN chunks c ON c.id=search.rowid WHERE search MATCH ? AND c.scan_id=?
+            ORDER BY rank LIMIT 60''',(expression,scan['id'])).fetchall()
         # BM25 divides by document length, so a long chunk that repeats a word can outrank a file
         # whose folder is named after it. Someone asking about bug investigation wants
         # bug_investigation/, so reward a path that carries the words that were asked for.
-        wanted = set(expanded)
-        rows = sorted(rows, key=lambda r: r['rank'] - PATH_MATCH_BONUS * len(wanted & set(words(r['path']))))
+        wanted = set(tokens)
+        return sorted(rows, key=lambda r: r['rank'] - PATH_MATCH_BONUS * len(wanted & set(words(r['path']))))
+
+    def unembedded(self, scan_id: int) -> list[dict]:
+        """Chunks in this scan that have no vector yet, so a scan can be embedded in batches."""
+        with self.db() as db:
+            return [dict(r) for r in db.execute(
+                'SELECT c.id, c.path, c.text FROM chunks c '
+                'LEFT JOIN vectors v ON v.chunk_id=c.id '
+                'WHERE c.scan_id=? AND v.chunk_id IS NULL ORDER BY c.id LIMIT ?',
+                (scan_id, embed.MAX_CHUNKS)).fetchall()]
+
+    def save_vectors(self, scan_id: int, pairs: list[tuple[int, object]]) -> int:
+        with self.db() as db:
+            for chunk_id, vector in pairs:
+                db.execute('INSERT OR REPLACE INTO vectors VALUES(?,?,?)',
+                           (chunk_id, scan_id, embed.pack(vector)))
+            return len(pairs)
+
+    def embedded(self, scan_id: int) -> int:
+        with self.db() as db:
+            return db.execute('SELECT COUNT(*) FROM vectors WHERE scan_id=?',(scan_id,)).fetchone()[0]
+
+    def _nearest(self, db, vector, scan: dict, limit: int = 60) -> list[dict]:
+        """The chunks closest in meaning to this vector, as one more ranking to fuse.
+
+        Every vector is compared in Python rather than in SQL. A scan is a few hundred to a few
+        thousand chunks of a few hundred floats, which is milliseconds, and an index built for
+        vector search would be a dependency and a file format to maintain for no gain at this
+        size. If a scan ever gets big enough for this to show, the honest fix is a real vector
+        index behind this same method, not a cleverer loop.
+        """
+        rows = db.execute('SELECT c.*, v.vector FROM vectors v JOIN chunks c ON c.id=v.chunk_id '
+                          'WHERE v.scan_id=?',(scan['id'],)).fetchall()
+        if not rows:
+            return []
+        scored = []
+        for row in rows:
+            scored.append((embed.similarity(vector, embed.unpack(row['vector'])), row))
+        scored.sort(key=lambda x: -x[0])
+        best = scored[0][0]
+        if best < SEMANTIC_FLOOR:
+            # Nothing in the snapshot is about this. Returning the least unrelated chunk would
+            # be worse than returning none, because it would look like an answer.
+            return []
+        cut = max(SEMANTIC_FLOOR, best * SEMANTIC_MARGIN)
+        return [dict(row, rank=-score) for score, row in scored[:limit] if score >= cut]
+
+    def nearest(self, scan: dict, vector) -> list[dict]:
+        """The chunks nearest this vector in meaning, with nothing lexical mixed in.
+
+        Separate from search_many so the semantic half can be inspected and measured on its
+        own, which is what the plan's comparison between word matching and embeddings needs.
+        """
+        with self.db() as db:
+            return self._nearest(db, vector, scan)
+
+    def _fuse(self, rankings: list[list[dict]]) -> list[dict]:
+        """Combine several rankings into one by reciprocal rank fusion.
+
+        A topic such as "how it is set up" is not one search. Asking separately about installing,
+        about running and about environment variables, then merging by position rather than by
+        score, pulls in the file that only the third query knew about. Positions are comparable
+        across queries in a way BM25 scores are not, which is the whole reason for doing it this
+        way: a chunk ranked third twice beats one ranked first once and nowhere else.
+        """
+        if len(rankings) == 1:
+            return rankings[0]
+        scored, best = {}, {}
+        for ranking in rankings:
+            for position, row in enumerate(ranking):
+                key = (row['path'], row['start'], row['end'])
+                scored[key] = scored.get(key, 0.0) + 1.0 / (RRF_K + position + 1)
+                best.setdefault(key, row)
+        return [best[k] for k in sorted(scored, key=lambda k: -scored[k])]
+
+    def _assemble(self, db, rows: list[dict], scan: dict, max_sources: int,
+                  context_chars: int, test_cap: int, vendor_cap: int) -> list[dict]:
+        """Widen, diversify and budget the candidates into the excerpts that get read."""
+        # Ranking is sharper on small pieces, but reading needs more than the piece that
+        # matched, so every candidate file's chunks are kept to grow the excerpt from.
+        paths = sorted({r['path'] for r in rows})
+        neighbours = {}
+        if paths:
+            placeholders = ','.join('?' * len(paths))
+            for n in db.execute('SELECT path,start,end,text FROM chunks WHERE scan_id=? '
+                                'AND path IN (' + placeholders + ') ORDER BY path,start',
+                                (scan['id'], *paths)).fetchall():
+                neighbours.setdefault(n['path'], []).append(n)
+
         # Keep multiple relevant files and a bounded prompt. No model-selected tools.
-        def choose(min_chars: int, test_cap: int, vendor_cap: int) -> list[dict]:
+        def choose(min_chars: int, test_cap: int, vendor_cap: int, per_file: int) -> list[dict]:
             selected, counts, budget, tests, vendored = [], {}, 0, 0, 0
             for row in rows:
                 d = dict(row)
@@ -387,30 +495,90 @@ class Index:
                 is_vendor = bool(VENDOR_PATH.search(d['path']))
                 if is_vendor and vendored >= vendor_cap:
                     continue
-                if counts.get(d['path'],0) >= 2:
+                if counts.get(d['path'],0) >= per_file:
                     continue
                 d['text'], d['start'], d['end'] = widen(d, neighbours.get(d['path'], ()))
                 # Checked after widening, because a short chunk that grew is now worth reading
                 # and the budget has to account for what is actually sent.
                 if len(d['text'].strip()) < min_chars:
                     continue
-                if budget+len(d['text']) > LIMITS.context_chars:
+                if budget+len(d['text']) > context_chars:
                     continue
                 counts[d['path']] = counts.get(d['path'],0)+1
                 budget += len(d['text'])
                 tests += is_test
                 vendored += is_vendor
                 d['source_id'] = 'S'+str(len(selected)+1)
-                d['url'] = d.get('url') or (None if scan.get('demo') else (
-                    'https://github.com/'+scan['repo']+'/blob/'+scan['commit']+'/'+quote(d['path'],safe='/')+
-                    f"#L{d['start']}-L{d['end']}"))
+                d['url'] = d.get('url') or (None if scan.get('demo') else source_url(
+                    scan['repo'], scan['commit'], d['path'], d['start'], d['end']))
                 selected.append(d)
-                if len(selected) >= LIMITS.max_sources:
+                if len(selected) >= max_sources:
                     break
             return selected
+        # One excerpt per file first, so a reader is shown several files rather than one file
+        # twice. Only if that leaves room unused does a second excerpt from a file come back.
+        spread = choose(MIN_CHUNK_CHARS, test_cap, vendor_cap, 1)
+        if len(spread) >= max_sources:
+            return spread
         # Prefer substantial, non-test evidence; fall back rather than return nothing at all.
-        return (choose(MIN_CHUNK_CHARS, MAX_TEST_SOURCES, MAX_VENDOR_SOURCES)
-                or choose(0, LIMITS.max_sources, LIMITS.max_sources))
+        return (choose(MIN_CHUNK_CHARS, test_cap, vendor_cap, 2) or spread
+                or choose(0, max_sources, max_sources, 2))
+
+    def search(self, question: str, scan: dict, info: dict | None = None,
+               max_sources: int | None = None, context_chars: int | None = None,
+               test_cap: int | None = None, vendor_cap: int | None = None,
+               query_vectors: list | None = None) -> list[dict]:
+        return self.search_many([question], scan, info, max_sources, context_chars,
+                                test_cap, vendor_cap, query_vectors)
+
+    def search_many(self, questions: list[str], scan: dict, info: dict | None = None,
+                    max_sources: int | None = None, context_chars: int | None = None,
+                    test_cap: int | None = None, vendor_cap: int | None = None,
+                    query_vectors: list | None = None) -> list[dict]:
+        """Retrieve for several phrasings of the same need and fuse them into one set.
+
+        One question is the ordinary case and behaves exactly as a single search did. An
+        overview topic passes several, because "what it is built with" is asked differently by
+        a requirements file, an import line and a readme.
+        """
+        max_sources = max_sources or LIMITS.max_sources
+        context_chars = context_chars or LIMITS.context_chars
+        # A topic about how the project is set up is badly served by two test files; a topic
+        # about how it is tested is served by nothing else. The caller knows which it is.
+        test_cap = MAX_TEST_SOURCES if test_cap is None else test_cap
+        # Copied-in component libraries describe themselves well and answer nothing about this
+        # project, so a topic explaining how this project is built asks for none of them.
+        vendor_cap = MAX_VENDOR_SOURCES if vendor_cap is None else vendor_cap
+        if info is not None:
+            info.setdefault('asked', [])
+            info.setdefault('terms', [])
+            info.setdefault('unknown', [])
+            info.setdefault('corrections', {})
+        with self.db() as db:
+            rankings = []
+            for question in questions:
+                tokens = self._terms(question, scan, info)
+                ranked = self._ranked(db, tokens, scan)
+                if ranked:
+                    rankings.append(ranked)
+            # Semantic candidates are one more ranking, not a replacement. A question whose
+            # words are all in the project still gets its exact matches; a question phrased in
+            # words the project never uses now has something to find.
+            for vector in (query_vectors or []):
+                nearest = self._nearest(db, vector, scan)
+                if nearest:
+                    rankings.append(nearest)
+                    if info is not None:
+                        info['semantic'] = info.get('semantic', 0) + 1
+            if not rankings:
+                return []
+            rows = self._fuse(rankings)
+            found = self._assemble(db, rows, scan, max_sources, context_chars,
+                                   test_cap, vendor_cap)
+        if info is not None:
+            info['candidates'] = len(rows)
+            info['queries'] = len(questions)
+        return found
     def record_answer(self, scan_id, question, response, elapsed):
         with self.db() as db:
             return db.execute('INSERT INTO answers(scan_id,question,response,elapsed,created) VALUES(?,?,?,?,?)',
@@ -428,9 +596,36 @@ class Index:
                 return None
             return {**json.loads(row['payload']), 'built_at':row['created']}
     def indexed_paths(self, scan_id):
+        """Every path in this scan, repository files and other sources together.
+
+        Slack messages and Jira issues live in the same table under their own prefix, so what
+        comes back is not all files. Use `code_paths` unless both are genuinely wanted: the
+        suggested reading order asked this one, and offered `jira/SCRUM-17` as a file to read
+        with a link to that path inside the repository, where it has never existed.
+        """
         with self.db() as db:
             return [r[0] for r in db.execute(
                 'SELECT DISTINCT path FROM chunks WHERE scan_id=? ORDER BY path',(scan_id,)).fetchall()]
+
+    def code_paths(self, scan_id):
+        """Only the repository files, which is what nearly every caller means."""
+        return [p for p in self.indexed_paths(scan_id) if not is_source_path(p)]
+    def file_lines(self, scan_id, path) -> list[tuple[int, str]]:
+        """Rebuild one file as numbered lines from the chunks that were stored for it.
+
+        The deterministic facts need to say which line a dependency or a route is declared on,
+        and a chunk already records the line its text begins at. Blank lines are never stored,
+        so they are simply absent here rather than renumbering everything after them, which is
+        what would break a citation.
+        """
+        with self.db() as db:
+            rows = db.execute('SELECT start,text FROM chunks WHERE scan_id=? AND path=? ORDER BY start',
+                              (scan_id,path)).fetchall()
+        numbered = {}
+        for r in rows:
+            for offset,line in enumerate(r['text'].splitlines()):
+                numbered.setdefault(r['start']+offset, line)
+        return [(n,numbered[n]) for n in sorted(numbered)]
     def feedback(self, answer_id, rating, sufficiency):
         with self.db() as db:
             cur = db.execute('UPDATE answers SET rating=?,sufficiency=? WHERE id=?',(rating,sufficiency,answer_id))
