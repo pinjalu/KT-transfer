@@ -14,6 +14,9 @@ export type Scan = {
   total: number
   processed: number
   phase: string
+  /** Set only while the text is being turned into vectors, so a long wait can show progress. */
+  embed_done?: number
+  embed_total?: number
   started: string | null
   finished: string | null
   error: string | null
@@ -39,6 +42,11 @@ export type Status = {
   overview_building: boolean
   overview_progress: Progress | null
   limits: Record<string, number>
+  /** True until a project is chosen in this run. Nothing on disk has been lost. */
+  awaiting_project?: boolean
+  /** The project the last run used, offered on Connections as a shortcut rather than
+   *  adopted silently. Null when nothing has ever been saved. */
+  stored_project?: { repo: string; branch: string } | null
 }
 
 export type Progress = { phase?: string; read?: number; total?: number; done?: number } | null

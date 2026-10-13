@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, Chip, Empty, Failed, Loading, Missing, PageHead, Segmented } from '../components/ui'
+import { Button, Card, Chip, Empty, Failed, Loading, Missing, NoProject, PageHead, Segmented } from '../components/ui'
 import { Statements } from '../components/Statements'
 import { Icon } from '../components/Icon'
 import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
 import type { FactGroup, Overview as Body, OverviewReply, Section } from '../lib/overview'
+import type { Status } from '../lib/types'
 import { factsOf, sectionOf } from '../lib/overview'
 import './overview.css'
 
@@ -67,21 +68,51 @@ function Facts({ group }: { group: FactGroup }) {
 
 export function Overview() {
   const [mode, setMode] = useState<Mode>('Beginner')
+  const status = useApi<Status>('/api/status', 5000)
   const reply = useApi<OverviewReply>('/api/overview', 4000)
   const features = useApi<FeatureReply>('/api/features')
   const [note, setNote] = useState('')
+  const [blocked, setBlocked] = useState(false)
+  const busy = status.data?.busy ?? false
+
+  // What the application is actually doing, in its own words. "Reading the files" was printed
+  // for the whole of a scan, including the minutes after every file had been read while the
+  // text was being turned into vectors, which on a machine with no GPU is most of the wait.
+  const scan = status.data?.scan ?? null
+  const phase = scan?.phase && scan.status === 'running' ? scan.phase : ''
+  const embedded = scan?.embed_total
+    ? ` ${scan.embed_done ?? 0} of ${scan.embed_total}`
+    : ''
+  const doing = phase ? phase + embedded + '…' : 'Reading…'
+
+  // A refusal because something else was running described the moment it was clicked, not a
+  // state of the project, and it stayed on screen long after the scan it referred to had
+  // finished. Reading "another scan or answer is in progress" above an empty overview, with
+  // nothing in fact running, says the screen is broken when one more click would have worked.
+  useEffect(() => {
+    if (blocked && !busy) {
+      setNote('')
+      setBlocked(false)
+    }
+  }, [blocked, busy])
 
   const build = async () => {
     setNote('')
+    setBlocked(false)
     try {
       await post('/api/overview')
       setNote('Building. Sections appear as each one finishes.')
       reply.reload()
     } catch (exc) {
-      setNote(exc instanceof ApiError ? exc.message : 'Could not start the build.')
+      const why = exc instanceof ApiError ? exc.message : 'Could not start the build.'
+      setNote(why)
+      setBlocked(exc instanceof ApiError && exc.status === 409)
     }
   }
 
+  if (status.data?.awaiting_project) {
+    return <><PageHead title="Project overview" /><NoProject what="the overview" /></>
+  }
   if (reply.loading) return <Loading what="the overview" />
   if (reply.error) return <Failed message={reply.error} onRetry={reply.reload} />
 
@@ -107,14 +138,33 @@ export function Overview() {
         lead={body ? `Everything below was read from ${body.repo} at commit ${body.commit?.slice(0, 7)}.` : undefined}
         actions={
           <>
-            <Button icon="refresh" onClick={build} disabled={building}>
-              {building ? 'Building…' : body ? 'Refresh overview' : 'Build overview'}
+            {/* Disabled while anything else is reading, because the request would be
+                refused anyway and a refusal is a worse answer than a button that waits. */}
+            <Button icon="refresh" onClick={build} disabled={building || busy}>
+              {building ? 'Building…' : busy ? doing : body ? 'Refresh overview' : 'Build overview'}
             </Button>
             <Segmented items={[...MODES]} active={mode} onPick={(m) => setMode(m as Mode)} />
           </>
         } />
 
       {note && <p className="ov-note">{note}</p>}
+
+      {/* A scan running elsewhere is why every button here is disabled, so this screen says
+          so rather than leaving a reader to guess at an inert page. */}
+      {busy && !building && (
+        <Card>
+          <div className="loading">
+            <span className="spinner" aria-hidden="true" />
+            {phase || 'Reading'}
+            {scan?.embed_total
+              ? `. ${scan.embed_done ?? 0} of ${scan.embed_total} pieces of text done.`
+              : scan?.total
+              ? `. ${scan.processed ?? 0} of ${scan.total} files done.`
+              : '.'}
+            {' '}The overview is built from this, so it can start once this finishes.
+          </div>
+        </Card>
+      )}
 
       {building && (
         <Card>
@@ -129,9 +179,15 @@ export function Overview() {
 
       {!body && !building && (
         <Card>
+          {/* The backend's reason for having no overview is the same sentence as the title,
+              so printing both said it twice. Only a reason that adds something is shown. */}
           <Empty title="No overview has been built for this commit yet."
-                 detail={reply.data?.reason || 'Build one to read a handover of the project.'}
-                 action={<Button kind="primary" icon="refresh" onClick={build}>Build overview</Button>} />
+                 detail={reply.data?.reason && !reply.data.reason.startsWith('No overview has been built')
+                   ? reply.data.reason
+                   : 'Build one to read a handover of this project, in the order it is worth reading.'}
+                 action={<Button kind="primary" icon="refresh" onClick={build} disabled={busy}>
+                           {busy ? doing : 'Build overview'}
+                         </Button>} />
         </Card>
       )}
 

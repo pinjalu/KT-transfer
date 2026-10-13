@@ -25,12 +25,18 @@ export function Connections() {
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
 
-  // Seed the fields from what is stored, once, so typing is not overwritten by the poll.
+  // Seed the fields from the selection confirmed in this run, once, so typing is not
+  // overwritten by the poll. Before a project is picked `settings` is null and the fields stay
+  // empty: the project from a previous run is offered just below, as something to click rather
+  // than something already filled in.
   useEffect(() => {
     if (!settings) return
     setRepo((v) => v || settings.repo)
     setBranch((v) => v || settings.branch)
   }, [settings])
+
+  const stored = status.data?.stored_project ?? null
+  const awaiting = status.data?.awaiting_project ?? false
 
   const scan = status.data?.scan ?? null
   const busy = status.data?.busy ?? false
@@ -59,9 +65,17 @@ export function Connections() {
     setSaving(true)
     setNote('')
     try {
-      await post('/api/config', { repo, branch, platforms: settings?.platforms ?? ['github'] })
-      await post('/api/scan')
-      setNote('Repository saved. Reading the files now.')
+      const saved = (await post('/api/config',
+        { repo, branch, platforms: settings?.platforms ?? ['github'] })) as { reconnected?: boolean }
+      // Reading again is the point when the repository is new, and pure waste when it is the
+      // one already stored: the snapshot survived the restart, so reconnecting to it costs
+      // nothing and re-reading it would cost minutes before a single question could be asked.
+      if (saved.reconnected) {
+        setNote('Reconnected to what was already read for this repository. Nothing was read again.')
+      } else {
+        await post('/api/scan')
+        setNote('Repository saved. Reading the files now.')
+      }
     } catch (exc) {
       setNote(exc instanceof ApiError ? exc.message : 'Something went wrong.')
     } finally {
@@ -122,6 +136,21 @@ export function Connections() {
                   <p className="conn-plain">Source code repository.</p>
                 </div>
               </div>
+
+              {/* The previous run's project, offered rather than assumed. Everything read for
+                  it is still stored, so this fills the fields and nothing is read again. */}
+              {awaiting && stored && (
+                <div className="conn-resume">
+                  <span className="conn-resume-text">
+                    Last time this read <span className="mono">{stored.repo}</span> on{' '}
+                    <span className="mono">{stored.branch}</span>. What it read is still stored.
+                  </span>
+                  <Button kind="secondary"
+                          onClick={() => { setRepo(stored.repo); setBranch(stored.branch) }}>
+                    Use it again
+                  </Button>
+                </div>
+              )}
 
               <div className="conn-fields">
                 <label className="field">

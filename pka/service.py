@@ -7,7 +7,7 @@ import httpx
 from pka import applog
 from pka.config import KEEP_LOGS, LIMITS, log_dir, now
 from pka.connectors.base import SourceError
-from pka.index import chunk_file
+from pka.index import chunk_file, small_talk
 from pka.connectors.slack import transcript
 from pka import embed
 from pka.facts import derive as derive_facts
@@ -16,6 +16,15 @@ from pka.roles import describe as describe_roles
 from pka.overview import (TOPICS, reading_order, section_from, tidy, topics_for,
                           walkthrough)
 from pka.mcp_client import connect
+
+GREETING = (
+    'Hello. I answer questions about the project that has been scanned, using the files, '
+    'Jira issues and Slack messages that were read, and I show the excerpt behind every '
+    'claim. Ask me what a file is for, how a request travels through the code, what a table '
+    'stores, why a ticket was raised, or where something is configured. Name a file, a '
+    'function or a feature and I have something to work from.'
+)
+
 
 def write_scan_log(scan_id: int, d: dict) -> str:
     """Save one plain-text report per scan. Paths, states and counts only; never source text."""
@@ -334,6 +343,12 @@ class Service:
         for position in range(0, len(pending), embed.BATCH):
             if self.cancel.is_set():
                 break
+            # Said out loud, batch by batch. A thousand chunks is minutes of work on a machine
+            # with no GPU, and a page that only says "reading" for five minutes while every
+            # button is disabled is indistinguishable from one that has hung.
+            if self.progress is not None:
+                self.progress = {**self.progress, 'phase': 'Reading the text for meaning',
+                                 'embed_done': stored, 'embed_total': len(pending)}
             batch = pending[position:position + embed.BATCH]
             # The path goes in with the text: a chunk from connectors/github.py means
             # something different from the same lines sitting in a test file.
@@ -346,7 +361,27 @@ class Service:
                 scan_id, [(b['id'], v) for b, v in zip(batch, found)])
         applog.event('embed.snapshot', scan_id=scan_id, model=embed.model(),
                      stored=stored, chunks=len(pending))
+        if stored:
+            await self.calibrate(scan_id)
         return stored
+
+    async def calibrate(self, scan_id: int) -> float:
+        """Find where irrelevance tops out in this snapshot and set the cut-off above it.
+
+        Run once per snapshot per embedding model, straight after the vectors are stored. It
+        is what makes a cut-off derived on one repository safe to ship: the number is not
+        carried over, it is measured again against whatever was actually scanned.
+        """
+        probes = await embed.vectors(list(embed.PROBES))
+        if not probes:
+            applog.warn('embed.calibration_skipped', scan_id=scan_id, model=embed.model(),
+                        reason='the embedding model did not answer')
+            return self.index.floor_for(scan_id)
+        ceiling = self.index.semantic_ceiling(scan_id, probes)
+        floor = self.index.save_calibration(scan_id, embed.model(), ceiling, len(probes))
+        applog.event('embed.calibrated', scan_id=scan_id, model=embed.model(),
+                     probes=len(probes), ceiling=round(ceiling, 4), floor=floor)
+        return floor
 
     async def build_overview(self):
         """Stage 2. Retrieve and explain each topic separately, then cache against the commit.
@@ -558,6 +593,17 @@ class Service:
 
     async def ask(self, question):
         started = time.perf_counter()
+        # Answered before the scan check and before the lock, because a greeting needs neither
+        # and waiting on a running scan to say hello back helps nobody.
+        if small_talk(question):
+            applog.event('ask.small_talk', **applog.question_fields(question))
+            return {'answer_id': 0, 'statements': [], 'sources': [],
+                    'missing_information': GREETING, 'error': None, 'warning': '',
+                    'search': {'asked': [], 'terms': [], 'unknown': [], 'corrections': {}},
+                    'commit': '', 'repo': '', 'scanned_at': None, 'access_checked_at': now(),
+                    'elapsed_seconds': round(time.perf_counter() - started, 2),
+                    'citation_check': 'No sources were read, so nothing needed checking.',
+                    'rating': 'not assessed', 'sufficiency': 'not assessed'}
         async with self.lock:
             scan = self.index.active_scan()
             if not scan:

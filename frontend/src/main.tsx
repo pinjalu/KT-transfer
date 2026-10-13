@@ -7,6 +7,7 @@ import { Home } from './pages/Home'
 import { Connections } from './pages/Connections'
 import { Ask } from './pages/Ask'
 import { Overview } from './pages/Overview'
+import { Architecture } from './pages/Architecture'
 import './tokens.css'
 import './shell.css'
 
@@ -43,14 +44,7 @@ createRoot(document.getElementById('root')!).render(
                 'Agreed, Proposed and Historical as derived status, not model opinion',
                 'Conflicting points surfaced rather than resolved',
               ]} />} />
-          <Route path="architecture" element={
-            <Pending step="Step 4" title="Architecture"
-              lead="Three derived diagrams already exist in pka/diagram.py."
-              items={[
-                'System map with confirmed links solid and possible links dashed',
-                'Tabs for APIs, Database, External services and Deployment',
-                'A detail panel per node: purpose, called by, uses, related files, evidence',
-              ]} />} />
+          <Route path="architecture" element={<Architecture />} />
           <Route path="troubleshooting" element={
             <Pending step="Step 10" title="Troubleshooting"
               lead="Not started anywhere in the codebase. Phase 08 is the thinnest phase in the plan."

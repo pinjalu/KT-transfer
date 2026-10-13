@@ -110,6 +110,23 @@ export function Empty({ title, detail, action }:
   )
 }
 
+/**
+ * Shown on every screen that needs a project while none has been chosen in this run.
+ *
+ * It says what the screen would hold rather than only that it is unavailable, and it is
+ * explicit that nothing was deleted, because an empty application where a scanned project
+ * used to be otherwise reads as lost work.
+ */
+export function NoProject({ what }: { what: string }) {
+  return (
+    <Card>
+      <Empty title="No project is selected."
+             detail={`Choose a project on Connections and ${what} appears here. Anything read in an earlier run is still stored: entering the same repository again picks it straight back up without reading it a second time.`}
+             action={<a className="btn btn-primary" href="/connections">Go to Connections</a>} />
+    </Card>
+  )
+}
+
 export function Loading({ what }: { what: string }) {
   return <div className="loading"><span className="spinner" aria-hidden="true" />Reading {what}…</div>
 }

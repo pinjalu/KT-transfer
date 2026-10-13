@@ -12,7 +12,7 @@ from pka.config import LIMITS, now, normalise_repo, validate_selection
 from pka.connectors.base import SourceError
 from pka.connectors.fixture import FixtureSource, COMMIT, FILES
 from pka.connectors.github import GitHubSource, exclusion
-from pka.index import Index, chunk_file, words
+from pka.index import Index, chunk_file, small_talk, words
 from pka.mcp_client import connect, TOOL_NAMES
 from pka.service import Service, ollama_answer
 from pka.web import create_app
@@ -447,6 +447,36 @@ def test_question_understanding_corrects_typos_and_reports_unknown_words(index):
     assert unknown==['kubernetes'] and not used, 'a word the project never uses is reported'
     assert index.resolve(['rom'],vocab)[1]==['rom'], 'short words are never guessed at'
     assert index.resolve(['winner'],vocab)[1]==['winner'], 'the first letter must match to correct'
+
+def test_a_thank_you_is_not_stemmed_onto_a_word_the_code_happens_to_contain(index):
+    """The reported bug: "thanks" stemmed to "than", which sat in a comment, so a thank-you
+    was answered with three unrelated files. A four-character stem is one character too few."""
+    scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
+    index.activate(1,chunk_file('auth.py','# rather than storing it, authenticate_user hashes the password\ndef authenticate_user(password):\n    return check_password(password)'),scan)
+    vocab = index.vocabulary(1)
+    assert 'than' in vocab, 'the word that caused the bug must be present for this to prove anything'
+    assert index.resolve(['thanks'],vocab)[1]==['thanks'], 'a thank-you must not become a search for "than"'
+    assert 'authenticate' in index.resolve(['authenticaate'],vocab)[0], 'a real typo must still correct'
+
+def test_a_greeting_is_answered_without_retrieving_or_calling_the_model(index):
+    """A greeting leaves no searchable word behind, so nothing is read and nothing is generated.
+
+    Before this, "hello" matched whichever file contained the word and the model was asked to
+    explain it, which took ninety seconds and described an unrelated chat module.
+    """
+    for greeting in ('hello','hi there','thanks','hey','thank you','good morning','who are you'):
+        assert small_talk(greeting), f'{greeting!r} must be recognised as small talk'
+    for real in ('what does chat_bridge.py do','how does the database work','explain the login flow'):
+        assert not small_talk(real), f'{real!r} is a real question and must be searched'
+
+    def explode(*a,**k):
+        raise AssertionError('the model must never be called for a greeting')
+    svc = Service(index, True, connector_factory=fixture_connector, generator=explode)
+    answer = run(svc.ask('hello'))
+    assert answer['answer_id']==0, 'a greeting is not recorded, so there is nothing to rate'
+    assert answer['sources']==[] and answer['statements']==[], 'nothing was read and nothing was written'
+    assert answer['error'] is None and 'Ask me' in answer['missing_information']
+    assert answer['elapsed_seconds'] < 1, 'a greeting is answered without waiting on anything'
 
 def test_question_understanding_uses_project_vocabulary_for_aliases(index):
     """The user says login, the project says authenticate; the alias must be tried first."""
@@ -2918,3 +2948,197 @@ def test_no_regex_in_this_project_carries_a_control_character(index):
         body = module.read_text(encoding='utf-8')
         for bad in ('\x07','\x08','\x0b','\x0c','\x1b'):
             assert bad not in body, f'{module.name} contains {bad!r}'
+
+def test_log_reader_filters_and_groups_one_question(tmp_path, monkeypatch):
+    """The log reader is the debugging tool, so it has to pick the right lines out of noise."""
+    from pka import logs
+    monkeypatch.setenv('PKA_LOG_DIR', str(tmp_path))
+    target = tmp_path / 'pka.log'
+    target.write_text(
+        '2026-10-12 10:00:00,100 INFO  app.start          port=8000\n'
+        '2026-10-12 10:01:00,100 INFO  ask.begin          scan_id=1 chars=5\n'
+        '2026-10-12 10:01:00,200 INFO  ask.terms          asked=hello used=hello\n'
+        '2026-10-12 10:01:02,300 INFO  ask.end            answer_id=7 secs=2.2\n'
+        '2026-10-12 10:02:00,100 ERROR ollama.unreachable url=127.0.0.1:11434\n'
+        '2026-10-12 10:03:00,100 INFO  ask.begin          scan_id=1 chars=30\n'
+        '2026-10-12 10:03:04,100 INFO  ask.end            answer_id=8 secs=4.0\n', encoding='utf-8')
+
+    lines = logs.read(target)
+    assert [x['event'] for x in (logs.parse(l) for l in lines)][:2] == ['app.start','ask.begin']
+    assert logs.parse('  File "x.py", line 3') is None, 'a traceback line is not an event'
+
+    kept = [l for l in lines if logs.keep(l, 'ask', '', False)]
+    assert len(kept) == 5 and all('ask.' in l for l in kept), 'the event filter matches a prefix'
+    assert [l for l in lines if logs.keep(l, '', '', True)] == [lines[4]], 'errors only means errors only'
+    assert len([l for l in lines if logs.keep(l, '', 'HELLO', False)]) == 1, 'grep ignores case'
+
+    trace = logs.last_ask(lines)
+    assert len(trace) == 2 and 'answer_id=8' in trace[-1], 'the most recent question, not the first'
+
+def test_fusion_weights_let_one_ranking_count_for_more_than_another(index):
+    """Rankings are not equally trustworthy, so reciprocal rank fusion must be weightable.
+
+    Unweighted, a chunk ranked first by one ranking ties a chunk ranked first by the other and
+    the order is arbitrary. The weight is what breaks that on purpose, and the weight itself is
+    chosen by python -m pka.evaluate --sweep rather than by taste.
+    """
+    a = [{'path':'a.py','start':1,'end':9},{'path':'shared.py','start':1,'end':9}]
+    b = [{'path':'b.py','start':1,'end':9},{'path':'shared.py','start':1,'end':9}]
+    even = [r['path'] for r in index._fuse([a,b])]
+    assert even[0] == 'shared.py', 'a chunk both rankings name beats one only one names'
+    assert set(even) == {'a.py','b.py','shared.py'}, 'nothing is lost by fusing'
+
+    heavy_b = [r['path'] for r in index._fuse([a,b],[1.0,5.0])]
+    assert heavy_b.index('b.py') < heavy_b.index('a.py'), 'the heavier ranking wins its own pick'
+    heavy_a = [r['path'] for r in index._fuse([a,b],[5.0,1.0])]
+    assert heavy_a.index('a.py') < heavy_a.index('b.py'), 'and the reverse holds'
+    assert [r['path'] for r in index._fuse([a])] == ['a.py','shared.py'], 'one ranking is passed through'
+
+def test_retrieval_scoring_counts_a_hit_only_when_an_expected_file_comes_back():
+    """The evaluation harness decides whether a retrieval change helped, so its own scoring
+    has to be right before any number it prints means anything."""
+    from pka import evaluate
+    got = ['src/mcp_project/core/chat_bridge.py','src/mcp_project/core/database.py']
+    assert evaluate.hit_rank(['core/database.py'], got) == 2, 'suffix match, 1-based rank'
+    assert evaluate.hit_rank(['core/missing.py'], got) == 0, 'a miss is rank 0'
+    assert evaluate.hit_rank(['core/database.py','core/chat_bridge.py'], got) == 1, 'first match wins'
+    assert evaluate.hit_rank(['database.py'], []) == 0, 'nothing returned is a miss, not a crash'
+
+    rows = [{'band':'lexical','rank':1},{'band':'lexical','rank':0},{'band':'paraphrase','rank':4}]
+    t = evaluate.totals(rows)
+    assert t['overall']['hit@1'] == round(1/3,3) and t['overall']['hit@3'] == round(1/3,3)
+    assert t['overall']['hit@5'] == round(2/3,3), 'the rank 4 hit counts at 5 but not at 3'
+    assert t['overall']['mrr'] == round((1 + 0 + 0.25)/3,3), 'a miss contributes nothing to mrr'
+    assert t['bands']['lexical']['n'] == 2 and t['bands']['paraphrase']['mrr'] == 0.25
+
+def test_the_semantic_cut_off_is_measured_per_snapshot_and_per_model(index, monkeypatch):
+    """A similarity means nothing on its own, so the cut-off is derived from the snapshot.
+
+    This is what lets one set of retrieval settings be shipped and still be right on a
+    repository nobody has seen. The number is not carried over from the project it was first
+    measured on; each snapshot is asked where its own floor of irrelevance sits.
+    """
+    from pka import embed, index as index_module
+    monkeypatch.setenv('PKA_EMBED_MODEL', 'stub-embedder')
+    scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
+    index.activate(1,chunk_file('auth.py','def authenticate_user(password):\n    return check_password(password)'),scan)
+    index.save_vectors(1,[(c['id'],[1.0,0.0,0.0]) for c in index.unembedded(1)])
+
+    assert index.calibration(1,'stub-embedder') is None, 'nothing is assumed before measuring'
+    assert index.floor_for(1) == index_module.SEMANTIC_FLOOR, 'the fallback applies until then'
+
+    # A probe pointing half way between the stored vectors and nowhere near them.
+    ceiling = index.semantic_ceiling(1,[[0.6,0.8,0.0]])
+    assert 0.55 < ceiling < 0.65, f'the ceiling is the best any probe reached, got {ceiling}'
+    floor = index.save_calibration(1,'stub-embedder',ceiling,8)
+    assert floor == round(ceiling*embed.CALIBRATION_MARGIN,4), 'the floor sits above the ceiling'
+    assert index.floor_for(1) == floor, 'once measured, the measurement is what applies'
+
+    saved = index.calibration(1,'stub-embedder')
+    assert saved['probes'] == 8 and saved['model'] == 'stub-embedder'
+    monkeypatch.setenv('PKA_EMBED_MODEL','a-different-embedder')
+    assert index.floor_for(1) == index_module.SEMANTIC_FLOOR, \
+        'a different model must not inherit the previous one, the scale belongs to the model'
+
+def test_a_question_the_project_is_not_about_returns_nothing_rather_than_the_nearest_file(index, monkeypatch):
+    """Finding things is half of what this promises; correctly finding nothing is the other.
+
+    Measured on two labelled sets: refusing whenever meaning-based retrieval finds nothing
+    above the measured floor takes the reject score from 0.25 to 1.0 and does not move the
+    score on answerable questions at all, on either repository.
+    """
+    from pka import index as index_module
+    monkeypatch.setenv('PKA_EMBED_MODEL','stub-embedder')
+    monkeypatch.setattr(index_module,'OFF_TOPIC_UNKNOWN_RATIO',0.0)
+    scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
+    index.activate(1,chunk_file('auth.py','def authenticate_user(password):\n    return check_password(password)'),scan)
+    index.save_vectors(1,[(c['id'],[1.0,0.0,0.0]) for c in index.unembedded(1)])
+    index.save_calibration(1,'stub-embedder',0.9,8)
+
+    # A vector far from everything stored, which is what an off-topic question looks like.
+    info={}
+    assert index.search('authenticate',scan,info,query_vectors=[[0.0,1.0,0.0]]) == [], \
+        'the word is in the file, but nothing in the project is about this'
+    assert info.get('off_topic'), 'and the caller is told why, rather than just getting nothing'
+
+    # The same question with no vector supplied must behave exactly as it always did: without
+    # a second opinion there is nothing to overrule the word match with.
+    assert index.search('authenticate',scan,{}), 'lexical-only retrieval is left alone'
+
+def test_a_fresh_run_does_not_adopt_the_last_run_s_project(tmp_path):
+    """Restarting must not silently continue on a repository scanned days ago.
+
+    What was collected stays on disk. The difference is that no screen reports it until
+    somebody picks a project in this run, because an application that opens already knowing
+    about a project reads as knowing something about today when it does not.
+    """
+    db = tmp_path/'fresh.sqlite3'
+    head = {'x-pka-request':'1'}
+    index = Index(db)
+    index.configure({'repo':'acme/shop','branch':'main','platforms':['github']})
+    detail={'repo':'acme/shop','branch':'main','commit':COMMIT,'status':'complete',
+            'started':now(),'finished':now(),'read':1,'skipped':0,'failed':0,'files':[]}
+    scan_id=index.new_scan(detail)
+    index.activate(scan_id,chunk_file('auth.py','def authenticate_user():\n    return True'),
+                   {**detail,'id':scan_id})
+    assert index.active_scan(), 'the snapshot is on disk before the restart'
+
+    with TestClient(create_app(False, db), base_url='http://127.0.0.1:8000') as client:
+        body = client.get('/api/status', headers=head).json()
+        assert body['awaiting_project'] is True
+        assert body['settings'] is None and body['scan'] is None and body['ready'] is False,             'no screen is told about a project this run never chose'
+        assert body['stored_project'] == {'repo':'acme/shop','branch':'main'},             'but the page may offer the previous one as a shortcut'
+
+        # Nothing was deleted: choosing the same repository picks the snapshot straight back up.
+        saved = client.post('/api/config', json={'repo':'acme/shop','branch':'main'}, headers=head)
+        assert saved.status_code == 200 and saved.json()['reconnected'] is True,             'the stored snapshot is reused rather than read again'
+        after = client.get('/api/status', headers=head).json()
+        assert not after.get('awaiting_project') and after['ready'] is True
+        assert after['settings']['repo'] == 'acme/shop'
+
+def test_example_mode_still_opens_on_its_own_fixture(tmp_path):
+    """Example mode exists to be opened and looked at, so it is exempt from choosing."""
+    with TestClient(create_app(True, tmp_path/'demo.sqlite3'), base_url='http://127.0.0.1:8000') as client:
+        body = client.get('/api/status', headers={'x-pka-request':'1'}).json()
+        assert not body.get('awaiting_project'), 'nobody should have to type a fixture repository'
+        assert body['settings'] and body['settings']['repo']
+
+def test_a_two_letter_greeting_is_answered_not_rejected_as_malformed(tmp_path):
+    """"hi" and "hy" are greetings, and the field validator used to call them too short.
+
+    The reader never saw that reason. A field error from FastAPI carries a list of objects as
+    its detail, the browser printed it through String(), and what reached the screen was the
+    text "[object Object]". Two separate faults, and the greeting guard could not run at all
+    because the request was refused before reaching it.
+    """
+    head = {'x-pka-request':'1'}
+    db = tmp_path/'short.sqlite3'
+    index = Index(db)
+    index.configure({'repo':'acme/shop','branch':'main','platforms':['github']})
+    with TestClient(create_app(False, db), base_url='http://127.0.0.1:8000') as client:
+        client.post('/api/config', json={'repo':'acme/shop','branch':'main'}, headers=head)
+        for greeting in ('hi','hy','ok','ty','yo'):
+            r = client.post('/api/ask', json={'question':greeting}, headers=head)
+            assert r.status_code == 200, f'{greeting!r} must reach the greeting, not a validator'
+            body = r.json()
+            assert body['answer_id'] == 0 and body['sources'] == []
+            assert 'Ask me' in body['missing_information']
+
+        # An actually empty question is still refused, and with a sentence rather than a list.
+        blank = client.post('/api/ask', json={'question':'   '}, headers=head)
+        assert blank.status_code == 422
+        assert blank.json()['detail'] == 'Enter a question.', 'a string, so the browser can show it'
+
+def test_greeting_words_do_not_swallow_a_real_search_term():
+    """The stop list grew to catch "hy" and "thx". It must not have caught anything searchable.
+
+    "help" is the one that matters: a greeting word in some mouths and help.py in plenty of
+    projects, including one of the repositories measured in evals/. It stays searchable.
+    """
+    assert small_talk('hy') and small_talk('thx') and small_talk('ty') and small_talk('howdy')
+    for real in ('where is help.py', 'how does the help text work', 'ok but how does login work',
+                 'who calls game.py', 'explain storage'):
+        assert not small_talk(real), f'{real!r} is a question, not a greeting'
+    assert 'help' in words('where is help.py'), 'help survives tokenising'
+    from pka.index import STOP
+    assert 'help' not in STOP, 'help must stay searchable; projects really do have help.py'

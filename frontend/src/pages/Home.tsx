@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Card, Chip, Dot, Empty, Failed, Loading, PageHead } from '../components/ui'
+import { Card, Chip, Dot, Empty, Failed, Loading, NoProject, PageHead } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { useApi } from '../lib/useApi'
 import type { Platforms, Status } from '../lib/types'
@@ -26,6 +26,9 @@ export function Home() {
 
   if (status.loading) return <Loading what="the project" />
   if (status.error) return <Failed message={status.error} onRetry={status.reload} />
+  if (status.data?.awaiting_project) {
+    return <><PageHead title="KT Assistant" /><NoProject what="everything this project knows" /></>
+  }
 
   const repo = status.data?.settings?.repo ?? ''
   const project = repo ? repo.split('/').pop()! : ''

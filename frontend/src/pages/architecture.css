@@ -1,0 +1,95 @@
+/* The diagrams, and the lists that are not worth drawing.
+   Colours come from the shared tokens so the drawings sit in the same system as every other
+   screen; the geometry is the one already checked in pka/static/app.js. */
+
+.arch-grid { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
+
+.dg-wrap { display: flex; flex-direction: column; gap: var(--s3); }
+.dg-plain { margin: 0; font-size: 13px; color: var(--ink-soft); }
+.dg-note { margin: 0; font-size: 12px; color: var(--ink-dim); }
+
+.dg-holder { overflow-x: auto; padding: 4px 0 8px; }
+.dg { display: block; max-width: 100%; height: auto; }
+
+.dg-box { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
+.dg-node:hover .dg-box { stroke: var(--accent); stroke-width: 2; }
+.dg-box-on { stroke: var(--accent); stroke-width: 2.4; }
+.dg-pick { cursor: pointer; }
+.dg-pick:focus { outline: none; }
+.dg-pick:focus-visible .dg-box { stroke: var(--accent); stroke-width: 2.4; }
+
+.dg-label {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  fill: var(--ink); text-anchor: middle;
+}
+.dg-sub {
+  font-family: var(--font); font-size: 9.5px;
+  fill: var(--ink-dim); text-anchor: middle;
+}
+
+/* A band tells a reader what kind of thing a box is before they read its name. */
+.dg-route .dg-box { fill: var(--ok-wash); stroke: var(--ok); }
+.dg-store .dg-box { fill: var(--warn-wash); stroke: var(--warn); }
+.dg-outside .dg-box { fill: var(--page); stroke: var(--border-strong); stroke-dasharray: 4 3; }
+.dg-group .dg-box { fill: var(--accent-wash); stroke: var(--accent); }
+.dg-more .dg-box { fill: var(--page); stroke-dasharray: 3 3; }
+
+.dg-edge { fill: none; stroke: var(--border-strong); stroke-width: 1.4; }
+.dg-edge-back { stroke-dasharray: 5 4; }
+.dg-head { fill: var(--border-strong); }
+.dg-count {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  fill: var(--ink-dim); text-anchor: middle;
+}
+
+/* Elements, not drawing, so the layers wrap on a narrow screen and stay selectable. */
+.dg-bands { display: flex; flex-direction: column; gap: var(--s3); }
+.dg-band { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s3); }
+.dg-band-head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s3); }
+.dg-band-number {
+  flex: none; width: 24px; height: 24px; border-radius: 999px;
+  background: var(--accent-wash); color: var(--accent-deep);
+  font-size: 12px; font-weight: 700; display: grid; place-items: center;
+}
+.dg-band-names { flex: 1; min-width: 0; }
+.dg-band-title { margin: 0; font-size: 13px; font-weight: 650; color: var(--ink); }
+.dg-band-plain { margin: 2px 0 0; font-size: 12px; color: var(--ink-dim); }
+.dg-band-boxes { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.dg-band-box {
+  display: flex; flex-direction: column; gap: 1px; text-align: left;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); cursor: pointer; font: inherit;
+}
+.dg-band-box:hover { border-color: var(--accent); }
+.dg-band-box-on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.dg-band-box-name { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--ink); }
+.dg-band-box-sub { font-size: 10px; color: var(--ink-dim); }
+
+.arch-plain { margin: 0 0 var(--s3); font-size: 13px; color: var(--ink-soft); }
+.arch-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.arch-facts li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s4);
+  padding: var(--s2) 0; border-bottom: 1px solid var(--border);
+}
+.arch-facts li:last-child { border-bottom: 0; }
+.arch-fact-main { min-width: 0; }
+.arch-fact-text { font-size: 13px; color: var(--ink); }
+.arch-fact-detail { display: block; font-size: 12px; color: var(--ink-dim); }
+.arch-more { margin: var(--s3) 0 0; font-size: 12px; color: var(--ink-dim); }
+
+.arch-purpose { margin: 0 0 var(--s2); font-size: 13px; color: var(--ink); }
+.arch-hint { margin: 0; font-size: 12.5px; color: var(--ink-dim); }
+.arch-block { margin-top: var(--s4); }
+.arch-block h4 {
+  margin: 0 0 var(--s2); font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--ink-dim); display: flex; align-items: center; gap: 6px;
+}
+.arch-plainlist { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-soft); }
+.arch-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+
+@media (max-width: 1100px) {
+  .arch-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The server's "and N more" node is a count, not a file, so it is not clickable-looking. */
+.dg-band-box.dg-band-more { border-style: dashed; cursor: default; color: var(--ink-dim); }

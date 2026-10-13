@@ -37,7 +37,11 @@ class SlackChoice(BaseModel):
     channels: list[dict] = Field(default_factory=list, max_length=20)
 class Question(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    question: str = Field(min_length=3,max_length=600)
+    # One character, not three. The old floor existed to stop an empty box being sent, and the
+    # handler already refuses whitespace, but it also caught "hi" and "hy" and answered them
+    # with a field validation error instead of the greeting the small talk guard exists to
+    # give. A short question is not a malformed one.
+    question: str = Field(min_length=1,max_length=600)
 class Feedback(BaseModel):
     model_config = ConfigDict(extra='forbid')
     answer_id: int
@@ -86,6 +90,20 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                 pass
     service = (Service(index,demo,connector_factory=connector_factory) if connector_factory
                else Service(index,demo))
+
+    # Whether a project has been chosen in this run of the application.
+    #
+    # The selection and everything collected under it stay on disk between runs, and nothing
+    # here deletes any of that. What changed is that a new run no longer adopts the last run's
+    # project silently: starting up on a repository someone scanned days ago, with its name in
+    # the sidebar and its scan behind every screen, reads as the application knowing something
+    # about today when it does not. Typing the same repository back in costs one save and
+    # reconnects to the snapshot already stored, because configure() only clears what it
+    # collected when the repository or the branch actually changes.
+    #
+    # Example mode is exempt. It exists to be opened and looked at, and it has one fixed
+    # fixture repository that it would be perverse to make anybody type.
+    chosen = {'this_run': bool(demo)}
     @asynccontextmanager
     async def lifespan(app):
         yield
@@ -162,6 +180,23 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         scan = service.progress or index.latest()
         if scan:
             scan = {k:v for k,v in scan.items() if k != 'files'}
+        if not chosen['this_run']:
+            # Nothing is reported until a project is picked, so no screen can quietly answer
+            # from a snapshot this run never asked for. `stored_project` is the one thing that
+            # leaks through, and it is a name for the Connections page to offer, not a
+            # selection: until it is saved, nothing is read and nothing is answered.
+            previous = index.settings() or {}
+            return {'settings':None,'scan':None,'last_successful_scan':None,'ready':False,
+                    'busy':False,'demo':demo,'limits':asdict(LIMITS),
+                    'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
+                    'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
+                    'warning':'','job_error':'','job_name':'',
+                    'jira_reading':False,'jira_progress':None,
+                    'slack_reading':False,'slack_progress':None,
+                    'overview_building':False,'overview_progress':None,
+                    'awaiting_project':True,
+                    'stored_project':{'repo':previous.get('repo',''),
+                                      'branch':previous.get('branch','')} if previous.get('repo') else None}
         return {'settings':index.settings(),'scan':scan,'last_successful_scan':index.last_successful(),
                 'busy':service.busy() or bool(service.task and not service.task.done()),'demo':demo,
                 'limits':asdict(LIMITS),'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
@@ -203,7 +238,10 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         async with service.lock:
             index.configure({'repo':repo,'branch':branch,'platforms':platforms})
             service.access_warning = ''
-        return {'ok':True}
+            chosen['this_run'] = True
+        # Saying whether this reconnected to a stored snapshot or starts empty, because the
+        # difference decides whether the next thing to do is ask a question or run a scan.
+        return {'ok':True,'reconnected':index.active_scan() is not None}
 
     @app.post('/api/scan')
     async def scan():

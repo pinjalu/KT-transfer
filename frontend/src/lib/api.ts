@@ -12,6 +12,26 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turn whatever a failure carried into a sentence somebody can act on.
+ *
+ * Most of this application raises HTTPException with a written sentence, and `detail` is that
+ * string. A request that fails validation never reaches that code: FastAPI answers first, and
+ * its `detail` is a list of objects describing each field. Passing that to String() produced
+ * the literal text "[object Object]" on screen, which told a reader nothing at all, and the
+ * commonest way to see it was typing a two-letter greeting into the question box.
+ */
+function readDetail(detail: unknown, status: number): string {
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail)) {
+    const said = detail
+      .map((d) => (d && typeof d === 'object' && 'msg' in d ? String((d as { msg: unknown }).msg) : ''))
+      .filter(Boolean)
+    if (said.length) return said.join('. ') + '.'
+  }
+  return `Request failed with status ${status}.`
+}
+
 async function send(path: string, init: RequestInit = {}): Promise<unknown> {
   let response: Response
   try {
@@ -29,7 +49,7 @@ async function send(path: string, init: RequestInit = {}): Promise<unknown> {
   }
   if (!response.ok) {
     const detail = body && typeof body === 'object' && 'detail' in body
-      ? String((body as { detail: unknown }).detail)
+      ? readDetail((body as { detail: unknown }).detail, response.status)
       : `Request failed with status ${response.status}.`
     const code = body && typeof body === 'object' && 'code' in body
       ? String((body as { code: unknown }).code)

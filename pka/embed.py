@@ -32,6 +32,39 @@ TIMEOUT = 120
 MAX_CHUNKS = 4000
 
 
+# Questions used to find out where irrelevance tops out in a particular snapshot, so the
+# cut-off below which a semantic match is discarded can be derived for whatever was scanned
+# rather than hardcoded from one project.
+#
+# They are everyday subjects on purpose. None of them names a programming idea, a file type or
+# a tool, so none of them can accidentally be about the repository being measured, whatever
+# that repository is. The highest score any of them reaches is this snapshot's definition of
+# "no connection at all", and the real cut-off is set above it with a margin.
+PROBES = (
+    'recipe for banana bread with walnuts',
+    'what is the capital city of France',
+    'purple elephant tractor symphony',
+    'the rules of cricket explained for beginners',
+    'how to repot a houseplant that has outgrown its pot',
+    'weather forecast for the weekend by the coast',
+    'quasar nebula zebras',
+    'a short history of the bicycle',
+)
+# How far above the observed ceiling of irrelevance the cut-off sits.
+#
+# The first value tried here was 1.2, which was wrong and was caught by measuring rather than
+# by reasoning. On the measured snapshot the probes top out at 0.524 and the weakest genuine
+# question reaches 0.579, so anything above about 1.105 starts refusing questions the project
+# can actually answer. A fifth above the ceiling landed at 0.629 and threw away real work.
+#
+# 1.05 keeps the cut-off clear of irrelevance while leaving room for a repository whose gap is
+# narrower than this one's. The two ways of being wrong are not equally bad: a margin that is
+# too small lets a weak match through, where the lexical half of the search and the visible
+# excerpt still give the reader a chance to judge it, while a margin that is too large refuses
+# a question the project could have answered and the reader never learns it was there.
+CALIBRATION_MARGIN = 1.05
+
+
 def model() -> str:
     """The embedding model to use, or an empty string when semantic retrieval is off."""
     return os.getenv('PKA_EMBED_MODEL', '').strip()

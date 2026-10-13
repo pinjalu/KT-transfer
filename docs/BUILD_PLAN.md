@@ -44,7 +44,7 @@ placeholder; only the user token path works.
 | Title | State |
 |---|---|
 | Test live GitHub, Jira and Slack connections | Partly. GitHub only. |
-| Evaluate answer quality | Not started. No labelled question set exists. |
+| Evaluate answer quality | Partly. Retrieval is measured against two labelled sets by `pka/evaluate.py`; the generated answer is not yet scored. |
 | Recheck Jira and Slack access before using information | Not started. Freshness checks are GitHub only. |
 | Refresh saved information and cached answers | Partly. Overview caches by commit; nothing else. |
 | Improve background jobs, cancellation and retries | Partly. |
@@ -370,3 +370,53 @@ connection. Four tests cover the retry and the three messages. The suite is at 2
 
 Step 6 builds the feature explorer on the contract above. Step 4's architecture half, the
 three derived diagrams, is the remaining re-skin.
+
+### Retrieval measured, and tuned against two repositories
+
+The decision was to improve retrieval rather than train anything. Nothing here is a model
+change: the same qwen3:1.7b answers, on the same machine, from better excerpts.
+
+Retrieval had never been measured. The whole log held five answer records, so no change to
+chunking or ranking could be shown to have helped. `pka/evaluate.py` scores retrieval against
+a labelled set without calling the model, which is deterministic and takes seconds rather than
+the minute and a half a generated answer costs on this CPU.
+
+The first measurement found the real gap. On questions sharing words with their answer,
+word matching scored mrr 0.73 and needed no help. On questions deliberately phrased in other
+words it scored 0.31, because "what stops the same problem being reported twice" and a file
+whose docstring says deduplication have no word in common and BM25 cannot bridge that.
+Meaning-based retrieval already existed in `pka/embed.py` and had never been switched on.
+
+Switching it on and sweeping the fusion weight contradicted the guess going in. The guess was
+that an approximate match should be weighted below an exact one; the measurement said weight
+three, and word matching improved rather than suffering, from 0.73 to 0.85. Word matching was
+not being protected by a low weight, it was being left to fail alone.
+
+Two bugs surfaced that had been waiting for anyone to turn embeddings on. Raw vector bytes
+rode along in every retrieved chunk and stopped an answer being serialisable. And asking
+something the project knows nothing about began returning the nearest file instead of nothing,
+which is the opposite of what this product is for.
+
+That second one is why the cut-off is now measured rather than written down. An absolute
+similarity means something only against a particular embedding model and a particular body of
+text, so after a scan is embedded a set of deliberately irrelevant probes is run against that
+snapshot to find where irrelevance tops out, and the cut-off is set just above it, stored per
+scan and per model.
+
+Two repositories were measured, the second chosen to be unlike the first: an HTTP client
+library against an MCP bug-investigation server. The calibration landed at 0.550 and 0.555,
+eight thousandths apart, which is the evidence that the scale belongs to the embedding model
+and not to the project. Every band improved on the second repository although nothing was
+tuned on it, overall mrr 0.31 to 0.64.
+
+| | MCP-project | psf/requests |
+|---|---|---|
+| Overall | 0.483 to 0.712 | 0.310 to 0.636 |
+| Paraphrased questions | 0.312 to 0.479 | 0.056 to 0.292 |
+| Shared-word questions | 0.729 to 0.854 | 0.542 to 0.750 |
+| Correctly refused | 0.25 to 1.0 | 0.25 to 1.0 |
+
+What is still open. Paraphrase hit@1 is 0.375 and 0.167, meaning the right file comes back but
+not first, which points at chunking next rather than at anything to do with the model. The
+answer itself is still unscored, only the evidence it is built from. And both question sets
+are small, twenty-six and eighteen, so a sweep should be re-run whenever one grows.

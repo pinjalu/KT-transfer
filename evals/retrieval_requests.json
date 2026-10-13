@@ -1,0 +1,41 @@
+{
+  "repo": "psf/requests",
+  "note": "A second labelled set, on a codebase deliberately unlike the first: an HTTP client library rather than an MCP bug-investigation server. It exists to check that the retrieval settings derived on one project are not just that project's settings. Same three bands, plus a reject band whose correct answer is nothing at all.",
+  "questions": [
+    {"id": "lex-01", "band": "lexical", "ask": "How are cookies handled?",
+     "expect": ["requests/cookies.py"]},
+    {"id": "lex-02", "band": "lexical", "ask": "Where is authentication implemented?",
+     "expect": ["requests/auth.py"]},
+    {"id": "lex-03", "band": "lexical", "ask": "What exceptions does this library raise?",
+     "expect": ["requests/exceptions.py"]},
+    {"id": "lex-04", "band": "lexical", "ask": "How does a session work?",
+     "expect": ["requests/sessions.py"]},
+    {"id": "lex-05", "band": "lexical", "ask": "Where are HTTP status codes defined?",
+     "expect": ["requests/status_codes.py"]},
+    {"id": "lex-06", "band": "lexical", "ask": "What does the adapter do?",
+     "expect": ["requests/adapters.py"]},
+
+    {"id": "par-01", "band": "paraphrase", "ask": "How does it prove who I am to a server that asks?",
+     "expect": ["requests/auth.py"]},
+    {"id": "par-02", "band": "paraphrase", "ask": "What keeps small pieces of state between one call and the next?",
+     "expect": ["requests/cookies.py", "requests/sessions.py"]},
+    {"id": "par-03", "band": "paraphrase", "ask": "What goes wrong when the other end never replies?",
+     "expect": ["requests/exceptions.py", "requests/adapters.py"]},
+    {"id": "par-04", "band": "paraphrase", "ask": "Where is the thing a caller gets back described?",
+     "expect": ["requests/models.py"]},
+    {"id": "par-05", "band": "paraphrase", "ask": "How does it let someone run their own code part way through?",
+     "expect": ["requests/hooks.py"]},
+    {"id": "par-06", "band": "paraphrase", "ask": "What collects details about the installation for a bug report?",
+     "expect": ["requests/help.py"]},
+
+    {"id": "con-01", "band": "conceptual", "ask": "What happens from calling get to receiving a reply?",
+     "expect": ["requests/api.py", "requests/sessions.py", "requests/adapters.py", "requests/models.py"]},
+    {"id": "con-02", "band": "conceptual", "ask": "How does this library stay compatible across Python versions?",
+     "expect": ["requests/compat.py", "requests/_internal_utils.py"]},
+
+    {"id": "rej-01", "band": "reject", "ask": "recipe for a chocolate sponge cake", "expect": []},
+    {"id": "rej-02", "band": "reject", "ask": "who won the world cup in 1998", "expect": []},
+    {"id": "rej-03", "band": "reject", "ask": "how do I look after a bonsai tree", "expect": []},
+    {"id": "rej-04", "band": "reject", "ask": "quasar nebula zebras", "expect": []}
+  ]
+}

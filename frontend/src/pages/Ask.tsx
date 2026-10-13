@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Button, Card, Chip, Empty, Failed, Missing, PageHead, Segmented } from '../components/ui'
+import { Button, Card, Chip, Empty, Failed, Missing, NoProject, PageHead, Segmented } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
@@ -88,6 +88,7 @@ export function Ask() {
 
   const ready = status.data?.ready ?? false
   const busy = status.data?.busy ?? false
+  const awaiting = status.data?.awaiting_project ?? false
 
   const ask = async () => {
     const text = question.trim()
@@ -122,7 +123,9 @@ export function Ask() {
         </span>
       </div>
 
-      {!ready && (
+      {awaiting && <NoProject what="the answers" />}
+
+      {!awaiting && !ready && (
         <Card>
           <Empty title="Nothing has been read yet."
                  detail="A question is answered from the scanned files, so there is nothing to answer from until a scan finishes."
@@ -189,9 +192,13 @@ export function Ask() {
                           </p>
                         )}
 
-                        <Feedback turn={turn}
-                                  onSaved={(r, s) => setTurns((t) =>
-                                    t.map((x) => (x === turn ? { ...x, rating: r, sufficiency: s } : x)))} />
+                        {/* A greeting is answered without reading anything and is never
+                            recorded, so it carries answer_id 0 and there is nothing to rate. */}
+                        {turn.answer.answer_id > 0 && (
+                          <Feedback turn={turn}
+                                    onSaved={(r, s) => setTurns((t) =>
+                                      t.map((x) => (x === turn ? { ...x, rating: r, sufficiency: s } : x)))} />
+                        )}
                       </div>
                     )}
                   </div>

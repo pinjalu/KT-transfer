@@ -3,6 +3,7 @@ import ast
 import difflib
 from contextlib import contextmanager
 import json
+import os
 from pathlib import PurePosixPath
 import re
 import sqlite3
@@ -10,6 +11,17 @@ from pka import embed
 from pka.config import LIMITS, now, source_url
 
 STOP = set('how does do did the a an is are was were it in on of to for and or can i we my this that work works please explain what where when why with from'.split())
+# Words that carry no search intent but do appear in ordinary code and comments. Left in, a
+# greeting retrieves whichever file happens to contain the word "hello" and the model is then
+# asked to explain it, which is how "hello" came back as an explanation of a chat module.
+SOCIAL = set('hello hi hy hii hiii hey heya hiya helo hllo yo greetings howdy namaste salam '
+             'thanks thank thankyou thx ty cheers bye goodbye cya ok okay k '
+             'yes no yeah yep nope sure cool nice great good morning afternoon evening night '
+             # "help" is deliberately absent. It is a greeting word in some mouths and a real
+             # file name in plenty of projects, and losing a search for help.py costs more
+             # than answering "help" as though it were a question.
+             'you your yours u who there here me us am im sorry please welcome'.split())
+STOP |= SOCIAL
 SYNONYMS = {
     'login': ['auth','authentication','signin','session','password'],
     'signin': ['login','auth','session'], 'logout':['signout','session','revoke'],
@@ -55,6 +67,32 @@ RRF_K = 60
 # best match scored is a judgement the model's own scale makes for us.
 SEMANTIC_FLOOR = 0.15
 SEMANTIC_MARGIN = 0.6
+# How much a semantic ranking counts against a lexical one when the two are fused. Swept over
+# the labelled set rather than guessed at: python -m pka.evaluate --sweep.
+#
+# The guess going in was that this belonged below one, so that an approximate match could
+# never overrule an exact one. The measurement said otherwise. Between weight 0 and weight 3
+# every band improves, lexical included, going from mrr 0.73 to 0.85 on the questions that
+# share words with their answer. Word matching was not being protected by a low weight, it
+# was being left to fail alone on the many questions where the asker's words and the code's
+# words are different.
+#
+# Three is the top of a flat region that starts around two; five is past it and falls away.
+# The set is twenty questions, so treat anything between two and three as the same answer and
+# re-run the sweep when the set grows.
+SEMANTIC_WEIGHT = float(os.getenv('PKA_SEMANTIC_WEIGHT', '3.0'))
+# How much of a question has to be made of words this project never uses before a search that
+# meaning-based retrieval already rejected is treated as not being about the project at all.
+# Zero means that rejection is enough on its own.
+#
+# Swept on both labelled sets. The score on answerable questions does not move at all between
+# zero and one, on either repository, while the score on questions that should be refused goes
+# from 0.25 to 1.0 as it drops to zero. Requiring unknown words on top of the semantic
+# rejection bought nothing and cost every off-topic question phrased in ordinary English:
+# "who won the world cup in 1998" is four common words that any large repository contains
+# somewhere in its documentation, so it slipped through a rule built on unknown words while
+# meaning-based retrieval had already correctly found nothing.
+OFF_TOPIC_UNKNOWN_RATIO = float(os.getenv('PKA_OFF_TOPIC_RATIO', '0.0'))
 
 
 def is_source_path(path: str) -> bool:
@@ -68,6 +106,16 @@ def words(text: str) -> list[str]:
     keys = [a.lower() + b for a, b in ISSUE_KEY.findall(text)]
     text = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', text)
     return re.findall(r'[A-Za-z0-9]+', text.lower()) + keys
+
+
+def small_talk(text: str) -> bool:
+    """True when nothing typed is a word worth searching this project for.
+
+    A greeting, a thank-you or an empty pleasantry leaves no term behind once the stop list
+    has done its work. Answering one by retrieving whatever file contains the word is worse
+    than saying plainly that it was not a question about the project.
+    """
+    return not [t for t in words(text) if t not in STOP]
 
 
 def widen(row: dict, siblings) -> tuple[str, int, int]:
@@ -167,6 +215,8 @@ class Index:
             CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path, symbols, text, tokenize='porter unicode61');
             CREATE TABLE IF NOT EXISTS vectors (chunk_id INTEGER PRIMARY KEY, scan_id INTEGER,
                 vector BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS calibration (scan_id INTEGER, model TEXT, ceiling REAL,
+                floor REAL, probes INTEGER, created TEXT, PRIMARY KEY (scan_id, model));
             CREATE TABLE IF NOT EXISTS overviews (commit_sha TEXT PRIMARY KEY, scan_id INTEGER,
                 payload TEXT, created TEXT);
             CREATE TABLE IF NOT EXISTS answers (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, question TEXT,
@@ -350,7 +400,11 @@ class Index:
             # word turns "rom" into "from" and makes the search worse than leaving it out.
             near = []
             if len(t) >= 5:
-                stem = t[:max(4, len(t) - 3)]
+                # Five, not four. A four-character stem let "thanks" match the word "than" that
+                # happened to sit in a comment, so a thank-you was answered with three unrelated
+                # files. Five still catches a wrong ending, because "connecting" stems to
+                # "connect", and a genuine misspelling falls through to the closeness test below.
+                stem = t[:max(5, len(t) - 3)]
                 # Alphabetical order turned tickt into ticks. Closest in length is a better
                 # guess at what was meant than whichever candidate happens to sort first.
                 near = sorted((w for w in vocab if w.startswith(stem)),
@@ -431,12 +485,58 @@ class Index:
             scored.append((embed.similarity(vector, embed.unpack(row['vector'])), row))
         scored.sort(key=lambda x: -x[0])
         best = scored[0][0]
-        if best < SEMANTIC_FLOOR:
+        # Measured for this snapshot and this embedding model where one has been measured,
+        # which is what lets the same code be right on a repository it has never seen.
+        floor = self.floor_for(scan['id'])
+        if best < floor:
             # Nothing in the snapshot is about this. Returning the least unrelated chunk would
             # be worse than returning none, because it would look like an answer.
             return []
-        cut = max(SEMANTIC_FLOOR, best * SEMANTIC_MARGIN)
-        return [dict(row, rank=-score) for score, row in scored[:limit] if score >= cut]
+        cut = max(floor, best * SEMANTIC_MARGIN)
+        # The vector column is dropped here. It was selected to score the row and is raw bytes;
+        # left in, it rides along into the chosen excerpts and the answer stops being JSON.
+        # Nothing caught that until embeddings were switched on and measured.
+        return [{k: v for k, v in dict(row, rank=-score).items() if k != 'vector'}
+                for score, row in scored[:limit] if score >= cut]
+
+    def semantic_ceiling(self, scan_id: int, probe_vectors: list) -> float:
+        """The best similarity any deliberately irrelevant probe reaches in this snapshot.
+
+        This is the number that makes the cut-off portable. An absolute similarity means
+        something only against a particular embedding model and a particular body of text, so
+        rather than carrying one repository's figure around in the source, each snapshot is
+        asked where its own floor of meaninglessness sits.
+        """
+        with self.db() as db:
+            rows = db.execute('SELECT vector FROM vectors WHERE scan_id=?', (scan_id,)).fetchall()
+        if not rows or not probe_vectors:
+            return 0.0
+        stored = [embed.unpack(r['vector']) for r in rows]
+        return max(embed.similarity(p, s) for p in probe_vectors for s in stored)
+
+    def save_calibration(self, scan_id: int, model: str, ceiling: float, probes: int) -> float:
+        """Store the cut-off for this snapshot and model, and return it."""
+        floor = round(ceiling * embed.CALIBRATION_MARGIN, 4)
+        with self.db() as db:
+            db.execute('INSERT OR REPLACE INTO calibration VALUES(?,?,?,?,?,?)',
+                       (scan_id, model, round(ceiling, 4), floor, probes, now()))
+        return floor
+
+    def calibration(self, scan_id: int, model: str) -> dict | None:
+        """What was measured for this snapshot and this model, or None if never measured.
+
+        Keyed by model as well as by scan, because the scale of a similarity belongs to the
+        model. Changing PKA_EMBED_MODEL must not inherit the previous model's cut-off.
+        """
+        with self.db() as db:
+            row = db.execute('SELECT * FROM calibration WHERE scan_id=? AND model=?',
+                             (scan_id, model)).fetchone()
+        return dict(row) if row else None
+
+    def floor_for(self, scan_id: int) -> float:
+        """The cut-off to apply: the measured one when there is one, the fallback otherwise."""
+        found = self.calibration(scan_id, embed.model()) if embed.enabled() else None
+        return found['floor'] if found else SEMANTIC_FLOOR
 
     def nearest(self, scan: dict, vector) -> list[dict]:
         """The chunks nearest this vector in meaning, with nothing lexical mixed in.
@@ -447,7 +547,7 @@ class Index:
         with self.db() as db:
             return self._nearest(db, vector, scan)
 
-    def _fuse(self, rankings: list[list[dict]]) -> list[dict]:
+    def _fuse(self, rankings: list[list[dict]], weights: list[float] | None = None) -> list[dict]:
         """Combine several rankings into one by reciprocal rank fusion.
 
         A topic such as "how it is set up" is not one search. Asking separately about installing,
@@ -455,14 +555,18 @@ class Index:
         score, pulls in the file that only the third query knew about. Positions are comparable
         across queries in a way BM25 scores are not, which is the whole reason for doing it this
         way: a chunk ranked third twice beats one ranked first once and nowhere else.
+
+        A ranking may also count for less than another. The weights are how a semantic ranking
+        contributes without being able to outvote an exact word match on its own.
         """
         if len(rankings) == 1:
             return rankings[0]
+        weights = weights or [1.0] * len(rankings)
         scored, best = {}, {}
-        for ranking in rankings:
+        for ranking, weight in zip(rankings, weights):
             for position, row in enumerate(ranking):
                 key = (row['path'], row['start'], row['end'])
-                scored[key] = scored.get(key, 0.0) + 1.0 / (RRF_K + position + 1)
+                scored[key] = scored.get(key, 0.0) + weight / (RRF_K + position + 1)
                 best.setdefault(key, row)
         return [best[k] for k in sorted(scored, key=lambda k: -scored[k])]
 
@@ -549,18 +653,21 @@ class Index:
         # Copied-in component libraries describe themselves well and answer nothing about this
         # project, so a topic explaining how this project is built asks for none of them.
         vendor_cap = MAX_VENDOR_SOURCES if vendor_cap is None else vendor_cap
+        # Kept whatever the caller passed, because the off-topic test below reads it.
+        info = {} if info is None else info
         if info is not None:
             info.setdefault('asked', [])
             info.setdefault('terms', [])
             info.setdefault('unknown', [])
             info.setdefault('corrections', {})
         with self.db() as db:
-            rankings = []
+            rankings, weights = [], []
             for question in questions:
                 tokens = self._terms(question, scan, info)
                 ranked = self._ranked(db, tokens, scan)
                 if ranked:
                     rankings.append(ranked)
+                    weights.append(1.0)
             # Semantic candidates are one more ranking, not a replacement. A question whose
             # words are all in the project still gets its exact matches; a question phrased in
             # words the project never uses now has something to find.
@@ -568,11 +675,28 @@ class Index:
                 nearest = self._nearest(db, vector, scan)
                 if nearest:
                     rankings.append(nearest)
+                    weights.append(SEMANTIC_WEIGHT)
                     if info is not None:
                         info['semantic'] = info.get('semantic', 0) + 1
             if not rankings:
                 return []
-            rows = self._fuse(rankings)
+            # Two weak signals together mean the question is not about this project at all.
+            # "How do I train a puppy" matched the word train in a machine learning file, and
+            # "the capital of France" matched capitalize, each on one word out of two while
+            # meaning-based retrieval found nothing above the measured floor. Either signal
+            # alone is normal: a question can use words the code never uses and still be
+            # answerable, and a well worded question can land below the floor. Both at once
+            # has not once been a real question.
+            #
+            # This only applies where meaning-based retrieval actually ran. Without it there
+            # is no second opinion, and refusing on unknown words alone would throw away the
+            # ordinary case of someone naming a thing differently from the code.
+            asked, unmatched = info.get('asked') or [], info.get('unknown') or []
+            if query_vectors and self.embedded(scan['id']) and not info.get('semantic'):
+                if asked and len(unmatched) >= OFF_TOPIC_UNKNOWN_RATIO * len(asked):
+                    info['off_topic'] = True
+                    return []
+            rows = self._fuse(rankings, weights)
             found = self._assemble(db, rows, scan, max_sources, context_chars,
                                    test_cap, vendor_cap)
         if info is not None:
