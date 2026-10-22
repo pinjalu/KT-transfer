@@ -77,6 +77,16 @@ def test_lexical_overlap_is_possible_and_admin_fields_cannot_create_matches():
     assert links(issue('receipt'), [row('receipt')])['items'] == [], 'One common word is insufficient'
 
 
+@pytest.mark.parametrize('description,code', [
+    ('Complete all work under our own permissions. Hand off version.', 'all under own off version'),
+    ('Change the function in the existing application', 'def function(): # change application'),
+    ('Ensure receipt downloads work for everyone', 'everyone work ensure receipt'),
+])
+def test_common_language_and_code_scaffolding_cannot_create_possible_links(description,code):
+    assert links(issue(description),[row(code)])['items']==[]
+    assert links(issue(description),[row('# ENG-1 '+code)])['confirmed']==1
+
+
 def test_strongest_file_excerpt_wins_and_pagination_counts_all_matches():
     rows = [row('receipt downloads',rid=1), row('# ENG-1',rid=2,start=50)]
     rows += [row('# ENG-1',f'app/file{i}.py',rid=3+i) for i in range(14)]

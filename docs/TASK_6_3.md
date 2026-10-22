@@ -12,7 +12,7 @@ is changed and no model call or background job is started.
   repository at the scanned commit/current branch, or the stored Slack excerpt permalink.
   Foreign repository/site URLs, similarly prefixed keys and path suffixes do not confirm links.
 - **Possible connection:** at least two meaningful whole words overlap after administrative
-  metadata and common terms are removed. The matched words are displayed. This is a lexical
+  metadata, common English terms and generic code vocabulary are removed. The matched words are displayed. This is a lexical
   suggestion, not a semantic confidence score or a verified relationship.
 - Each file appears once with its strongest matching excerpt. File URLs include the scanned
   commit and excerpt line numbers. Forward references retain the Jira quote as well as target
@@ -45,10 +45,12 @@ relationship cache. A read-only panel does not queue another explanation when na
 ## Verification
 
 - Production TypeScript/Vite build passed.
-- 558 Python tests passed, including 71 focused relationship and task-explanation checks.
+- 561 regression tests and 74 final focused relationship/task-explanation checks passed.
   Coverage includes reference boundaries, foreign and malformed URLs, forward evidence,
   metadata exclusion, long excerpts, deduplication/pagination, scope, access revocation,
   concurrent source/identity changes, source outages, refreshes and API validation.
+  The final common-word filter was checked again after the regression run; generic language
+  such as "all", "under", "off" and "function" cannot create a possible match by itself.
 - Eleven controlled Chrome checks passed with no page errors: evidence and labels, pagination,
   task switching, empty results, stored discussion links, inert source markup, independent
   source failures, navigation/reload, 900-pixel layout, revocation and refreshed imports.

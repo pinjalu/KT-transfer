@@ -6,7 +6,7 @@ Task 6.3 adds separate related-file and Slack-discussion panels to the selected 
 Explicit references are confirmed links; shared words are possible connections. Bounded
 evidence, pinned file links, stored discussion permalinks, pagination and coverage explain
 what was matched. Each source is checked before use; no model or external write is needed.
-The production build, 558 Python tests, 14 Chrome checks and twelve live relationship
+The production build, 561 regression tests, 74 final focused checks, 14 Chrome checks and twelve live relationship
 reads across six saved Jira tasks passed. See [task 6.3](TASK_6_3.md) for scope and limits.
 Task 6.3 is **Done**. Decision summarization remains task 6.4; fuller Slack thread handling
 remains task 6.5. These links do not verify requirement implementation.

@@ -11,7 +11,19 @@ LINK_MARKUP = re.compile(r'\[[^\]]*\]\(https?://[^)]+\)|<https?://[^>]+>', re.I)
 GENERIC = STOP | QUERY_FILLER | set('task tasks issue issues ticket tickets jira description '
     'acceptance criteria requirement requirements feature features type status priority assigned '
     'reporter reported nobody unknown none rank labels today work implementation implement add '
-    'update create requested request should must shall need needs new existing'.split())
+    'update create requested request should must shall need needs new existing '
+    'above across after again against all already also although always among another any '
+    'anyone anything around because been before being below beside between both but could '
+    'during each either else enough even every everyone everything few first further had '
+    'has have having however into its itself just last least less many may might more most '
+    'much neither never next nor not now off often once one only other others our ours out over '
+    'own per rather same several since some someone something still such than their theirs '
+    'them themselves then these they those though through thus too toward under until upon '
+    'very via well were whether while whose will within without would yet '
+    'app apps application applications code source sources file files function functions '
+    'change changes changed changing complete completed completing done ensure example '
+    'following given include includes including make made provide provides real work works '
+    'back current get gets set sets run runs running return returns pass def class self true false'.split())
 
 
 def plain(text):
