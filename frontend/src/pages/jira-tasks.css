@@ -18,4 +18,11 @@
 .jira-source:target { outline: 2px solid var(--accent); }
 .jira-source pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow-y: auto; margin-bottom: 0; }
 .jira-source details { margin-top: var(--s2); }
+.jira-related-list { list-style: none; padding: 0; margin: var(--s4) 0 0; display: grid; gap: var(--s4); }
+.jira-related-list > li { border-top: 1px solid var(--border); padding-top: var(--s4); min-width: 0; }
+.jira-related-title, .jira-related-pages { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); }
+.jira-related-title a { overflow-wrap: anywhere; min-width: 0; }
+.jira-related-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--page); padding: var(--s3); border-radius: var(--r-sm); max-height: 360px; overflow-y: auto; }
+.jira-related-pages { margin-top: var(--s5); }
+#task-related { scroll-margin-top: 90px; }
 @media (max-width: 1100px) { .jira-layout { grid-template-columns: minmax(0, 1fr); } .jira-task-list { max-height: 230px; } }

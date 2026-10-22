@@ -41,11 +41,13 @@ validation includes a second real repository and a developer unfamiliar with the
 using the walkthrough. These usability and model-quality judgments are separate from passing
 technical checks.
 
-## Stage 3 — Jira task explanations planned; scoped reading verified live
+## Stage 3 — Jira explanations and related sources implemented within documented scope
 
 The adapter reads one selected Jira project through scoped MCP tools. Credentials, pagination,
-bounded descriptions/comments, updates, access checks and coverage are implemented. Dedicated
-task explanations and custom acceptance-criteria field mapping remain planned.
+bounded descriptions/comments, custom text field names, updates, access checks and coverage
+are implemented. Selected task explanations and evidence-backed related files/discussions are
+available; see [task 6.2](TASK_6_2.md) and [task 6.3](TASK_6_3.md). Requirement implementation
+verification, specialized non-text field mapping and decision summaries remain incomplete.
 
 For a selected issue, explain the request, requirements, related code/documents, recorded discussions/decisions, investigation areas and open questions. Establish confirmed relationships through explicit issue keys, URLs and recorded links. Label lexical or semantic similarity as a possible connection, not a confirmed relationship. Preserve issue keys, timestamps and URLs in the index.
 

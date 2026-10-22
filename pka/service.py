@@ -11,7 +11,7 @@ from pka.config import KEEP_LOGS, LIMITS, log_dir, now
 from pka.connectors.base import SourceError
 from pka.index import chunk_file, small_talk
 from pka.connectors.slack import transcript
-from pka import embed, jira_tasks
+from pka import embed, jira_tasks, jira_links
 from pka.facts import derive as derive_facts
 from pka.diagram import build as build_diagrams
 from pka.roles import describe as describe_roles
@@ -457,7 +457,10 @@ class Service:
             credentials.refresh()
         for name, identity in identities.items():
             if credentials.source_fingerprint(name) != identity:
-                self.index.discard_source(name)
+                if name == 'github':
+                    self.index.invalidate()
+                else:
+                    self.index.discard_source(name)
         if self.index.revision != revision:
             raise SourceError('stale', 'Project information changed during this request. Retry using the current sources.')
 
@@ -962,6 +965,42 @@ class Service:
         result = {'issue':issue, 'sources':sources, 'explanation':self.index.jira_explanation(key),
                   'revision':checked[0], 'access_checked_at':now(),
                   'coverage':((self.index.source_import('jira') or {}).get('report') or {}).get('coverage')}
+        self.ensure_current(checked)
+        return result
+
+    async def jira_task_links(self, key, kind='files', offset=0, limit=10):
+        if kind not in {'files', 'discussions'} or offset < 0 or not 1 <= limit <= 25:
+            raise SourceError('scope', 'Choose files or discussions and a valid result page.')
+        key = self.jira_task_key(key)
+        scan, revision = self.index.active_scan(), self.index.revision
+        identity = {}
+        if kind == 'files':
+            credentials.refresh()
+            identity['github'] = credentials.source_fingerprint('github')
+            try:
+                async with self.connector_factory(self.index.settings(), self.demo) as source:
+                    access = await source.check_access(scan['commit'])
+                if access.get('head') != scan['commit']:
+                    self.index.invalidate()
+                    self.access_warning = 'The branch changed. Refresh the repository scan before linking its files.'
+                    raise SourceError('stale', self.access_warning)
+            except SourceError as exc:
+                if exc.code == 'access_denied':
+                    self.index.invalidate()
+                raise
+            except Exception:
+                raise SourceError('access', 'Could not verify GitHub access. No related files were returned.') from None
+        checked = await self.check_external_access(scan, names=('jira', 'slack') if kind == 'discussions' else ('jira',))
+        checked = revision, {**identity, **checked[1]}
+        self.ensure_current(checked)
+        sources = self.index.jira_excerpts(scan['id'], key)
+        rows = self.index.relationship_rows(scan['id'], kind)
+        result = jira_links.related(key, sources, rows, scan, kind, offset, limit)
+        imported = (self.index.source_import('slack') or {}).get('report') or {}
+        result.update(issue_key=key, revision=revision, repo=scan['repo'], commit=scan['commit'],
+            checked_at=now(), read_at=scan.get('finished') if kind == 'files' else imported.get('read_at'),
+            coverage=('partial' if scan['status'] == 'partial' else 'complete') if kind == 'files' else
+                     imported.get('coverage_state', 'unknown') if imported else 'not_read')
         self.ensure_current(checked)
         return result
 

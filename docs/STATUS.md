@@ -1,12 +1,23 @@
 # Implementation and verification record
 
+## Task 6.3 related files and discussions, 22 October 2026
+
+Task 6.3 adds separate related-file and Slack-discussion panels to the selected Jira task.
+Explicit references are confirmed links; shared words are possible connections. Bounded
+evidence, pinned file links, stored discussion permalinks, pagination and coverage explain
+what was matched. Each source is checked before use; no model or external write is needed.
+The production build, 558 Python tests, 14 Chrome checks and twelve live relationship
+reads across six saved Jira tasks passed. See [task 6.3](TASK_6_3.md) for scope and limits.
+Task 6.3 is **Done**. Decision summarization remains task 6.4; fuller Slack thread handling
+remains task 6.5. These links do not verify requirement implementation.
+
 ## Task 6.2 selected Jira task explanations, 22 October 2026
 
 Task 6.2 adds a searchable imported-task list and grounded explanations with requested work,
 acceptance criteria, clarification questions, exact supporting quotes and model details.
 Explanations use the shared background job lifecycle, persist across navigation/restarts,
 and are invalidated by source changes. Jira access is rechecked before use and publication.
-See [task 6.2](TASK_6_2.md) for verification and scope. Code/discussion linking remains task 6.3.
+See [task 6.2](TASK_6_2.md) for verification and scope. Code/discussion linking is covered by task 6.3 above.
 The production build, 515 regression tests, 35 final focused checks, ten Chrome checks and
 scoped live Jira/Ollama checks passed. Task 6.2 is **Done within this explanation scope**.
 

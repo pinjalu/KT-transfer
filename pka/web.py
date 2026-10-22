@@ -6,7 +6,7 @@ import os
 import re
 from typing import Literal
 from urllib.parse import quote
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -490,6 +490,13 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             raise HTTPException(409, 'Choose a project in Connections first.')
         idle()
         return {'started':True, 'job_id':service.start_job('jira_task', target=issue_key)}
+
+    @app.get('/api/jira/tasks/{issue_key}/links')
+    async def jira_task_links(issue_key: str, kind: Literal['files', 'discussions'] = 'files',
+                              offset: int = Query(0, ge=0), limit: int = Query(10, ge=1, le=25)):
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose a project in Connections first.')
+        return await service.jira_task_links(issue_key, kind, offset, limit)
 
     @app.post('/api/jira/project')
     async def save_jira_project(choice: JiraChoice):

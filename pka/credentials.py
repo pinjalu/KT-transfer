@@ -68,7 +68,7 @@ def source_fingerprint(name: str) -> str:
     """Local identity marker only; never expose this or credential values in API output."""
     import hashlib
     import json
-    names = {'jira': ('JIRA_SITE', 'JIRA_EMAIL', 'JIRA_API_TOKEN'),
+    names = {'github': ('GITHUB_TOKEN',), 'jira': ('JIRA_SITE', 'JIRA_EMAIL', 'JIRA_API_TOKEN'),
              'slack': ('SLACK_USER_TOKEN',)}[name]
     return hashlib.sha256(json.dumps([os.getenv(key, '') for key in names]).encode()).hexdigest()
 

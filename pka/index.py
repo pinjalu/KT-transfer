@@ -508,6 +508,14 @@ class Index:
                               (scan_id, 'jira/'+key)).fetchall()
         return [{'source_id':f'J{i+1}', **dict(row)} for i,row in enumerate(rows)]
 
+    def relationship_rows(self, scan_id, kind):
+        condition = ("path LIKE 'slack/%'" if kind == 'discussions' else
+                     "path NOT LIKE 'jira/%' AND path NOT LIKE 'slack/%'")
+        with self.db() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT id,path,start,end,text,url FROM chunks WHERE scan_id=? AND '+condition+' ORDER BY path,start,id',
+                (scan_id,))]
+
     def jira_explanation(self, key):
         with self.db() as db:
             row = db.execute('SELECT payload FROM jira_explanations WHERE issue_key=? AND revision=?',

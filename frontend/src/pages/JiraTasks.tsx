@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Card, Chip, Empty, Failed, Loading, NoProject, PageHead } from '../components/ui'
 import { Said } from '../components/Statements'
+import { JiraRelated } from '../components/JiraRelated'
 import { ApiError, post } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import type { Source, Statement } from '../lib/answer'
@@ -73,6 +74,7 @@ function Task({ issueKey, status }: { issueKey: string; status: Status }) {
           {running || started ? 'Explaining task…' : answer ? 'Refresh explanation' : 'Explain task'}
         </Button>
         <span className="jira-muted">{sources.length} imported {sources.length === 1 ? 'excerpt' : 'excerpts'}</span>
+        <a className="btn btn-secondary" href="#task-related">Related files and discussions</a>
       </div>
       {(running || started) && <p role="status" className="jira-note">You can visit other screens. This explanation will keep running in the background.</p>}
       {error && <Failed message={error} />}
@@ -94,6 +96,7 @@ function Task({ issueKey, status }: { issueKey: string; status: Status }) {
         sub="Suggested questions for the task owner. These are not agreed requirements."
         empty={answer.parts > 1 ? 'No questions were generated because this task was read in multiple parts. Review the combined excerpts for unresolved details.' : 'No clarification questions were generated.'} />
     </> : !running && !started && <Card><Empty title="Ready to explain this task" detail="Generate a summary, requested work and acceptance criteria with links to the imported evidence." /></Card>}
+    <JiraRelated issueKey={issueKey} revision={status.knowledge_revision} />
     <Card title="Imported evidence" sub="Citations refer to these excerpts. Check the original wording when a statement needs review.">
       <div className="jira-sources">{sources.map((source, i) => <section id={`src-${source.source_id}`} key={source.source_id} className="jira-source" tabIndex={-1}>
         <div><strong>[{i + 1}] {issue.key}</strong> <span className="jira-muted">Lines {source.start}–{source.end}</span></div>

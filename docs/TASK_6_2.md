@@ -9,7 +9,7 @@ Jira link and exact supporting quotes are inspectable.
 ## Behavior and boundaries
 
 - Only the selected issue's imported text reaches the explainer. No repository or Slack text
-  is mixed into that explanation. Code matching and related-discussion linking remain task 6.3.
+  is mixed into that explanation. Separate related-source panels are covered by [task 6.3](TASK_6_3.md).
 - Every imported excerpt is processed in bounded batches, including large legacy excerpts.
   The model's structured response must cite a supplied source ID and a quote found in that
   excerpt. Invalid formats or quotes fail visibly instead of publishing an unverifiable result.
