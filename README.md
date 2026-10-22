@@ -279,6 +279,16 @@ one service, `--timeout 180` to set the per-service deadline, or `--output repor
 the report path. A missing connection, a failed read or an empty source cannot complete the
 three-service acceptance task. See [task 5.1](docs/TASK_5_1.md) for the recorded run and remaining work.
 
+## Evaluating generated answers
+
+`python -m pka.answer_evaluation --set evals/answers_bsa.json --output data/acceptance/answers.json`
+runs six source-checked questions through the local app, including real retrieval and Ollama.
+The set must match the selected repository and exact commit. Results separate retrieval,
+citation checks, reference-phrase coverage, expected refusal behavior and human review.
+Automatic checks are not factual accuracy. Reports exclude generated prose and source excerpts;
+`--inspect-report report.json --case database` displays an exact retained answer for review.
+See [task 5.2](docs/TASK_5_2.md) for the baseline, review rubric and commands.
+
 ## Measuring retrieval
 
 Whether an answer is any good is decided mostly before the model is reached: if the file that holds the answer never comes back, no amount of explaining rescues it. `python -m pka.evaluate` scores retrieval against a labelled question set without calling Ollama at all, which makes it deterministic and fast enough to run after every change.

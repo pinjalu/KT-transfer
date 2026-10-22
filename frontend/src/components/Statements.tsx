@@ -25,10 +25,10 @@ export function Cites({ ids, sources }: { ids: string[]; sources: Source[] }) {
   )
 }
 
-export function Said({ statement, sources, citations = true }:
-  { statement: Statement; sources: Source[]; citations?: boolean }) {
+export function Said({ statement, sources, citations = true, showContextMark = true }:
+  { statement: Statement; sources: Source[]; citations?: boolean; showContextMark?: boolean }) {
   const tone = SUPPORT_TONE[statement.support]
-  const generic = !statement.about_this_project
+  const generic = showContextMark && !statement.about_this_project
   // A sentence can pass the support check and still send a reader to a file that was never
   // read: "install using requirements.txt" matched an excerpt about installing, in a project
   // with no requirements.txt. Only the scan knows which files exist, so it marks them.
@@ -36,7 +36,9 @@ export function Said({ statement, sources, citations = true }:
   return (
     <li className={'said' + (tone === 'bad' || unread.length ? ' said-bad' : '')}>
       <p className="said-text">
-        {statement.text}
+        {statement.text.split(/(`[^`\n]+`)/g).map((part, i) =>
+          part.startsWith('`') && part.endsWith('`')
+            ? <code key={i}>{part.slice(1, -1)}</code> : part)}
         {citations && <Cites ids={statement.source_ids} sources={sources} />}
       </p>
       {(tone === 'bad' || tone === 'warn' || generic || unread.length > 0) && (
@@ -56,13 +58,14 @@ export function Said({ statement, sources, citations = true }:
   )
 }
 
-export function Statements({ statements, sources, citations = true, limit }:
-  { statements: Statement[]; sources: Source[]; citations?: boolean; limit?: number }) {
+export function Statements({ statements, sources, citations = true, limit, showContextMark = true }:
+  { statements: Statement[]; sources: Source[]; citations?: boolean; limit?: number; showContextMark?: boolean }) {
   const shown = limit ? statements.slice(0, limit) : statements
   return (
     <>
       <ol className="said-list">
-        {shown.map((s, i) => <Said key={i} statement={s} sources={sources} citations={citations} />)}
+        {shown.map((s, i) => <Said key={i} statement={s} sources={sources} citations={citations}
+                                 showContextMark={showContextMark} />)}
       </ol>
       {limit && statements.length > limit && (
         <p className="said-more">{statements.length - limit} more not shown in this mode.</p>

@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon'
 import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
 import type { Status } from '../lib/types'
-import { Statements } from '../components/Statements'
+import { Said, Statements } from '../components/Statements'
 import type { Answer, Turn } from '../lib/answer'
 import { originOf } from '../lib/answer'
 import './ask.css'
@@ -92,7 +92,7 @@ export function Ask() {
 
   const ask = async () => {
     const text = question.trim()
-    if (!text || asking) return
+    if (!text || asking || busy) return
     setAsking(true)
     setQuestion('')
     const turn: Turn = { question: text, asked_at: new Date().toISOString(), answer: null, failed: null }
@@ -164,9 +164,23 @@ export function Ask() {
                         )}
 
                         {turn.answer.statements.length > 0 ? (
-                          <Statements statements={turn.answer.statements}
-                                      sources={turn.answer.sources}
-                                      citations={SHOWS[mode].citations} />
+                          <>
+                            <div className="answer-lead">
+                              <p className="answer-label">Answer</p>
+                              <ol className="said-list">
+                                <Said statement={turn.answer.statements[0]} sources={turn.answer.sources}
+                                      citations={SHOWS[mode].citations} showContextMark={false} />
+                              </ol>
+                            </div>
+                            {turn.answer.statements.length > 1 && (
+                              <div className="answer-details">
+                                <p className="answer-label">Details</p>
+                                <Statements statements={turn.answer.statements.slice(1)}
+                                            sources={turn.answer.sources}
+                                            citations={SHOWS[mode].citations} showContextMark={false} />
+                              </div>
+                            )}
+                          </>
                         ) : (
                           <Missing what={turn.answer.missing_information || 'No answer was produced.'}
                                    checked={turn.answer.error ?? undefined} />
@@ -220,7 +234,7 @@ export function Ask() {
                 </Button>
               </form>
               {busy && !asking && (
-                <p className="ask-busy">A scan is running. Questions wait until it finishes.</p>
+                <p className="ask-busy">Another task is running. You can send your question when it finishes.</p>
               )}
             </Card>
           </div>

@@ -163,6 +163,10 @@ def main(argv=None) -> int:
     if not scan:
         print(f'No completed scan in {args.db}. Run a scan before measuring.')
         return 1
+    if spec.get('repo') != scan['repo'] or (spec.get('commit') and spec['commit'] != scan['commit']):
+        print('The question set repository or pinned commit does not match the active scan. '
+              'Choose a matching --set before measuring.')
+        return 1
     print(f"Scan {scan['id']}  {scan['repo']}  {scan['commit'][:8]}  {len(questions)} questions")
 
     embedded = index.embedded(scan['id'])

@@ -44,7 +44,7 @@ placeholder; only the user token path works.
 | Title | State |
 |---|---|
 | Test live GitHub, Jira and Slack connections | Partly. GitHub only. |
-| Evaluate answer quality | Partly. Retrieval is measured against two labelled sets by `pka/evaluate.py`; the generated answer is not yet scored. |
+| Evaluate answer quality | Progress. `pka/answer_evaluation.py` runs source-checked questions through the app and measures retrieval, citations, reference phrases and refusal behavior separately. Human correctness and source-sufficiency review remains pending; see `TASK_5_2.md`. |
 | Recheck Jira and Slack access before using information | Not started. Freshness checks are GitHub only. |
 | Refresh saved information and cached answers | Partly. Overview caches by commit; nothing else. |
 | Improve background jobs, cancellation and retries | Partly. |

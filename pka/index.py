@@ -22,6 +22,61 @@ SOCIAL = set('hello hi hy hii hiii hey heya hiya helo hllo yo greetings howdy na
              # than answering "help" as though it were a question.
              'you your yours u who there here me us am im sorry please welcome'.split())
 STOP |= SOCIAL
+# Conversational scaffolding should not outrank the subject of a question. Keep
+# these out of search only, so greetings and the small-talk contract are unchanged.
+QUERY_FILLER = set('which project codebase want wants ask asking about tell give name named '
+                   'use uses used using currently actual exact specifically'.split())
+
+
+def question_words(question):
+    asked = list(dict.fromkeys(t for t in words(question) if t not in STOP))
+    focused = [t for t in asked if t not in QUERY_FILLER]
+    return (focused or asked)[:16]
+
+
+def model_role_query(question):
+    """Disambiguate a conversational AI model from business-domain model names."""
+    terms = set(words(question))
+    if not terms & {'model', 'models'}:
+        return question
+    # Preserve explicitly requested roles and non-AI meanings of 'model'.
+    if terms & {'embed', 'embedding', 'embeddings', 'vector', 'vectors', 'classifier',
+                'classification', 'rerank', 'reranking', 'vision', 'rewrite'}:
+        return question
+    business = terms & {'vehicle', 'motorcycle', 'bike', 'car', 'product', 'database', 'schema', 'orm'}
+    if business and not terms & {'ai', 'llm'}:
+        return question
+    if terms & {'bot', 'chatbot', 'chat', 'answer', 'answers', 'answering', 'respond', 'response', 'completion'}:
+        return 'chat model'
+    return question
+
+
+def word_stem(token):
+    """A small inflection family, also matching identifier parts such as EMBED_MODEL."""
+    if token.endswith('s') and len(token) > 4 and not token.endswith('ss'):
+        token = token[:-1]
+    if token.endswith('ing') and len(token) > 6:
+        token = token[:-3]
+        if len(token) > 2 and token[-1] == token[-2]:
+            token = token[:-1]
+    return token
+
+
+ASSIGNMENT = re.compile(r'^\s*(?:(?:export|const|let|var)\s+)*[\"\']?([A-Za-z_][\w]*)[\"\']?'
+                        r'\s*(?::\s*[A-Za-z_][\w.\[\], |]*)?\s*(?:=(?!=)|:)\s*(.+)')
+
+
+def definition_coverage(text, groups, path=''):
+    """Prefer named values and documentation headings over incidental mentions."""
+    best = 0
+    for line in text.splitlines():
+        if path.lower().endswith(('.md', '.markdown')) and re.match(r'^(?:#{2,6}\s+|\*\*[^*]+\*\*\s*$)', line):
+            best = max(best, sum(bool(set(words(line)) & group) for group in groups))
+        match = ASSIGNMENT.match(line)
+        if match and re.search(r'[\"\'\d\[{]', match[2]):
+            names = set(words(match[1]))
+            best = max(best, sum(bool(names & group) for group in groups))
+    return best
 SYNONYMS = {
     'login': ['auth','authentication','signin','session','password'],
     'signin': ['login','auth','session'], 'logout':['signout','session','revoke'],
@@ -385,13 +440,14 @@ class Index:
         """
         used, unknown, corrections = [], [], {}
         for t in tokens:
+            family = sorted(w for w in vocab if word_stem(w) == word_stem(t))[:8]
             if t in vocab:
                 used.append(t)
                 used.extend(x for x in SYNONYMS.get(t, []) if x in vocab)
                 continue
             # The project may simply call it something else: the user says login, the code says
             # authenticate. Try the known aliases before guessing at spelling.
-            alias = [x for x in SYNONYMS.get(t, []) if x in vocab][:3]
+            alias = family or [x for x in SYNONYMS.get(t, []) if x in vocab][:3]
             if alias:
                 corrections[t] = alias
                 used.extend(alias)
@@ -423,7 +479,7 @@ class Index:
 
     def _terms(self, question: str, scan: dict, info: dict | None = None):
         """Turn what was typed into the words this snapshot actually contains."""
-        asked = list(dict.fromkeys(t for t in words(question) if t not in STOP))[:16]
+        asked = question_words(question)
         # resolve already folds in aliases and spelling, so tokens are the final search terms
         tokens, unknown, corrections = self.resolve(asked, self.vocabulary(scan['id']))
         if info is not None:
@@ -433,7 +489,7 @@ class Index:
             info.setdefault('corrections', {}).update(corrections)
         return tokens
 
-    def _ranked(self, db, tokens: list[str], scan: dict) -> list[dict]:
+    def _ranked(self, db, tokens: list[str], scan: dict, groups=None) -> list[dict]:
         """One query's candidate chunks, best first, before anything is widened or capped."""
         if not tokens:
             return []
@@ -441,11 +497,34 @@ class Index:
         rows = db.execute('''SELECT c.*, bm25(search,5,4,1) AS rank FROM search
             JOIN chunks c ON c.id=search.rowid WHERE search MATCH ? AND c.scan_id=?
             ORDER BY rank LIMIT 60''',(expression,scan['id'])).fetchall()
+        groups = [g for g in (groups or []) if g]
+        # OR alone lets a common word fill the candidate budget. Include chunks
+        # matching all query concepts before ranking, with alternatives inside each.
+        if len(groups) > 1:
+            joint = ' AND '.join('(' + ' OR '.join('"' + t + '"' for t in sorted(g)) + ')' for g in groups)
+            exact = db.execute('''SELECT c.*, bm25(search,5,4,1) AS rank FROM search
+                JOIN chunks c ON c.id=search.rowid WHERE search MATCH ? AND c.scan_id=?
+                ORDER BY rank LIMIT 20''', (joint, scan['id'])).fetchall()
+            # Keep the original query's BM25 score for existing candidates.
+            # Scores from differently expanded queries are not interchangeable.
+            combined = {r['id']: r for r in rows}
+            for row in exact:
+                combined.setdefault(row['id'], row)
+            rows = list(combined.values())
         # BM25 divides by document length, so a long chunk that repeats a word can outrank a file
         # whose folder is named after it. Someone asking about bug investigation wants
         # bug_investigation/, so reward a path that carries the words that were asked for.
         wanted = set(tokens)
-        return sorted(rows, key=lambda r: r['rank'] - PATH_MATCH_BONUS * len(wanted & set(words(r['path']))))
+        def rank(row):
+            definition = definition_coverage(row['text'], groups, row['path'])
+            # Only a definition matching the requested concept gets priority.
+            # Counting all prose matches ahead of BM25 overvalues long comments
+            # which mention several subsystems (e.g. a proxy mentioning an API).
+            definition = definition if definition >= min(2, len(groups)) else 0
+            return (-definition,
+                    row['rank'] - PATH_MATCH_BONUS * len(wanted & set(words(row['path']))))
+        return [dict(row, _direct_value=definition_coverage(row['text'], groups, row['path']) >= min(2, len(groups)))
+                for row in sorted(rows, key=rank)]
 
     def unembedded(self, scan_id: int) -> list[dict]:
         """Chunks in this scan that have no vector yet, so a scan can be embedded in batches."""
@@ -587,8 +666,10 @@ class Index:
         # Keep multiple relevant files and a bounded prompt. No model-selected tools.
         def choose(min_chars: int, test_cap: int, vendor_cap: int, per_file: int) -> list[dict]:
             selected, counts, budget, tests, vendored = [], {}, 0, 0, 0
+            seen = set()
             for row in rows:
                 d = dict(row)
+                direct_value = d.pop('_direct_value', False)
                 # A test is real evidence and sometimes the clearest specification, but a question
                 # about how something works should be answered mostly from the code that does it.
                 is_test = bool(TEST_PATH.search(d['path']))
@@ -602,13 +683,17 @@ class Index:
                 if counts.get(d['path'],0) >= per_file:
                     continue
                 d['text'], d['start'], d['end'] = widen(d, neighbours.get(d['path'], ()))
+                key = (d['path'], d['start'], d['end'])
+                if key in seen:
+                    continue
                 # Checked after widening, because a short chunk that grew is now worth reading
                 # and the budget has to account for what is actually sent.
-                if len(d['text'].strip()) < min_chars:
+                if len(d['text'].strip()) < min_chars and not direct_value:
                     continue
                 if budget+len(d['text']) > context_chars:
                     continue
                 counts[d['path']] = counts.get(d['path'],0)+1
+                seen.add(key)
                 budget += len(d['text'])
                 tests += is_test
                 vendored += is_vendor
@@ -632,13 +717,22 @@ class Index:
                max_sources: int | None = None, context_chars: int | None = None,
                test_cap: int | None = None, vendor_cap: int | None = None,
                query_vectors: list | None = None) -> list[dict]:
-        return self.search_many([question], scan, info, max_sources, context_chars,
-                                test_cap, vendor_cap, query_vectors)
+        # A direct question naming a file must not borrow another file's values.
+        # Relationship/explanation questions keep cross-file retrieval available.
+        related = re.search(r'\b(?:how|why|explain|describe|depend\w*|call\w*|referenc\w*|'
+                            r'across|between|impact|interact\w*|connect\w*|compar\w*|uses)\b|\bused by\b', question, re.I)
+        named = [] if related else [path for path in self.code_paths(scan['id'])
+            if re.search(r'(?<![\w./-])' + re.escape(path) + r'(?![\w./-])', question, re.I)]
+        retrieval_question = model_role_query(question)
+        if info is not None and retrieval_question != question:
+            info['interpretation'] = 'chat model configuration'
+        return self.search_many([retrieval_question], scan, info, max_sources, context_chars,
+                                test_cap, vendor_cap, query_vectors, path_filter=named)
 
     def search_many(self, questions: list[str], scan: dict, info: dict | None = None,
                     max_sources: int | None = None, context_chars: int | None = None,
                     test_cap: int | None = None, vendor_cap: int | None = None,
-                    query_vectors: list | None = None) -> list[dict]:
+                    query_vectors: list | None = None, path_filter=None) -> list[dict]:
         """Retrieve for several phrasings of the same need and fuse them into one set.
 
         One question is the ordinary case and behaves exactly as a single search did. An
@@ -664,7 +758,11 @@ class Index:
             rankings, weights = [], []
             for question in questions:
                 tokens = self._terms(question, scan, info)
-                ranked = self._ranked(db, tokens, scan)
+                vocab = self.vocabulary(scan['id'])
+                groups = [set(self.resolve([word], vocab)[0]) |
+                          {v for v in vocab if word_stem(v) == word_stem(word)}
+                          for word in question_words(question)]
+                ranked = self._ranked(db, tokens, scan, groups)
                 if ranked:
                     rankings.append(ranked)
                     weights.append(1.0)
@@ -697,6 +795,9 @@ class Index:
                     info['off_topic'] = True
                     return []
             rows = self._fuse(rankings, weights)
+            if path_filter:
+                rows = [row for row in rows if row['path'] in path_filter]
+                info['focused_paths'] = path_filter
             found = self._assemble(db, rows, scan, max_sources, context_chars,
                                    test_cap, vendor_cap)
         if info is not None:

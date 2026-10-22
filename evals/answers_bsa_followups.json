@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "repo": "pinjalu/BSA_chatbot",
+  "commit": "0cc9ce981956e6e3c352836e8112a06700360947",
+  "label_provenance": "Agent-authored references checked against indexed source lines on 22 October 2026. Human review pending. These are a small baseline, not a production accuracy benchmark. Two user-observed embedding questions added; user confirmed the expected model value. Full answer review remains separate.",
+  "cases": [
+    {
+      "id": "embedding_typo",
+      "question": "IN this proejct which model use for embeddings?",
+      "behavior": "answer",
+      "facts": [
+        {
+          "id": "embedding_model_value",
+          "description": "The configured embedding model is text-embedding-3-large, not a classifier helper name.",
+          "phrases": [
+            [
+              "text-embedding-3-large"
+            ]
+          ],
+          "references": [
+            {
+              "path": "chatbot.py",
+              "start": 61,
+              "end": 61
+            },
+            {
+              "path": "pipeline-engine/chatbot.py",
+              "start": 28,
+              "end": 28
+            },
+            {
+              "path": "pipeline-engine/step7_embed_upsert.py",
+              "start": 17,
+              "end": 17
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "embedding_followup",
+      "question": "i want to ask about name of model which use for embeddings",
+      "behavior": "answer",
+      "facts": [
+        {
+          "id": "embedding_model_value",
+          "description": "The configured embedding model is text-embedding-3-large, not a classifier helper name.",
+          "phrases": [
+            [
+              "text-embedding-3-large"
+            ]
+          ],
+          "references": [
+            {
+              "path": "chatbot.py",
+              "start": 61,
+              "end": 61
+            },
+            {
+              "path": "pipeline-engine/chatbot.py",
+              "start": 28,
+              "end": 28
+            },
+            {
+              "path": "pipeline-engine/step7_embed_upsert.py",
+              "start": 17,
+              "end": 17
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chat_model",
+      "question": "For Answeing the qus on bsa bot which model use?",
+      "behavior": "answer",
+      "facts": [
+        {
+          "id": "chat_model_value",
+          "description": "The configured CHAT_MODEL is gpt-5-mini; a vehicle model does not answer this question.",
+          "phrases": [
+            [
+              "gpt-5-mini"
+            ]
+          ],
+          "references": [
+            {
+              "path": "chatbot.py",
+              "start": 62,
+              "end": 62
+            },
+            {
+              "path": "pipeline-engine/chatbot.py",
+              "start": 29,
+              "end": 29
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "purpose",
+      "question": "What is the BSA AI Chatbot for and who is it for?",
+      "behavior": "answer",
+      "facts": [
+        {
+          "id": "customer_support",
+          "description": "Customer support chatbot for BSA motorcycle dealers.",
+          "phrases": [
+            [
+              "customer support",
+              "support chatbot"
+            ],
+            [
+              "BSA"
+            ],
+            [
+              "motorcycle dealers",
+              "dealers"
+            ]
+          ],
+          "references": [
+            {
+              "path": "README.md",
+              "start": 1,
+              "end": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "database",
+      "question": "Which database and Python database driver does the admin panel use?",
+      "behavior": "answer",
+      "facts": [
+        {
+          "id": "postgres_asyncpg",
+          "description": "PostgreSQL with asyncpg.",
+          "phrases": [
+            [
+              "PostgreSQL",
+              "Postgres"
+            ],
+            [
+              "asyncpg"
+            ]
+          ],
+          "references": [
+            {
+              "path": "admin-panel/database.py",
+              "start": 1,
+              "end": 20
+            },
+            {
+              "path": "README.md",
+              "start": 7,
+              "end": 13
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rag_startup",
+      "question": "What command starts the RAG API, and which port does it use?",
+      "behavior": "answer",
+      "facts": [
+        {
+          "id": "uvicorn_8000",
+          "description": "uvicorn api:app --host 127.0.0.1 --port 8000.",
+          "phrases": [
+            [
+              "uvicorn api:app"
+            ],
+            [
+              "8000"
+            ]
+          ],
+          "references": [
+            {
+              "path": "README.md",
+              "start": 74,
+              "end": 77
+            },
+            {
+              "path": "api.py",
+              "start": 14,
+              "end": 15
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "image_extensions",
+      "question": "Which image file extensions does pipeline-engine/step8_upload_s3.py accept?",
+      "behavior": "answer",
+      "facts": [
+        {
+          "id": "five_extensions",
+          "description": "png, jpg, jpeg, gif and webp.",
+          "phrases": [
+            [
+              "png"
+            ],
+            [
+              "jpg"
+            ],
+            [
+              "jpeg"
+            ],
+            [
+              "gif"
+            ],
+            [
+              "webp"
+            ]
+          ],
+          "references": [
+            {
+              "path": "pipeline-engine/step8_upload_s3.py",
+              "start": 15,
+              "end": 25
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "production_bill",
+      "question": "What was this project's actual AWS bill last month? Give the exact amount only if it is recorded in the available evidence.",
+      "behavior": "disclose_missing",
+      "review_note": "The indexed code and README do not establish an actual monthly bill. Review every generated claim for an invented amount. A disclosure alone does not prove the rest of the answer is correct.",
+      "facts": []
+    },
+    {
+      "id": "off_topic",
+      "question": "quasar nebula zebras",
+      "behavior": "abstain",
+      "review_note": "No project evidence is expected for this unrelated phrase.",
+      "facts": []
+    }
+  ]
+}

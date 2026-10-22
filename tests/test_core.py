@@ -1330,7 +1330,10 @@ def test_one_question_fills_more_of_the_context_budget(index):
     source=''.join(f'def handler_{n}(request):\n    return process(request, {n})\n\n\n' for n in range(12))
     index.activate(1,chunk_file('handlers.py',source),scan)
     found=index.search('how does the request handler process a request',scan)
-    assert found and sum(len(s['text']) for s in found)>900
+    # All 685 non-trailing characters fit in one excerpt. Counting duplicate
+    # copies toward 900 used to make this pass without supplying more evidence.
+    assert found and any(s['text'] == source.rstrip('\n') for s in found)
+    assert len({(s['path'],s['start'],s['end']) for s in found}) == len(found)
     assert sum(len(s['text']) for s in found)<=LIMITS.context_chars
 
 

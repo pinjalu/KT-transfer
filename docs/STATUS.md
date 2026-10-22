@@ -1,5 +1,38 @@
 # Implementation and verification record
 
+## Answer quality follow-up, 22 October 2026
+
+The Ask screen now presents a direct answer before supporting details. Retrieval prioritizes
+matching configuration definitions, recognizes word inflections and model roles, retains short
+definitions, and scopes direct file questions to that file. Ollama receives instructions to
+answer each requested fact, keep components separate, and disclose missing evidence without
+contradicting an answer. Focused structured outputs limit unrelated additions. No project
+answers or model values are hardcoded; model weights have not been trained or changed.
+
+All 378 Python tests and the frontend build passed; 14 targeted tests passed again after the
+last instruction clarification. The expanded nine-case live run passed its mechanical checks.
+Agent inspection found and corrected an extra startup sentence that those checks missed;
+the startup recheck gives only the correct command and port. The observed embedding and
+chat-model questions now return the configured names. Chrome checks covered the real answer
+flow and the final layout at 1024 and 1440 pixels. Five live cases were rerun after the final
+prompt change; all passed their checks and agent inspection of the requested facts.
+See [the follow-up record](TASK_5_2.md#follow-up-verification)
+for evidence and limitations. Task 5.2 still awaits human evaluation of the recorded answers.
+
+## Task 5.2 answer evaluation, 22 October 2026
+
+Implemented `python -m pka.answer_evaluation` and a six-case, source-checked reference set for
+the current BSA commit. The live app/Ollama run finished all six cases. All four answerable
+cases retrieved the expected excerpt; three matched the required cited phrases, and five of
+six passed the automatic checks. These are retrieval and mechanical checks, not accuracy.
+
+Agent inspection found a wrong PDF answer for an image-extension question despite the correct
+image list being retrieved, a contradiction in the startup answer, and repetitive or unrelated
+extra statements. No generation errors occurred. Twenty-nine targeted tests passed, covering
+scoring, scope guards, review binding and read-only inspection. Human correctness and source
+sufficiency remain unreviewed, so task 5.2 remains **Progress**. See [the task record](TASK_5_2.md)
+for actual timings, limitations, findings and the review workflow.
+
 ## Task 5.1 live connection checks, 22 October 2026
 
 The new `python -m pka.acceptance` command exercised the saved connections through the real
