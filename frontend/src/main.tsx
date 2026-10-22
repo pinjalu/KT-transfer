@@ -9,6 +9,7 @@ import { Ask } from './pages/Ask'
 import { Overview } from './pages/Overview'
 import { Architecture } from './pages/Architecture'
 import { JiraTasks } from './pages/JiraTasks'
+import { TeamDecisions } from './pages/TeamDecisions'
 import './tokens.css'
 import './shell.css'
 
@@ -30,14 +31,7 @@ createRoot(document.getElementById('root')!).render(
                 'Related components, each linking to the line behind it',
               ]} />} />
           <Route path="jira" element={<JiraTasks />} />
-          <Route path="decisions" element={
-            <Pending step="Step 9" title="Team decisions"
-              lead="Slack is indexed and one overview topic mentions decisions. This makes them browsable."
-              items={[
-                'Decisions pulled out of threads, kept with who said what and when',
-                'Agreed, Proposed and Historical as derived status, not model opinion',
-                'Conflicting points surfaced rather than resolved',
-              ]} />} />
+          <Route path="decisions" element={<TeamDecisions />} />
           <Route path="architecture" element={<Architecture />} />
           <Route path="troubleshooting" element={
             <Pending step="Step 10" title="Troubleshooting"

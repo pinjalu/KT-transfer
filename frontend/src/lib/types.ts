@@ -55,7 +55,7 @@ export type Progress = { phase?: string; read?: number; total?: number; done?: n
 
 export type BackgroundJob = {
   id: number
-  kind: 'scan' | 'overview' | 'jira' | 'slack' | 'jira_task'
+  kind: 'scan' | 'overview' | 'jira' | 'slack' | 'jira_task' | 'decisions'
   target?: string
   state: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | 'interrupted'
   attempt: number

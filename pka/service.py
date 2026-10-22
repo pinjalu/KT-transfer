@@ -11,7 +11,7 @@ from pka.config import KEEP_LOGS, LIMITS, log_dir, now
 from pka.connectors.base import SourceError
 from pka.index import chunk_file, small_talk
 from pka.connectors.slack import transcript
-from pka import embed, jira_tasks, jira_links
+from pka import embed, jira_tasks, jira_links, decisions
 from pka.facts import derive as derive_facts
 from pka.diagram import build as build_diagrams
 from pka.roles import describe as describe_roles
@@ -266,6 +266,8 @@ class Service:
         self.jira_progress = None
         self.jira_task_progress = None
         self.jira_generator = jira_tasks.generate
+        self.decision_progress = None
+        self.decision_generator = decisions.generate
         self.access_warning = ''
         # The last background read's failure, kept so the browser can be told about it.
         self.job_error = ''
@@ -282,14 +284,14 @@ class Service:
         cfg = self.index.settings() or {}
         scope = {key:cfg.get(key, '') for key in ('repo', 'branch')}
         for name in ('jira', 'slack'):
-            if kind in {name, 'overview'} or kind == 'jira_task' and name == 'jira':
+            if kind in {name, 'overview'} or kind == 'jira_task' and name == 'jira' or kind == 'decisions' and name == 'slack':
                 scope[name] = self.index.source_scope(name, cfg.get(name) or {})
-        if kind == 'jira_task':
+        if kind in {'jira_task', 'decisions'}:
             scope['revision'] = self.index.revision
         return scope
 
     def validate_job(self, kind, target=''):
-        if kind not in {'scan', 'overview', 'jira', 'slack', 'jira_task'}:
+        if kind not in {'scan', 'overview', 'jira', 'slack', 'jira_task', 'decisions'}:
             raise SourceError('job', 'Unknown background job.')
         cfg = self.index.settings() or {}
         if not cfg.get('repo'):
@@ -302,6 +304,8 @@ class Service:
             raise SourceError('scope', 'Choose Slack channels first.')
         if kind == 'jira_task':
             self.jira_task_key(target)
+        if kind == 'decisions':
+            self.decision_channel(target)
 
     def job_status(self):
         if not self.job:
@@ -313,7 +317,7 @@ class Service:
         active = result['state'] in {'queued', 'running', 'cancelling'}
         progress = {'scan':self.progress, 'overview':self.overview_progress,
                     'jira':self.jira_progress, 'slack':self.slack_progress,
-                    'jira_task':self.jira_task_progress}.get(result['kind'])
+                    'jira_task':self.jira_task_progress, 'decisions':self.decision_progress}.get(result['kind'])
         result['progress'] = ({k:progress.get(k) for k in ('phase', 'done', 'total', 'processed', 'embed_done', 'embed_total')}
                               if active and progress else None)
         result['can_cancel'] = active and bool(self.task and not self.task.done())
@@ -379,6 +383,8 @@ class Service:
             return self.build_overview()
         if kind == 'jira_task':
             return self.explain_jira_task(self.job['target'])
+        if kind == 'decisions':
+            return self.summarize_decisions(self.job['target'])
         if kind == 'jira':
             return self.read_jira((cfg.get('jira') or {}).get('project', ''))
         selected = cfg.get('slack') or {}
@@ -518,6 +524,7 @@ class Service:
             self.index.save_job(self.job)
             self.slack_progress = self.jira_progress = self.overview_progress = None
             self.jira_task_progress = None
+            self.decision_progress = None
 
     async def scan(self):
         async with self.lock:
@@ -933,6 +940,81 @@ class Service:
                          blocks=stored, secs=elapsed)
             if (result.get('coverage') or {}).get('state') == 'partial':
                 self.job_error = 'Jira import was partial. Check import coverage for missing issues, comments or shortened text.'
+            return result
+
+    def decision_channel(self, channel_id):
+        cfg = self.index.settings() or {}
+        channel = next((c for c in (cfg.get('slack') or {}).get('channels', []) if c['id'] == channel_id), None)
+        if not channel:
+            raise SourceError('scope', 'Choose an imported channel from the selected Slack channels.')
+        scan = self.index.active_scan()
+        if not scan or not self.index.slack_excerpts(scan['id'], channel['name']):
+            raise SourceError('decisions', 'No messages are imported for this channel. Read Slack in Connections first.')
+        return channel
+
+    async def decision_channel_list(self):
+        scan = self.index.active_scan()
+        if not scan:
+            return {'channels':[], 'reason':'Scan the repository and read Slack in Connections first.'}
+        checked = await self.check_external_access(scan, names=('slack',))
+        channels = []
+        for channel in (self.index.settings().get('slack') or {}).get('channels', []):
+            rows = self.index.slack_excerpts(scan['id'], channel['name'])
+            if rows:
+                channels.append({**channel, 'excerpts':len(rows)})
+        self.ensure_current(checked)
+        return {'channels':channels, 'revision':checked[0],
+                'reason':'' if channels else 'No Slack messages were imported. Select channels and read messages in Connections.'}
+
+    async def decision_detail(self, channel_id):
+        channel = self.decision_channel(channel_id)
+        scan = self.index.active_scan()
+        checked = await self.check_external_access(scan, names=('slack',))
+        sources = decisions.passages(self.index.slack_excerpts(scan['id'], channel['name']))
+        imported = (self.index.source_import('slack') or {}).get('report') or {}
+        coverage = next((r for r in imported.get('channels', []) if r['name'] == channel['name']), {})
+        result = {'channel':channel, 'sources':sources, 'summary':self.index.decision_summary(channel_id),
+                  'revision':checked[0], 'read_at':imported.get('read_at'),
+                  'coverage':coverage.get('coverage') or {'state':'unknown'},
+                  'import_coverage':imported.get('coverage_state', 'unknown')}
+        self.ensure_current(checked)
+        return result
+
+    async def summarize_decisions(self, channel_id):
+        async with self.lock:
+            self.begin_work()
+            channel = self.decision_channel(channel_id)
+            scan = self.index.active_scan()
+            checked = await self.check_external_access(scan, names=('slack',))
+            rows = self.index.slack_excerpts(scan['id'], channel['name'])
+            sources = decisions.passages(rows)
+            groups = decisions.batches([source for source in sources if not decisions.greeting(source)])
+            started, items, seen = time.perf_counter(), [], {}
+            for number, group in enumerate(groups, 1):
+                self.check_cancelled()
+                self.ensure_current(checked)
+                self.decision_progress = {'phase':'Summarizing #'+channel['name'], 'done':number-1, 'total':len(groups)}
+                raw = decisions.demo(group) if self.demo else await self.decision_generator(group, number, len(groups))
+                self.check_cancelled()
+                self.ensure_current(checked)
+                for point in decisions.checked_points(raw, group):
+                    # Keep the evidence when equivalent points recur in later batches.
+                    key = (point['kind'], re.sub(r'\s+', ' ', point['text']).strip().casefold())
+                    if key in seen:
+                        old = seen[key]
+                        old['source_ids'] = list(dict.fromkeys(old['source_ids']+point['source_ids']))
+                        old['quotes'].extend(quote for quote in point['quotes'] if quote not in old['quotes'])
+                    else:
+                        seen[key] = point
+                        items.append(point)
+            await self.check_external_access(scan, names=('slack',))
+            self.check_cancelled()
+            self.ensure_current(checked)
+            result = {'channel_id':channel_id, 'channel_name':channel['name'], 'items':items,
+                      'generated_at':now(), 'model':'example-data' if self.demo else os.getenv('OLLAMA_MODEL', 'qwen3:1.7b'),
+                      'demo':self.demo, 'parts':len(groups), 'passages_read':len(sources), 'excerpts_read':len(rows),
+                      'elapsed_seconds':round(time.perf_counter()-started, 2)}
+            self.index.save_decision_summary(channel_id, checked[0], result)
             return result
 
     def jira_task_key(self, key):

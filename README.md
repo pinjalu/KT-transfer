@@ -2,7 +2,7 @@
 
 Understand one GitHub project with a local assistant. Configure a repository and branch, scan a specific commit, ask a question in ordinary English, and inspect the code excerpts behind the answer.
 
-The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, selected Jira task explanations and related source links, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Requirement implementation checks, team decision browsing and other planned screens remain unfinished. See [Jira task explanations](docs/TASK_6_2.md), [related sources](docs/TASK_6_3.md), [baseline acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
+The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, selected Jira task explanations and related source links, Slack discussion summaries with evidence and status labels, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Requirement implementation checks and other planned screens remain unfinished. See [Jira task explanations](docs/TASK_6_2.md), [related sources](docs/TASK_6_3.md), [Team decisions](docs/TASK_6_4.md), [baseline acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
 
 Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windows PowerShell in this project's folder. Python 3.10 or newer is required. Current target-machine checks are recorded in [task 5.8](docs/TASK_5_8.md); older platform checks remain in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
 
@@ -253,6 +253,14 @@ reference and open files at the scanned commit. These links load without Ollama.
 retain recorded authors and timestamps; their links open the first message of the imported
 excerpt. Coverage, empty results and source-specific access failures remain visible. A linked
 discussion does not establish an agreed decision. See [task 6.3](docs/TASK_6_3.md).
+
+On **Team decisions**, choose an imported Slack channel and click **Summarize decisions**.
+Ollama reads its saved passages in bounded parts. Each point includes supporting quotes and
+expandable messages; recorded decisions, proposals, historical context, possible conflicts and
+unclear wording have separate labels. The screen shows the model, saved time and source coverage.
+Generation continues across navigation, with cancellation and retry in the shared job banner.
+Reload restores the saved summary. These labels describe imported wording; they do not establish
+current team policy. Fuller thread and edit/deletion handling remain task 6.5. See [task 6.4](docs/TASK_6_4.md).
 
 Each source on Connections also shows **Import coverage**: what was read, what was skipped or
 failed, when it was saved, and which limits or gaps apply. Expand **Coverage details and limits**

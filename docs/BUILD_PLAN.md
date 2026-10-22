@@ -7,7 +7,7 @@ then sets a build order.
 
 Current verification is recorded in [task 5.8](TASK_5_8.md). Phase counts below are the original
 9 October inventory, not current completion percentages. Individual task rows have been updated
-where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.3.
+where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.4.
 
 The backend is already FastAPI (`pka/web.py`, `fastapi==0.142.2`). Nothing needs to be moved onto
 FastAPI. The original missing-functionality counts below describe the 9 October baseline; the current screen coverage is listed below.
@@ -22,9 +22,10 @@ FastAPI. The original missing-functionality counts below describe the 9 October 
 | **Total titles in the chart** | **126** | |
 
 The React sidebar now has ten destinations. Home, Connections, Project overview, Ask assistant,
-Jira tasks and Architecture have implemented views. Feature explorer, Team decisions,
+Jira tasks, Team decisions and Architecture have implemented views. Feature explorer,
 Troubleshooting and Settings explicitly show planned functionality. The original wizard remains
-at `/legacy`. Jira explanations and related source links are available; requirement implementation checks and Slack decision browsing remain planned.
+at `/legacy`. Jira explanations, related source links and cited Slack summaries are available;
+requirement implementation checks remain planned.
 
 ## Phase by phase
 
@@ -108,11 +109,14 @@ acceptance criteria and suggested clarification questions. Results run as backgr
 are saved against the current source revision. See [task 6.2](TASK_6_2.md). Task 6.3 adds explicit
 reference and possible word-match links to indexed files and Slack excerpts, with evidence and
 current access checks. See [task 6.3](TASK_6_3.md). Comparing requirements against implementation
-and summarizing agreed decisions remain subsequent work.
+remains subsequent work.
 
-Slack decisions are one model-written topic inside the overview. Separating agreed from proposed
-from historical, and surfacing conflicting points, is asked of a 1.7B model rather than derived.
-Mockup 07 shows it as a first-class browsable list with status chips.
+Task 6.4 adds a dedicated Team decisions screen with channel summaries, verified supporting
+quotes, imported messages and status filters. Conservative wording checks distinguish explicit
+recorded choices from proposals, historical context and unclear evidence; possible conflicts
+retain both cited positions. Results are saved and generated through background jobs. These
+checks do not establish current policy or complete semantic correctness. Fuller threads and
+edit/deletion handling remain task 6.5. See [task 6.4](TASK_6_4.md).
 
 ### Phase 08, Tests, failures and troubleshooting — 0 done, 1 partly, 9 not started
 
@@ -148,7 +152,7 @@ configuration change (`OLLAMA_MODEL`) rather than work.
 | 04 Ask assistant | Yes | Conversation history, follow-ups, the two-part feedback row |
 | 05 Feature explorer | No | Everything. Needs the feature concept first. |
 | 06 Jira tasks | Partly | Explanation, cited requirements and related files/discussions implemented; requirement implementation comparison remains |
-| 07 Team decisions | No | Decision extraction, status classification, conflict detection |
+| 07 Team decisions | Partly | Cited channel summaries, conservative status labels and possible conflicts implemented; fuller threads, current-policy verification and code implementation evidence remain |
 | 08 Architecture | Mostly | Tabs for APIs, database, external services, deployment; node detail panel |
 | 09 Troubleshooting | No | Symptom input, cause ranking, where to check, suggested checks and tests |
 | 10 Settings | No | Team, permissions, model settings, refresh schedule, activity log |

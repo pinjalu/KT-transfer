@@ -1,0 +1,8 @@
+.decision-detail { display: grid; gap: 20px; min-width: 0; }
+.decision-filter { display: grid; gap: 8px; max-width: 440px; font-size: 13px; font-weight: 600; }
+.decision-filter select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; }
+.decision-points { list-style: none; padding: 0; margin: 20px 0 0; }
+.decision-points > li { padding: 20px 0; border-top: 1px solid var(--border); }
+.decision-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.decision-evidence { margin: 14px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.decision-evidence .jira-related-text { max-height: 420px; }

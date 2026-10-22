@@ -450,6 +450,25 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         # The token is not passed on. It is handed to the MCP server at launch instead.
         return {'started':True, 'job_id':service.start_job('slack'), 'channels':len(saved.get('channels',[]))}
 
+    @app.get('/api/decisions/channels')
+    async def decision_channels():
+        if not chosen['this_run']:
+            return {'channels':[], 'reason':'Choose a project in Connections first.', 'awaiting_project':True}
+        return await service.decision_channel_list()
+
+    @app.get('/api/decisions/channels/{channel_id}')
+    async def decision_detail(channel_id: str):
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose a project in Connections first.')
+        return await service.decision_detail(channel_id)
+
+    @app.post('/api/decisions/channels/{channel_id}/summarize')
+    async def summarize_decisions(channel_id: str):
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose a project in Connections first.')
+        idle()
+        return {'started':True, 'job_id':service.start_job('decisions', target=channel_id)}
+
     def jira_credentials():
         credentials.refresh()
         return (os.getenv('JIRA_SITE',''), os.getenv('JIRA_EMAIL',''), os.getenv('JIRA_API_TOKEN',''))

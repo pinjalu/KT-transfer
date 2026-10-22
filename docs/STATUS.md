@@ -1,5 +1,24 @@
 # Implementation and verification record
 
+## Task 6.4 Slack discussion summaries with sources, 22 October 2026
+
+Task 6.4 replaces the Team decisions placeholder with selected-channel summaries, exact
+supporting quotes, expandable imported messages, source links and status filters. Conservative
+wording checks distinguish recorded decisions, proposals, historical context and unclear
+evidence; possible conflicts retain both positions. The actual model and source coverage are
+visible. Background generation supports navigation, cancellation, retry and saved results.
+
+The production frontend build, 614 regression tests, 108 final focused checks and twelve
+controlled Chrome checks passed. A live read-only Slack/Ollama run used qwen3:1.7b to read three
+passages in two parts, producing eight points with validated quotes. The existing app was
+restarted with this build and a separate real summary was saved, preserving all imported data
+and the existing Jira explanation. Three further Chrome checks against the running app verified
+saved evidence, model details and navigation/reload with no generation requests or page errors.
+This second generation produced nine points. Both runs
+correctly kept the long, partial conversation's status unclear rather than asserting agreement.
+See [task 6.4](TASK_6_4.md) for evidence rules and limitations. Task 6.4 is **Done within this
+summary scope**. Fuller Slack threads and edit/deletion handling remain task 6.5.
+
 ## Task 6.3 related files and discussions, 22 October 2026
 
 Task 6.3 adds separate related-file and Slack-discussion panels to the selected Jira task.
@@ -8,7 +27,7 @@ evidence, pinned file links, stored discussion permalinks, pagination and covera
 what was matched. Each source is checked before use; no model or external write is needed.
 The production build, 561 regression tests, 74 final focused checks, 14 Chrome checks and twelve live relationship
 reads across six saved Jira tasks passed. See [task 6.3](TASK_6_3.md) for scope and limits.
-Task 6.3 is **Done**. Decision summarization remains task 6.4; fuller Slack thread handling
+Task 6.3 is **Done**. Decision summarization is covered by task 6.4 above; fuller Slack thread handling
 remains task 6.5. These links do not verify requirement implementation.
 
 ## Task 6.2 selected Jira task explanations, 22 October 2026

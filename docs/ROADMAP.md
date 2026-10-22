@@ -47,13 +47,21 @@ The adapter reads one selected Jira project through scoped MCP tools. Credential
 bounded descriptions/comments, custom text field names, updates, access checks and coverage
 are implemented. Selected task explanations and evidence-backed related files/discussions are
 available; see [task 6.2](TASK_6_2.md) and [task 6.3](TASK_6_3.md). Requirement implementation
-verification, specialized non-text field mapping and decision summaries remain incomplete.
+verification and specialized non-text field mapping remain incomplete. Channel-level Slack
+summaries are available through [task 6.4](TASK_6_4.md), within the limits below.
 
 For a selected issue, explain the request, requirements, related code/documents, recorded discussions/decisions, investigation areas and open questions. Establish confirmed relationships through explicit issue keys, URLs and recorded links. Label lexical or semantic similarity as a possible connection, not a confirmed relationship. Preserve issue keys, timestamps and URLs in the index.
 
 Acceptance: a known ticket produces a traceable report; unrelated projects never enter the index or answers; missing custom fields and uncertain matches remain visible; no issue is created or changed.
 
-## Stage 4 — Slack decision context, reading implemented with a user token
+## Stage 4 — Slack decision context, reading and cited summaries implemented
+
+Task 6.4 provides saved channel summaries with exact quotes, recorded authors/timestamps,
+source links, conservative decision/proposal/historical/unclear labels and possible conflicts.
+All substantive imported passages are read in bounded background requests. Current channel
+access is rechecked; source changes invalidate summaries. Labels describe recorded wording,
+not verified current policy. Fuller thread reconstruction and edit/deletion handling remain
+task 6.5; the broader acceptance criteria below are not yet fully met. See [task 6.4](TASK_6_4.md).
 
 Replace the disabled Slack placeholder. Require an explicit channel allowlist and a connection authorised to read those channels. Read relevant messages and thread replies with cursors, timestamps and permalinks. Account for channel membership changes, deleted/edited messages, retention limits, API restrictions and token revocation. Do not silently add channels or direct messages.
 

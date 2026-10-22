@@ -4,7 +4,7 @@ import type { BackgroundJob as Job } from '../lib/types'
 import { Button, Chip } from './ui'
 import './background-job.css'
 
-const NAMES = { scan: 'Repository scan', overview: 'Project overview', jira: 'Jira read', slack: 'Slack read', jira_task: 'Jira task explanation' }
+const NAMES = { scan: 'Repository scan', overview: 'Project overview', jira: 'Jira read', slack: 'Slack read', jira_task: 'Jira task explanation', decisions: 'Team decision summary' }
 const STATES = { queued: 'Queued', running: 'Running', cancelling: 'Cancelling', succeeded: 'Completed',
   partial: 'Completed with gaps', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
 
