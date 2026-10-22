@@ -122,13 +122,18 @@ def focused_question(question):
 
 
 def fact_budget(question):
-    # "Which database AND driver?" asks for two facts. Constraining it to one
-    # statement can cause a small model to omit the second rather than combine them.
+    # A small model can omit the second requested value when forced into one sentence.
+    # Allow separate facts, while the prompt makes clear that this is a maximum.
     return min(3, 1 + len(re.findall(r'\band\b|;', question, re.I)))
 
 
-def answer_schema(question):
+def answer_schema(question, sources=()):
     schema = GroundedAnswer.model_json_schema()
+    if sources:
+        # Constrain generation as well as validating afterward. A small model must
+        # not invent citation IDs when the available evidence cannot answer a question.
+        schema['$defs']['Statement']['properties']['source_ids']['items']['enum'] = [
+            source['source_id'] for source in sources]
     if not focused_question(question):
         schema['properties']['statements']['maxItems'] = 4
         return schema
@@ -195,19 +200,28 @@ def _why_http(reply, model: str) -> str:
 async def ollama_answer(question, sources):
     instruction = SYSTEM
     if focused_question(question):
-        instruction += (f'\nThis is a focused question with a budget of {fact_budget(question)} concise statement(s). '
-                        'Answer EVERY requested part, including facts joined by "and". Use one statement per '
-                        'requested fact, combining them when natural, '
-                        'with missing_information empty; or no statements and a specific missing-information message. '
-                        'If only part is known, identify that limit within the answer. '
-                        'Do not add implementation background.')
+        if fact_budget(question) == 1:
+            instruction += ('\nFor this factual lookup, return one concise sentence answering every requested part. '
+                            'Mention only what the question asks for, without background or implementation details. '
+                            'Keep missing_information empty when answered. If only part is known, say so in the sentence. '
+                            'If no requested fact is known, return no statements and explain the gap.')
+        else:
+            instruction += (f'\nThis is a focused question with a budget of {fact_budget(question)} concise statement(s). '
+                            'Answer EVERY requested part, including facts joined by "and". Use one statement per '
+                            'requested fact, combining them when natural, '
+                            'with missing_information empty; or no statements and a specific missing-information message. '
+                            'If only part is known, identify that limit within the answer. '
+                            'Do not add implementation background.')
+    evidence = [{'source_id':s['source_id'],'path':s['path'],
+                 'lines':[s['start'],s['end']],'text':s['text']} for s in sources]
+    request = ({'question':question,'untrusted_evidence':evidence}
+               if not focused_question(question) or fact_budget(question) > 1
+               else {'untrusted_evidence':evidence,'question':question})
     payload = {'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),'stream':False,'think':False,
-               'format':answer_schema(question),'keep_alive':'5m',
+               'format':answer_schema(question, sources),'keep_alive':'5m',
                'options':{'temperature':0,'num_ctx':8192,'num_predict':1200},
                'messages':[{'role':'system','content':instruction},
-                           {'role':'user','content':json.dumps({'question':question,
-                               'untrusted_evidence':[{'source_id':s['source_id'],'path':s['path'],
-                                 'lines':[s['start'],s['end']],'text':s['text']} for s in sources]})}]}
+                           {'role':'user','content':json.dumps(request)}]}
     started = time.perf_counter()
     applog.event('ollama.request', model=payload['model'], sources=len(sources),
                  num_ctx=payload['options']['num_ctx'], payload_bytes=len(json.dumps(payload)))
@@ -962,9 +976,9 @@ class Service:
                 applog.warn('ask.no_evidence', scan_id=scan['id'], **applog.question_fields(question))
                 unknown = search_info.get('unknown') or []
                 if unknown:
-                    detail = ('None of these words appear anywhere in this project: '
-                              + ', '.join(unknown) + '. Either this project does not cover that, '
-                              'or it calls it something else. Try a word you have seen in the code.')
+                    detail = ('These words were not found in the indexed content: '
+                              + ', '.join(unknown) + '. Unread or skipped content may still cover them. '
+                              'Try another term or check the import coverage.')
                 else:
                     detail = ('No matching evidence was found in the indexed files. Try another term, '
                               'inspect the README or check scan exclusions.')

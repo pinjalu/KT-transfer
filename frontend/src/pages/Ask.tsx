@@ -201,7 +201,7 @@ export function Ask() {
 
                         {SHOWS[mode].terms && turn.answer.search?.unknown?.length ? (
                           <p className="ans-terms">
-                            Not found anywhere in this project:{' '}
+                            Not found in the indexed content:{' '}
                             <span className="mono">{turn.answer.search.unknown.join(', ')}</span>
                           </p>
                         ) : null}

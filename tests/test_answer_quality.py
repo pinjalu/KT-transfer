@@ -104,9 +104,20 @@ def test_explanations_keep_room_for_partial_evidence_and_details(question):
     assert answer_schema(question)['properties']['statements']['maxItems'] == 4
 
 
-def test_multi_part_lookup_has_room_for_each_requested_fact():
-    schema = answer_schema('Which database and Python driver does the service use?')
+@pytest.mark.parametrize('question', [
+    'Which database and Python driver does the service use?',
+    'What command starts the worker, and which port does it use?',
+])
+def test_multi_part_lookup_keeps_room_for_each_requested_fact(question):
+    schema = answer_schema(question)
     assert schema['anyOf'][0]['properties']['statements']['maxItems'] == 2
+
+
+@pytest.mark.parametrize('question', ['Which database is configured?', 'Explain how storage works'])
+def test_generation_schema_limits_citations_to_actual_retrieved_ids(question):
+    schema = answer_schema(question, [{'source_id': 'S2'}, {'source_id': 'S8'}])
+    allowed = schema['$defs']['Statement']['properties']['source_ids']['items']['enum']
+    assert allowed == ['S2', 'S8']
 
 
 def test_named_file_lookup_cannot_borrow_other_uploaders_formats(repository):

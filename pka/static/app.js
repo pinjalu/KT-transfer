@@ -553,7 +553,7 @@ function excerpt(s, prefix) {
 
 // What the search actually did with the words that were typed. Without this a thin answer
 // looks like the project has no answer, when the real reason is usually that one word in the
-// question does not occur anywhere in the project under that name.
+// question does not occur in the indexed content under that name.
 function searchNote(search, checks) {
   if (!search) return null;
   const box = node('div', '', 'search-note');
@@ -565,9 +565,9 @@ function searchNote(search, checks) {
       corrections.map(([from, to]) => `${from} → ${to.join(', ')}`).join('; '), 'small'));
   }
   if ((search.unknown || []).length) {
-    box.append(node('p', 'These words appear nowhere in the scanned files: ' +
-      search.unknown.join(', ') + '. Either the project does not cover that, or it calls it ' +
-      'something else.', 'small'));
+    box.append(node('p', 'These words were not found in the indexed content: ' +
+      search.unknown.join(', ') + '. Unread or skipped content may still cover them. ' +
+      'Try another term or check the import coverage.', 'small'));
   }
   if (checks && (checks.dropped_repeats || checks.narrowed_citations)) {
     const parts = [];

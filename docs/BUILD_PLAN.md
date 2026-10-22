@@ -5,8 +5,12 @@ in this repo: a phase chart naming 126 functionality titles across ten phases, a
 mockups for a product called KT Assistant. This file maps both against what is actually built,
 then sets a build order.
 
+Current verification is recorded in [task 5.8](TASK_5_8.md). Phase counts below are the original
+9 October inventory, not current completion percentages. Individual task rows have been updated
+where later acceptance records exist. The workbook uses separate ticket/task IDs (5.1–5.8).
+
 The backend is already FastAPI (`pka/web.py`, `fastapi==0.142.2`). Nothing needs to be moved onto
-FastAPI. What is missing is roughly a third of the functionality in the chart and all ten screens.
+FastAPI. The original missing-functionality counts below describe the 9 October baseline; the current screen coverage is listed below.
 
 ## Headline
 
@@ -17,10 +21,10 @@ FastAPI. What is missing is roughly a third of the functionality in the chart an
 | Not started | 47 | 37% |
 | **Total titles in the chart** | **126** | |
 
-Of the ten screens, none exist. The current interface is a three-step wizard (select platform,
-connect, workspace) in `pka/static/index.html` and `pka/static/app.js`, not a sidebar application
-with ten destinations. The backend behind four of the ten screens is largely ready; the other six
-need new backend work before a screen is worth drawing.
+The React sidebar now has ten destinations. Home, Connections, Project overview, Ask assistant
+and Architecture have implemented views. Feature explorer, Jira tasks, Team decisions,
+Troubleshooting and Settings explicitly show planned functionality. The original wizard remains
+at `/legacy`. Importing Jira/Slack does not complete their dedicated analysis screens.
 
 ## Phase by phase
 
@@ -32,25 +36,24 @@ exclusion rules, progress and cancellation, change detection, local storage, sea
 answers, sources, missing-information reporting, overview and reading order, feedback, interrupted
 scan recovery, logs, the connection doctor and demo mode.
 
-### Phase 02, Jira and Slack connections — 13 of 13 written, Jira unverified live
+### Phase 02, Jira and Slack connections — reading implemented and checked live
 
-All seven Jira titles and all six Slack titles have code. Two caveats carried over from
-STATUS.md and they matter: no live Jira site has ever accepted the credentials used here, so
-every Jira behaviour is evidence from mocks only. And the Slack bot token path is still a
-placeholder; only the user token path works.
+Scoped GitHub, Jira and Slack user-token reads passed live on 22 October 2026. Access checks,
+refresh behavior and import coverage have separate acceptance records. The Slack bot-token
+path remains a placeholder. Missing workspace configuration prevents Slack message permalinks.
 
 ### Phase 03, Reliable current project knowledge — 4 done, 9 partly, 5 not started
 
 | Title | State |
 |---|---|
-| Test live GitHub, Jira and Slack connections | Partly. GitHub only. |
+| Test live GitHub, Jira and Slack connections | Done for scoped live reads. See `TASK_5_1.md` and the final rerun in `TASK_5_8.md`. |
 | Evaluate answer quality | Progress. `pka/answer_evaluation.py` runs source-checked questions through the app and measures retrieval, citations, reference phrases and refusal behavior separately. Human correctness and source-sufficiency review remains pending; see `TASK_5_2.md`. |
 | Recheck Jira and Slack access before using information | Done. Saved Jira issue/comment visibility and Slack history permissions are rechecked before use, cached views, and publication of generated external-source content. See `TASK_5_3.md` for verification and limits. |
 | Refresh saved information and cached answers | Done. Transactional source revisions survive restarts; source replacement clears derived caches and open views reload safely. Repository scans invalidate same-commit overviews. See `TASK_5_4.md` for tests, live refresh checks and limits. |
 | Improve background jobs, cancellation and retries | Done. Saved job states, shared progress/cancel/retry controls, duplicate-start protection and interrupted-job recovery. Cancellation waits for a safe checkpoint; retries require an explicit action. See `TASK_5_5.md`. |
 | Show import coverage and incomplete reads | Done. Connections displays per-source counts, saved-read times, limits and omission reasons. Jira comment/text gaps and Slack history/thread gaps are recorded; older imports remain coverage-unknown until reread. See `TASK_5_6.md`. |
-| Improve connection screens and source labels | Not started. This is mockup 02. |
-| Complete final acceptance and update documentation | Not started. |
+| Improve connection screens and source labels | Done for the current local Connections view: repository, Jira credential/project and Slack channel selection, read actions, labels and coverage. |
+| Complete final acceptance and update documentation | Done for technical acceptance and documentation of the current local prototype. Agent answer review is recorded in `TASK_5_8.md`; task 5.2's separate human quality ratings remain open. |
 | Provide inspectable evidence for important claims | Done. |
 | Label illustrative scenarios separately from actual facts | Partly. Asked of the model, not enforced. |
 | Explain supported parts when some information is missing | Done. |

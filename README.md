@@ -1,10 +1,10 @@
-# Project Knowledge Assistant — Stage 1
+# Project Knowledge Assistant — local prototype
 
 Understand one GitHub project with a local assistant. Configure a repository and branch, scan a specific commit, ask a question in ordinary English, and inspect the code excerpts behind the answer.
 
-**Stage 1 is implemented.** It uses a Python web app, an actual read-only MCP server, SQLite word search and your local Ollama model. The backend chooses what to read; the small model does not choose tools. Project overviews, Jira and Slack remain planned in [docs/ROADMAP.md](docs/ROADMAP.md).
+The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Separate Jira task analysis, team decision browsing and other planned screens remain unfinished. See [current acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
 
-Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). All commands assume Windows PowerShell in this project's folder. Your Python 3.10.9 meets the declared requirements; no Python upgrade is required by this project. Runtime checks here used Linux/Python 3.12, and Windows/Python 3.10 dependency resolution was checked separately. See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windows PowerShell in this project's folder. Python 3.10 or newer is required. Current target-machine checks are recorded in [task 5.8](docs/TASK_5_8.md); older platform checks remain in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
 
 ## What the first version does
 
@@ -164,7 +164,7 @@ it, and only when the interface itself changes.
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run build
 ```
 
@@ -176,7 +176,7 @@ To work on the interface, run `npm run dev` beside `python -m pka` and open
 `Origin` header, because the application refuses a request whose origin is not its own. Nothing
 in `pka/web.py` is relaxed to make that work.
 
-Open <http://127.0.0.1:8000>, click **Start / refresh scan**, and ask **How does login work?** The example mode uses built-in data and a deterministic explanation of the demonstration. It deliberately does not pretend to test a real account or Ollama. Its separate database is `data/demo.sqlite3`.
+Open <http://127.0.0.1:8000/connections>, click **Refresh repository**, then open **Ask assistant** and ask **How does login work?** Example mode uses built-in data and a simulated explanation. It does not test a real account or Ollama. Its separate database is `data/demo.sqlite3`.
 
 ## Connect your actual repository
 
@@ -186,7 +186,7 @@ Follow [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md) for token permissions and 
 .\.venv\Scripts\python.exe -m pka
 ```
 
-Save the repository and the branch in the browser. Paste the address straight from your browser, such as `https://github.com/acme/shop`, or type `owner/repository`; a `/tree/...` or `/blob/...` tail, a trailing `.git`, a `?tab=` query and the `git@github.com:` form are all accepted and reduced to `owner/repository` before anything is fetched. Only github.com addresses are read; any other host is refused. Click **Start / refresh scan**, inspect coverage, then ask a question. Public repositories can be read without a token, but the unauthenticated allowance is only 60 requests per hour for your whole IP address and the scan spends one request per readable file. Any repository with more than about 55 readable files therefore needs a token, and waiting for the reset will not help because the next attempt hits the same ceiling. A token raises the allowance to 5000 per hour. Before reading any file the scan compares the files it needs against the allowance left and stops with those two numbers if the allowance cannot cover the run, rather than spending it on an index that would be discarded. Private repositories require a fine-grained token restricted to the selected repository with **Contents: Read-only** and the metadata access GitHub supplies. Do not grant write permissions.
+Save the repository and the branch in the browser. Paste the address straight from your browser, such as `https://github.com/acme/shop`, or type `owner/repository`; a `/tree/...` or `/blob/...` tail, a trailing `.git`, a `?tab=` query and the `git@github.com:` form are all accepted and reduced to `owner/repository` before anything is fetched. Only github.com addresses are read; any other host is refused. Use **Save and read files** in Connections, or **Refresh repository** for the saved selection. Inspect coverage, then ask a question. Public repositories can be read without a token, but the unauthenticated allowance is only 60 requests per hour for your whole IP address and the scan spends one request per readable file. Any repository with more than about 55 readable files therefore needs a token, and waiting for the reset will not help because the next attempt hits the same ceiling. A token raises the allowance to 5000 per hour. Before reading any file the scan compares the files it needs against the allowance left and stops with those two numbers if the allowance cannot cover the run, rather than spending it on an index that would be discarded. Private repositories require a fine-grained token restricted to the selected repository with **Contents: Read-only** and the metadata access GitHub supplies. Do not grant write permissions.
 
 ## Limits and current scope
 
@@ -218,13 +218,30 @@ same merge rather than replacing them, so asking for a function by name or for a
 still works by exact match. It is off unless you name a model, and if the model is missing or
 Ollama is down the scan and the answer carry on exactly as they did without it. This has been
 checked against a stub embedder and the failure paths, not against a live embedding model; see
-[docs/STATUS.md](docs/STATUS.md). Stage 1 supports GitHub.com; GitHub Enterprise hosts are not implemented. Only files in the selected branch snapshot are collected: no issues, PRs, commit history, Git LFS objects or submodule contents.
+[docs/STATUS.md](docs/STATUS.md). The GitHub connector supports GitHub.com; GitHub Enterprise hosts are not implemented. It collects files in the selected branch snapshot, without GitHub issues, PRs, commit history, Git LFS objects or submodule contents. Jira issues and selected Slack channels are read separately.
 
-Each project records which platforms it uses. Ticking a platform records that fact and shows what connecting it would need; it never grants access on its own. Access requires a credential you place in your own `.env` file and a scope you name yourself: one repository, one Jira project, a listed set of Slack channels. Each platform's panel has a box for every credential it needs. What you type is written to your own local `.env` file, which `.gitignore` excludes, and applied to the running process so the next scan uses it without a restart. Values are never shown again, never written to a log and never sent to the model; the interface is told only whether a credential is set. Only names a platform declares can be written, so a form post cannot set `PATH` or `PYTHONPATH`, and a value containing a line break is refused because it could smuggle in a second setting. A platform that supports it can be connected by pressing a button instead of pasting a token. You paste the client id and secret once, press Connect, approve the reading permissions on the platform's own page, and the token is exchanged and stored for you. The permissions the link asks for are fixed in the registry, so the browser cannot widen them, and a single use random state created here and checked on return is what proves the redirect belongs to a connect you started. Platforms are defined in `pka/connectors/registry.py`, so adding one is an entry in that list plus a connector module beside it, and it then appears in the interface, the API and the setup guidance without any of them being edited. A **complete** scan means all discovered, supported, policy-allowed files within scope were processed. It never means every file in the project was examined. Unsupported files and deliberately excluded paths remain listed as skipped. Size/encoding omissions, unreadable supported files or a truncated tree produce a **partial** scan with warnings. A tree limit means some files cannot even be enumerated; the interface says so. A partial snapshot can answer only from its available excerpts.
+Selecting a project or platform does not grant access. Reading requires your credential and an explicit scope: one repository, one Jira project, or selected Slack channels. In the current React Connections screen, Jira credentials can be saved locally, and Slack supports its configured OAuth connection. GitHub and Slack user tokens can be set in `.env`; the legacy interface at `/legacy` also exposes credential forms. The Slack bot-token connector is not implemented. Use the Slack user-token path described in [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md).
+
+Saved credentials stay in the local, git-ignored `.env` file. Forms never return the token values, accept only registered setting names, and reject line breaks. OAuth scopes are fixed by the connector registry and redirects require a matching single-use state. Select the account and source scope deliberately before reading.
+
+A **complete** scan means all discovered, supported, policy-allowed files within scope were processed. It never means every file in the project was examined. Unsupported files and deliberately excluded paths remain listed as skipped. Size/encoding omissions, unreadable supported files or a truncated tree produce a **partial** scan with warnings. A tree limit means some files cannot even be enumerated; the interface says so. A partial snapshot can answer only from its available excerpts.
 
 Potential secret filenames, dependency folders, build artefacts, lock files, symlinks and unsupported formats are excluded. Dependency folders such as `.venv`, `node_modules` and `vendor` are discarded before the entry cap is applied and the crawler does not descend into them, so a repository that commits its virtual environment still has its own source read. The count of files dropped this way is reported in the scan log. This filename policy is not a secret scanner: credentials embedded inside an otherwise normal source file can still enter the local index. Review what you select and keep credentials out of project files.
 
 Refresh is manual. Short transient failures get bounded retries; longer rate-limit waits are reported so you can retry later. Interrupted scans restart from the beginning. There is no scheduled sync or incremental backfill yet.
+
+Repository scans, Jira and Slack reads, and overview builds have a shared job banner in the
+React interface. You can navigate or reload while they run. **Cancel job** requests a safe stop;
+the current connector or model request must finish first. **Retry job** starts a new attempt
+after a failure, cancellation, partial result or app interruption. Jobs do not restart
+automatically, and only one job or answer runs at a time. The latest result is saved across
+app restarts. See [task 5.5](docs/TASK_5_5.md) for behavior and verification.
+
+Each source on Connections also shows **Import coverage**: what was read, what was skipped or
+failed, when it was saved, and which limits or gaps apply. Expand **Coverage details and limits**
+for repository skip reasons, Jira comment/text omissions, or Slack channel/thread failures.
+Older imports show **Coverage unknown** until another read records this information. A finished
+job can still have incomplete coverage; see [task 5.6](docs/TASK_5_6.md).
 
 ## How it works
 

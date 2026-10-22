@@ -84,6 +84,22 @@ def test_scan_retrieval_feedback_and_citations(index):
     run(scenario())
 
 
+@pytest.mark.parametrize('scan_status', ['complete', 'partial'])
+def test_missing_search_terms_only_describe_the_indexed_scope(index, scan_status):
+    scan = {'id': 1, 'repo': 'acme/shop', 'commit': COMMIT, 'status': scan_status,
+            'finished': now(), 'read': 1, 'skipped': 1}
+    scan_id = index.new_scan(scan)
+    index.activate(scan_id, chunk_file('auth.py', 'def login(): return True'), scan)
+    async def forbidden_model(question, sources):
+        raise AssertionError('No evidence must not trigger a model answer.')
+    svc = Service(index, connector_factory=fixture_connector, generator=forbidden_model)
+    answer = run(svc.ask('quasar nebula zebras'))
+    assert not answer['sources'] and not answer['statements'] and not answer['error']
+    assert 'indexed content' in answer['missing_information']
+    assert 'Unread or skipped content' in answer['missing_information']
+    assert 'anywhere in this project' not in answer['missing_information']
+
+
 def test_ordinary_words_find_auth_symbol(index):
     scan={'id':1,'repo':'acme/shop','commit':COMMIT,'status':'complete','finished':now()}
     index.activate(1,chunk_file('auth.py','def authenticate_user(password):\n    return check_password(password)'),scan)
@@ -125,6 +141,7 @@ def test_failed_scan_disables_previous_snapshot(index):
         assert index.latest()['status']=='failed' and index.active_scan() is None
         with index.db() as db:assert db.execute('SELECT COUNT(*) FROM chunks').fetchone()[0]==0
     run(scenario())
+
 
 
 def test_restart_marks_interrupted(index):

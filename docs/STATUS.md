@@ -1,5 +1,22 @@
 # Implementation and verification record
 
+## Task 5.8 acceptance and documentation, 22 October 2026
+
+Task 5.8 is **Done for technical acceptance and documentation**. The Windows guide and current feature inventory now describe
+the working screens, scoped source readers, import coverage and background controls.
+Historical records below retain their original dates. Five dedicated analysis/settings
+screens remain planned.
+
+Live GitHub, Jira and Slack checks, fresh isolated Jira/Slack imports, saved-source access,
+the HTTP/MCP fixture smoke and seven Chrome checks passed. Acceptance found and fixed a
+smoke-runner race and Windows child-process cleanup. All 463 Python tests passed; after
+the final prompt/citation-schema changes, 37 affected tests passed. Answer review also
+corrected overbroad missing-evidence wording and constrained generation to supplied citation IDs.
+All nine latest answer cases pass their checks after the targeted multipart rerun. The agent
+reviewed the exact answers at the user's request; minor repetition remains in two responses.
+Task 5.2's separate human quality ratings remain unrecorded and are not represented as complete.
+See [task 5.8](TASK_5_8.md) for exact evidence, final test results and remaining review.
+
 ## Task 5.6 import coverage, 22 October 2026
 
 Task 5.6 is **Done**. Connections shows per-source coverage, separate item/excerpt counts,
@@ -101,6 +118,10 @@ thread coverage or model quality. Separate Chrome checks verified repository rec
 Slack import and a successful four-issue Jira import. Browser testing also led to a Jira credential form
 and a fix for the repository-field overflow; six UI regression checks and the frontend build
 passed. See [the task record](TASK_5_1.md) for evidence, coverage limits and rerun steps.
+
+## Historical acceptance records
+
+The records below describe their original dates. Current connector, browser and quality results are above and in [task 5.8](TASK_5_8.md); historical limitations are not the current feature inventory.
 
 Delivery: Stage 2 local prototype. Recorded on 6 October 2026 (IST). The project overview and
 the question flow were revised on 8 October 2026; what that revision did and did not verify is
@@ -301,7 +322,7 @@ One dependency emitted a deprecation warning: Starlette's test client currently 
   arrow not marked as looping runs left to right. None of that is the same as having looked at
   the page, and the appearance of the drawings has not been seen by anybody.
 
-## Not executed here
+## Not executed in the original 6 October environment
 
 - Organisation approval and actual token expiry. A real personal token was used, but neither an
   organisation-approved token nor an expired one was tested.

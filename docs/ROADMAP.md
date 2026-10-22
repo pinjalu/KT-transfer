@@ -2,6 +2,11 @@
 
 The product helps a developer understand a project and investigate tasks with less dependence on experienced colleagues. All connectors must be explicitly scoped and read-only. Advance only after the previous stage has passed its acceptance checks.
 
+Current state, 22 October 2026: source reading, overview, Ask, architecture, background jobs
+and coverage are implemented. Live scoped connector checks have passed. Human answer-quality
+acceptance remains separate. See [task 5.8](TASK_5_8.md) for current evidence and open gates;
+the stage descriptions below retain the broader product acceptance goals.
+
 ## Stage 1 — implemented; live acceptance passed on 6 October 2026
 
 One GitHub repository and branch; commit-pinned scans; a real MCP client/server; bounded, path-aware text chunks; local lexical search; plain-English Ollama answers; inspectable sources; scan coverage and failures; freshness checks; manual feedback; a browser interface and Windows instructions.
@@ -31,16 +36,16 @@ followed through, and the reading order last. Three diagrams carry the parts a p
 faster than a paragraph, and they are derived from imports, routes and paths rather than
 described, so an arrow is evidence of a line in a file.
 
-Remaining for this stage: run the revised overview against a real Ollama model on a repository
-other than the one used here, and judge whether the narrower topics and the merged retrieval
-have actually improved the prose, rather than only the facts and diagrams beside it. Look at
-the rendered page, which has not been seen. Then watch somebody who does not know the project
-use the walkthrough, because whether the steps are in the right order is the one thing no test
-here can establish.
+The rendered overview and navigation have now been exercised in Chrome. Remaining product
+validation includes a second real repository and a developer unfamiliar with the project
+using the walkthrough. These usability and model-quality judgments are separate from passing
+technical checks.
 
-## Stage 3 — Jira task explanations, reading implemented, not yet verified live
+## Stage 3 — Jira task explanations planned; scoped reading verified live
 
-Replace the disabled Jira placeholder with an adapter using read permissions for one selected Jira project. Add only scoped read tools to MCP and the backend's explicit tool allowlist. Handle pagination, custom acceptance-criteria fields, descriptions, comments, credentials, rate limits, updates and deletions.
+The adapter reads one selected Jira project through scoped MCP tools. Credentials, pagination,
+bounded descriptions/comments, updates, access checks and coverage are implemented. Dedicated
+task explanations and custom acceptance-criteria field mapping remain planned.
 
 For a selected issue, explain the request, requirements, related code/documents, recorded discussions/decisions, investigation areas and open questions. Establish confirmed relationships through explicit issue keys, URLs and recorded links. Label lexical or semantic similarity as a possible connection, not a confirmed relationship. Preserve issue keys, timestamps and URLs in the index.
 
