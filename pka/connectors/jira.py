@@ -179,6 +179,40 @@ class JiraSource:
                 break
         return collected[:LIMITS.jira_max_issues]
 
+    async def check_issues_access(self, project_key: str, issue_keys: list[str]) -> dict:
+        """Check that imported issues remain visible to this account."""
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,40}', project_key or ''):
+            raise SourceError('scope', 'No valid Jira project was selected.')
+        keys = sorted(set(issue_keys))
+        if len(keys) > LIMITS.jira_max_issues or any(
+                not re.fullmatch(re.escape(project_key) + r'-[0-9]+', key, re.I) for key in keys):
+            raise SourceError('scope', 'An issue is outside the selected Jira project.')
+        await self.check_access()  # Search can otherwise return an anonymous empty result.
+        visible = set()
+        for start in range(0, len(keys), 50):
+            batch = keys[start:start+50]
+            params = {'jql': 'project = "' + project_key + '" AND key IN (' +
+                      ','.join('"'+key+'"' for key in batch) + ')',
+                      'fields': 'key', 'maxResults': 50}
+            seen = set()
+            while True:
+                body = await self._get(SEARCH, params)
+                if not isinstance(body.get('issues'), list):
+                    raise SourceError('jira', 'Jira access could not be verified.')
+                visible.update(i.get('key', '').upper() for i in body['issues'])
+                token = body.get('nextPageToken')
+                if not token:
+                    if body.get('isLast') is False:
+                        raise SourceError('jira', 'Jira access results were incomplete.')
+                    break
+                if token in seen or len(seen) >= LIMITS.jira_max_pages:
+                    raise SourceError('jira', 'Jira access results were incomplete.')
+                seen.add(token)
+                params['nextPageToken'] = token
+        if any(key.upper() not in visible for key in keys):
+            raise SourceError('access_denied', 'A saved Jira issue was deleted or is no longer accessible. Read the project again.')
+        return {'checked': len(keys)}
+
 
 def issue_block(site: str, issue: dict) -> dict:
     """One issue as a readable block that cites its own Jira link."""

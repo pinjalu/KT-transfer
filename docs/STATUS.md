@@ -1,5 +1,21 @@
 # Implementation and verification record
 
+## Task 5.1 live connection checks, 22 October 2026
+
+The new `python -m pka.acceptance` command exercised the saved connections through the real
+MCP subprocess. GitHub passed: 64 manifest entries at a pinned commit and one non-empty file
+read (3,686 bytes). Slack passed: the selected channel was visible and returned two messages.
+After replacing the Jira API token, Jira authenticated and read four issues from the selected
+project, validated their source URLs and rechecked access. The final all-service run finished
+at 10:29:12 IST with `task_complete: true`. Task 5.1 is **Done** for these scoped connection checks.
+
+No Slack workspace name is saved, so message-link construction remains unverified. The two
+returned messages contained no thread replies. These checks do not establish complete history,
+thread coverage or model quality. Separate Chrome checks verified repository reconnection,
+Slack import and a successful four-issue Jira import. Browser testing also led to a Jira credential form
+and a fix for the repository-field overflow; six UI regression checks and the frontend build
+passed. See [the task record](TASK_5_1.md) for evidence, coverage limits and rerun steps.
+
 Delivery: Stage 2 local prototype. Recorded on 6 October 2026 (IST). The project overview and
 the question flow were revised on 8 October 2026; what that revision did and did not verify is
 recorded below.

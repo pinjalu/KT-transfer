@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, Card, Chip, Dot, Missing } from './ui'
 import { Icon } from './Icon'
+import { JiraCredentials } from './JiraCredentials'
 import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
 import type { JiraReply } from '../lib/sources'
@@ -29,7 +30,6 @@ export function JiraPanel({ status, onChanged }: { status: Status | null; onChan
     setNote('')
     try {
       await post('/api/jira/read')
-      setNote('Reading issues. This replaces whatever was read before.')
       onChanged()
     } catch (exc) {
       setNote(exc instanceof ApiError ? exc.message : 'Could not start reading.')
@@ -91,10 +91,10 @@ export function JiraPanel({ status, onChanged }: { status: Status | null; onChan
         </div>
       </div>
 
-      {reading && status?.jira_progress && (
-        <div className="conn-progress">
+      {reading && (
+        <div className="conn-progress" role="status">
           <span className="spinner" aria-hidden="true" />
-          <span className="bar-phase">{status.jira_progress.phase}</span>
+          <span className="bar-phase">{status?.jira_progress?.phase || 'Reading issues…'}</span>
         </div>
       )}
 
@@ -114,12 +114,9 @@ export function JiraPanel({ status, onChanged }: { status: Status | null; onChan
         </div>
       )}
 
-      {/* Listing projects now works against a live Atlassian site. Reading issues from one has
-          still never been exercised live, so that half stays flagged until it has. */}
-      <p className="conn-caveat">
-        Reading issues has not yet been exercised against a live Jira site, only against mocked
-        responses. If it behaves oddly, suspect this connector before suspecting your project.
-      </p>
+      <JiraCredentials disabled={busy || !!status?.demo}
+                       onSaved={() => { jira.reload(); onChanged() }} />
+
     </Card>
   )
 }

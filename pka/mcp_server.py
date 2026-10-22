@@ -109,6 +109,11 @@ async def jira_check_access() -> dict:
     return await guarded_on(jira, 'check_access')
 
 @server.tool(annotations=READ_ONLY)
+async def jira_check_issues_access(issue_keys: list[str]) -> dict:
+    """Revalidate saved issues against the project fixed at server launch."""
+    return await guarded_on(jira, 'check_issues_access', project_key=JIRA_PROJECT, issue_keys=issue_keys)
+
+@server.tool(annotations=READ_ONLY)
 async def jira_list_projects() -> dict:
     """List the projects this account can see. Reading one still needs it chosen at launch."""
     return await guarded_on(jira, 'projects')

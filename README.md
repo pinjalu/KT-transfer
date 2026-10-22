@@ -266,15 +266,26 @@ Only a fixed Python MCP module is launched. Downloaded project code is never exe
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe scripts\smoke_demo.py
 .\.venv\Scripts\python.exe -m pka.doctor
+.\.venv\Scripts\python.exe -m pka.acceptance
 ```
 
 The first two checks need no account or model. `pka.doctor` checks the actual local Ollama service and your configured repository without printing tokens or file contents. The test record and remaining verification are in [docs/STATUS.md](docs/STATUS.md).
+
+`pka.acceptance` tests the saved GitHub, Jira and Slack connections through the real MCP
+subprocess. It reads a pinned GitHub file, the selected Jira project's issues and the selected
+Slack channels. It leaves the application index unchanged and saves counts and check results
+under `data/acceptance/`, without credentials or source contents. Use `--source jira` to retry
+one service, `--timeout 180` to set the per-service deadline, or `--output report.json` to choose
+the report path. A missing connection, a failed read or an empty source cannot complete the
+three-service acceptance task. See [task 5.1](docs/TASK_5_1.md) for the recorded run and remaining work.
 
 ## Measuring retrieval
 
 Whether an answer is any good is decided mostly before the model is reached: if the file that holds the answer never comes back, no amount of explaining rescues it. `python -m pka.evaluate` scores retrieval against a labelled question set without calling Ollama at all, which makes it deterministic and fast enough to run after every change.
 
 A question set lives in `evals/`. Each question names the file or files a correct retrieval has to surface, and sits in one of four bands: `lexical` where the question shares words with its answer, `paraphrase` where it deliberately shares none, `conceptual` where the answer spans several files, and `reject` where the right answer is nothing at all, because correctly refusing an off-topic question is half of what this promises. Two sets are included, one per repository measured so far. Writing one for your own project is an afternoon and is the only way to know whether a change helped it.
+
+The command refuses a set whose repository, or optional pinned commit, differs from the active scan.
 
 `--compare` runs word matching alone and then with meaning-based retrieval and prints both with the difference. `--failures` lists every miss with what came back instead and which words were actually searched for, which is usually enough to see why. `--sweep` and `--sweep-reject` try a range of settings and print the score at each, so a constant is chosen by measurement rather than by taste. `--save` and `--diff` compare two runs question by question, regressions first.
 

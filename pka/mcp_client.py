@@ -10,7 +10,7 @@ from pka.connectors.base import SourceError
 
 TOOL_NAMES = {'github_check_access','github_begin_snapshot','github_list_files','github_read_file',
               'jira_check_access','jira_list_projects','jira_begin_read','jira_list_issues',
-              'slack_list_channels','slack_read_channel'}
+              'slack_list_channels','slack_read_channel','jira_check_issues_access'}
 
 def source_error_in(exc):
     """Support AnyIO exception groups on both Python 3.10 and newer runtimes."""
@@ -47,6 +47,8 @@ class ConnectorClient:
         return await self.call('github_read_file', path=path)
     async def jira_check_access(self):
         return await self.call('jira_check_access')
+    async def jira_check_issues_access(self, issue_keys):
+        return await self.call('jira_check_issues_access', issue_keys=issue_keys)
     async def jira_projects(self):
         return await self.call('jira_list_projects')
     async def jira_begin_read(self):
