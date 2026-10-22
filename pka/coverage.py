@@ -54,8 +54,12 @@ def external(index, name, available):
         result['counts'].insert(0, metric('Issues read', report.get('issues', 0)))
         if 'comments' in coverage:
             result['counts'].append(metric('Comments received before text limits', coverage['comments']))
+        for key, label in (('custom_text_fields','Custom text fields read'), ('comment_pages','Additional comment pages read')):
+            if key in coverage:
+                result['counts'].append(metric(label, coverage[key]))
         result['notes'].extend(coverage.get('notes') or [])
-        result['notes'].append(f'Reads at most {LIMITS.jira_max_issues} issues and {LIMITS.jira_max_comments} comments per issue. Long issue text can be shortened.')
+        result['notes'].append(f'Reads at most {LIMITS.jira_max_issues} issues, {LIMITS.jira_max_comments} comments and {LIMITS.jira_max_comment_pages} comment pages per issue. Issue text up to {LIMITS.jira_max_issue_chars:,} characters is split into searchable excerpts; any further text is reported as omitted.')
+        result['notes'].append('Includes visible descriptions and custom text fields such as acceptance criteria. Attachment contents and non-text custom fields are not imported.')
     else:
         channels = report.get('channels') or []
         failed = sum(bool(c.get('error')) for c in channels)

@@ -84,7 +84,9 @@ class Limits:
     slack_max_threads: int = 40
     jira_max_issues: int = 300
     jira_max_pages: int = 10
-    jira_max_comments: int = 20
+    jira_max_comments: int = 1000
+    jira_max_comment_pages: int = 20
+    jira_max_issue_chars: int = 200000
 
 LIMITS = Limits()
 

@@ -455,7 +455,7 @@ def test_starting_scan_invalidates_open_answers_before_network_completes(state):
 
 
 def test_jira_recheck_covers_comment_visibility_not_only_issue_visibility():
-    issue = {'key':'ENG-1', 'fields':{'summary':'Login', 'comment':{'comments':[
+    issue = {'key':'ENG-1', 'fields':{'summary':'Login', 'comment':{'total':1, 'comments':[
         {'id':'1', 'body':'Restricted discussion', 'author':{'displayName':'Engineer'}}]}}}
     digest = hashlib.sha256(issue_block('https://acme.atlassian.net', issue)['text'].encode()).hexdigest()
     def handler(request):
@@ -466,6 +466,7 @@ def test_jira_recheck_covers_comment_visibility_not_only_issue_visibility():
     reader = JiraSource('https://acme.atlassian.net', 'reader@example.com', 'token', httpx.MockTransport(handler))
     assert run(reader.check_issues_access('ENG', ['ENG-1'], {'ENG-1':digest})) == {'checked':1}
     issue['fields']['comment']['comments'] = []
+    issue['fields']['comment']['total'] = 0
     with pytest.raises(SourceError) as denied:
         run(reader.check_issues_access('ENG', ['ENG-1'], {'ENG-1':digest}))
     assert denied.value.code == 'stale_source'

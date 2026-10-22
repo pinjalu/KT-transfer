@@ -101,6 +101,20 @@ def configured(monkeypatch):
     return client
 
 
+def test_jira_acceptance_counts_issues_separately_from_excerpts(configured):
+    async def begin():
+        return {'project':'ENG', 'issues':1, 'blocks':2}
+    async def excerpts(cursor):
+        return {'blocks':[{'path':'jira/ENG-1', 'text':f'Part {cursor}',
+                         'url':'https://acme.atlassian.net/browse/ENG-1'}],
+                'next_cursor':1 if cursor == 0 else None}
+    configured.jira_begin_read, configured.jira_issues = begin, excerpts
+    report = asyncio.run(acceptance.run_checks(copy.deepcopy(SETTINGS), ('jira',)))
+    assert report['status'] == 'passed'
+    check = next(c for c in report['results'][0]['checks'] if c['name'] == 'scoped_issue_read')
+    assert check['issues'] == 1 and check['citations_checked'] == 2
+
+
 def test_all_sources_read_selected_scope_and_report_no_content(configured):
     report = asyncio.run(acceptance.run_checks(copy.deepcopy(SETTINGS)))
     assert report['task_complete'] is True

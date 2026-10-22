@@ -24,7 +24,7 @@ MYSELF = '/rest/api/3/myself'
 PROJECTS = '/rest/api/3/project/search'
 SEARCH = '/rest/api/3/search/jql'
 SEARCH_LEGACY = '/rest/api/3/search'
-FIELDS = 'summary,description,status,issuetype,priority,labels,assignee,reporter,created,updated,comment,parent'
+FIELDS = 'summary,description,status,issuetype,priority,labels,assignee,reporter,created,updated,comment,parent,*all'
 
 REASONS = {
     401: 'Jira rejected the email and API token. Check that the token was created by the same '
@@ -68,10 +68,21 @@ def adf_text(node) -> str:
         return ''
     kind = node.get('type')
     if kind == 'text':
-        return node.get('text', '')
+        text = node.get('text', '')
+        for mark in node.get('marks') or []:
+            link = (mark.get('attrs') or {}).get('href') if mark.get('type') == 'link' else None
+            if link and link != text:
+                text += ' (' + link + ')'
+        return text
     if kind == 'hardBreak':
         return '\n'
     inner = adf_text(node.get('content'))
+    if kind in {'tableCell', 'tableHeader'}:
+        return inner.strip() + '\t'
+    if kind in {'inlineCard', 'blockCard'}:
+        return str((node.get('attrs') or {}).get('url') or '')
+    if kind in {'media', 'mediaInline'}:
+        return '[Attachment content not imported]'
     if kind in {'paragraph', 'heading', 'listItem', 'blockquote', 'codeBlock', 'tableRow'}:
         return inner.rstrip() + '\n'
     if kind == 'mention':
@@ -90,7 +101,8 @@ class JiraSource:
         self.auth = base64.b64encode(f'{email}:{token}'.encode()).decode()
 
     async def _get(self, path: str, params=None) -> dict:
-        if path not in {MYSELF, PROJECTS, SEARCH, SEARCH_LEGACY}:
+        if path not in {MYSELF, PROJECTS, SEARCH, SEARCH_LEGACY} and not re.fullmatch(
+                r'/rest/api/3/issue/[A-Za-z][A-Za-z0-9_]{0,40}-[0-9]+/comment', path):
             raise SourceError('jira', 'That Jira endpoint is not permitted.')
         headers = {'Authorization': 'Basic ' + self.auth, 'Accept': 'application/json',
                    'User-Agent': 'ProjectKnowledgeAssistant/0.1'}
@@ -162,7 +174,7 @@ class JiraSource:
         legacy, incomplete, uncertain = False, False, False
         seen_tokens = set()
         while pages < LIMITS.jira_max_pages and len(collected) < LIMITS.jira_max_issues:
-            params = {'jql': jql, 'maxResults': 50, 'fields': FIELDS}
+            params = {'jql': jql, 'maxResults': 50, 'fields': FIELDS, 'expand':'names'}
             if legacy:
                 params['startAt'] = len(collected)
             elif token:
@@ -181,7 +193,9 @@ class JiraSource:
             if not isinstance(batch, list):
                 raise SourceError('jira', 'Jira returned an unreadable issue page.')
             room = LIMITS.jira_max_issues - len(collected)
-            collected.extend(batch[:room])
+            for issue in batch[:room]:
+                await self.complete_issue(issue, project_key, body.get('names'))
+                collected.append(issue)
             incomplete |= len(batch) > room
             token = body.get('nextPageToken', '')
             pages += 1
@@ -207,7 +221,7 @@ class JiraSource:
                 missing_comments += 1
             elif not isinstance(total, int):
                 unknown_comments += 1
-        shortened = sum(bool(issue_block(self.site, issue)['split']) for issue in collected)
+        shortened = sum(bool(issue_block(self.site, issue)['truncated']) for issue in collected)
         notes = []
         if incomplete:
             notes.append('More issues may exist: an issue/page limit or pagination gap stopped the read.')
@@ -222,8 +236,52 @@ class JiraSource:
             notes.append('Jira did not confirm the final issue page; issue coverage is unknown.')
         self.last_coverage = {'state':'partial' if partial else 'unknown' if notes else 'complete',
             'notes':notes, 'issues':len(collected), 'pages':pages, 'comments':comments,
-            'issues_missing_comments':missing_comments, 'issues_shortened':shortened}
+            'issues_missing_comments':missing_comments, 'issues_shortened':shortened,
+            'custom_text_fields':sum(len(custom_text_fields(i)) for i in collected),
+            'comment_pages':sum(i.get('_comment_pages', 0) for i in collected)}
         return collected
+
+    async def complete_issue(self, issue, project_key, names=None):
+        """Finish visible comments; never follow URLs supplied by a Jira response."""
+        key = issue.get('key', '')
+        if not re.fullmatch(re.escape(project_key) + r'-[0-9]+', key, re.I):
+            raise SourceError('scope', 'Jira returned an issue outside the selected project.')
+        issue['_field_names'] = {**(names or {}), **(issue.get('names') or {})}
+        fields = issue.get('fields')
+        if not isinstance(fields, dict):
+            raise SourceError('jira', 'Jira returned unreadable issue fields.')
+        field = fields.get('comment') or {}
+        embedded, total = field.get('comments'), field.get('total')
+        # A complete embedded page avoids an unnecessary request. Missing totals are
+        # never treated as proof that the embedded comments are the complete set.
+        if (isinstance(embedded, list) and type(total) is int and total >= 0
+                and field.get('startAt', 0) == 0 and len(embedded) == total):
+            return
+        comments, seen, start, previous_total = [], set(), 0, None
+        for page in range(LIMITS.jira_max_comment_pages):
+            body = await self._get(f'/rest/api/3/issue/{key}/comment',
+                {'startAt':start, 'maxResults':min(100, LIMITS.jira_max_comments-len(comments)),
+                 'orderBy':'created'})
+            batch, total = body.get('comments'), body.get('total')
+            if not isinstance(batch, list) or body.get('startAt', start) != start:
+                raise SourceError('jira', 'Jira returned an unreadable comment page.')
+            if type(total) is int:
+                if total < start + len(batch) or previous_total is not None and total != previous_total:
+                    raise SourceError('jira', 'Jira comments changed during pagination. Retry the read.')
+                previous_total = total
+            for comment in batch:
+                cid = comment.get('id')
+                if cid is None or str(cid) in seen:
+                    raise SourceError('jira', 'Jira comment pagination repeated or omitted an identifier. Retry the read.')
+                seen.add(str(cid))
+            comments.extend(batch[:LIMITS.jira_max_comments-len(comments)])
+            issue['_comment_pages'] = page + 1
+            start += len(batch)
+            if type(total) is int and total >= 0 and start >= total:
+                break
+            if not batch or len(comments) >= LIMITS.jira_max_comments:
+                break
+        fields['comment'] = {'comments':comments, 'total':total, 'startAt':0}
 
     async def check_issues_access(self, project_key: str, issue_keys: list[str], snapshots=None) -> dict:
         """Check issue security and the continued visibility of saved issue/comment text."""
@@ -243,7 +301,8 @@ class JiraSource:
             batch = keys[start:start+50]
             params = {'jql': 'project = "' + project_key + '" AND key IN (' +
                       ','.join('"'+key+'"' for key in batch) + ')',
-                      'fields': FIELDS if snapshots is not None else 'key', 'maxResults': 50}
+                      'fields': FIELDS if snapshots is not None else 'key', 'maxResults': 50,
+                      'expand':'names'}
             seen = set()
             while True:
                 body = await self._get(SEARCH, params)
@@ -255,7 +314,9 @@ class JiraSource:
                         key = issue.get('key', '')
                         if key not in snapshots:
                             raise SourceError('jira', 'Jira access returned an unexpected issue.')
-                        current = hashlib.sha256(issue_block(self.site, issue)['text'].encode()).hexdigest()
+                        await self.complete_issue(issue, project_key, body.get('names'))
+                        current = hashlib.sha256('\n'.join(
+                            block['text'] for block in issue_blocks(self.site, issue)).encode()).hexdigest()
                         if current != snapshots[key]:
                             # Issue-level access alone cannot authorize a previously visible
                             # comment. A content or visibility change requires a new read.
@@ -272,6 +333,24 @@ class JiraSource:
         if any(key.upper() not in visible for key in keys):
             raise SourceError('access_denied', 'A saved Jira issue was deleted or is no longer accessible. Read the project again.')
         return {'checked': len(keys)}
+
+
+def custom_text_fields(issue):
+    """Keep visible custom text under its actual Jira label, without assuming field IDs."""
+    result = []
+    names = issue.get('_field_names') or issue.get('names') or {}
+    for key, value in sorted((issue.get('fields') or {}).items()):
+        if not re.fullmatch(r'customfield_[0-9]+', key):
+            continue
+        if isinstance(value, str) or isinstance(value, dict) and value.get('type') == 'doc':
+            text = adf_text(value).strip()
+        elif isinstance(value, list) and all(isinstance(v, str) for v in value):
+            text = '\n'.join(value).strip()
+        else:
+            continue
+        if text:
+            result.append((names.get(key) or key, text))
+    return result
 
 
 def issue_block(site: str, issue: dict) -> dict:
@@ -295,6 +374,8 @@ def issue_block(site: str, issue: dict) -> dict:
     if description:
         lines.append('Description:')
         lines.append(description)
+    for label, value in custom_text_fields(issue):
+        lines.extend([label + ':', value])
     comments = ((fields.get('comment') or {}).get('comments') or [])[:LIMITS.jira_max_comments]
     for comment in comments:
         author = ((comment.get('author') or {}).get('displayName') or 'someone').strip()
@@ -303,6 +384,29 @@ def issue_block(site: str, issue: dict) -> dict:
             lines.append(f"Comment by {author} on {str(comment.get('created', ''))[:10]}: {text}")
     text = '\n'.join(lines)
     return {'path': 'jira/' + key, 'start': 1, 'end': 1,
-            'text': text[:LIMITS.chunk_chars * 2], 'symbols': key + ' ' + str(fields.get('summary', '')),
-            'split': len(text) > LIMITS.chunk_chars * 2,
+            'text': text[:LIMITS.jira_max_issue_chars], 'symbols': key + ' ' + str(fields.get('summary', '')),
+            'split': len(text) > LIMITS.jira_max_issue_chars,
+            'truncated': len(text) > LIMITS.jira_max_issue_chars,
             'url': site.rstrip('/') + '/browse/' + key}
+
+
+def issue_blocks(site: str, issue: dict) -> list:
+    """Index every retained character in bounded excerpts, all citing the same issue."""
+    block = issue_block(site, issue)
+    text = block['text']
+    # Stable boundaries preserve ordinary words and all whitespace. A single very
+    # long token still has to split to respect the retrieval context limit.
+    result, offset = [], 0
+    while offset < len(text):
+        end = min(offset+LIMITS.chunk_chars, len(text))
+        if end < len(text):
+            boundary = max(text.rfind('\n', offset+LIMITS.chunk_chars//2, end),
+                           text.rfind(' ', offset+LIMITS.chunk_chars//2, end))
+            if boundary >= 0:
+                end = boundary + 1
+        result.append({**block, 'text':text[offset:end],
+                       'start':text.count('\n', 0, offset)+1,
+                       'end':text.count('\n', 0, end)+1,
+                       'split':len(text) > LIMITS.chunk_chars or block['split']})
+        offset = end
+    return result

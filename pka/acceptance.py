@@ -115,8 +115,11 @@ async def check_jira(client, settings, result):
     record(result, 'selected_project_visible')
     snapshot = await client.jira_begin_read()
     require(snapshot.get('project') == project, 'Jira read a different project.')
-    blocks = await pages(client.jira_issues, 'blocks', LIMITS.jira_max_issues // 25 + 1)
-    require(len(blocks) == snapshot.get('issues') == snapshot.get('blocks'), 'The Jira issue count did not match its read result.')
+    max_blocks = LIMITS.jira_max_issues * (LIMITS.jira_max_issue_chars // (LIMITS.chunk_chars//2) + 1)
+    require(type(snapshot.get('blocks')) is int and 0 <= snapshot['blocks'] <= max_blocks,
+            'The Jira excerpt count was outside the configured limits.')
+    blocks = await pages(client.jira_issues, 'blocks', max_blocks // 25 + 1)
+    require(len(blocks) == snapshot['blocks'], 'The Jira excerpt count did not match its read result.')
     keys = []
     for block in blocks:
         key = block.get('path', '').removeprefix('jira/')
@@ -125,8 +128,9 @@ async def check_jira(client, settings, result):
                 'A Jira issue citation did not match the selected site.')
         require(isinstance(block.get('text'), str) and bool(block['text'].strip()), 'A Jira issue had no readable text.')
         keys.append(key)
-    require(len(set(keys)) == len(keys), 'The Jira read returned duplicate issues.')
-    record(result, 'scoped_issue_read', issues=len(blocks), citations_checked=len(blocks))
+    keys = sorted(set(keys))
+    require(len(keys) == snapshot.get('issues'), 'The Jira issue count did not match its read result.')
+    record(result, 'scoped_issue_read', issues=len(keys), citations_checked=len(blocks))
     if not blocks:
         result['status'] = 'incomplete'
         result['message'] = 'Access worked, but the project had no visible issues to validate a content read.'

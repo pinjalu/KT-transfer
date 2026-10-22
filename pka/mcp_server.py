@@ -19,7 +19,7 @@ from mcp.types import ToolAnnotations
 from pka.connectors.base import SourceError
 from pka.connectors.github import GitHubSource
 from pka.connectors.fixture import FixtureSource
-from pka.connectors.jira import JiraSource, issue_block
+from pka.connectors.jira import JiraSource, issue_blocks
 from pka.connectors.slack import SlackSource
 
 logging.disable(logging.CRITICAL)
@@ -127,7 +127,7 @@ async def jira_begin_read() -> dict:
         reader = jira()
         issues = await reader.issues(JIRA_PROJECT)
         _jira_blocks.clear()
-        _jira_blocks.extend(issue_block(reader.site, issue) for issue in issues)
+        _jira_blocks.extend(block for issue in issues for block in issue_blocks(reader.site, issue))
         return {'project':JIRA_PROJECT,'issues':len(issues),'blocks':len(_jira_blocks),
                 'coverage':getattr(reader, 'last_coverage', None)}
     return await attempt(work)

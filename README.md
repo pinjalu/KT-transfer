@@ -243,6 +243,12 @@ for repository skip reasons, Jira comment/text omissions, or Slack channel/threa
 Older imports show **Coverage unknown** until another read records this information. A finished
 job can still have incomplete coverage; see [task 5.6](docs/TASK_5_6.md).
 
+Jira imports include custom text fields such as acceptance criteria and paginate incomplete
+comment lists. Long descriptions and comments become searchable excerpts instead of ending
+at the old 3,600-character cutoff. The limits are 1,000 comments, twenty comment pages and
+200,000 characters per issue; omissions are reported in coverage. Use **Read issues** to update
+older imports. Attachments and non-text custom fields are excluded. See [task 6.1](docs/TASK_6_1.md).
+
 ## How it works
 
 The browser calls the FastAPI backend. For each read, the backend launches the fixed local MCP server through standard input/output. Every platform's scope is fixed at that launch: the repository and branch, the one Jira project, and the list of Slack channels. A tool argument naming anything outside that scope is refused by the server, and credentials are handed to it at launch so no token is held in the request path. The server's GitHub connector resolves the commit, lists the manifest in pages and reads allowed blobs; its Jira and Slack connectors list what an account can see and read only what was pinned. The backend stores bounded chunks in SQLite FTS5. For each question, it verifies access, retrieves excerpts and asks Ollama for a cited explanation. It stores feedback locally.

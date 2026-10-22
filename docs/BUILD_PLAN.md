@@ -100,7 +100,9 @@ from a static read and need either documentation or logs.
 
 ### Phase 07, Requirements and team decisions — 1 done, 3 partly, 4 not started
 
-Jira issues are read whole, with description and comments, and sit in the same index as the code.
+Task 6.1 now reads visible descriptions, named custom text fields and paginated comments into
+bounded excerpts alongside code. It reports configured limits and incomplete reads; see
+[task 6.1](TASK_6_1.md). Attachments and non-text custom fields are excluded.
 What does not exist is anything that takes one issue and explains it: no per-issue endpoint, no
 requirement extraction, no table comparing each requirement against evidence in the code, no open
 questions list. That is mockup 06 end to end.

@@ -1,5 +1,13 @@
 # Implementation and verification record
 
+## Task 6.1 Jira requirements and comments, 22 October 2026
+
+Task 6.1 is **Done within the documented import scope and limits**. Custom text fields retain
+their Jira names, incomplete comment lists are paginated, and long issue text becomes multiple
+searchable excerpts. Access rechecks cover those excerpts. Coverage reports remaining limits.
+All 487 tests, 38 final affected checks, five Chrome checks and scoped live Jira reads passed.
+See [task 6.1](TASK_6_1.md). The dedicated Jira explanation screen remains task 6.2.
+
 ## Task 5.8 acceptance and documentation, 22 October 2026
 
 Task 5.8 is **Done for technical acceptance and documentation**. The Windows guide and current feature inventory now describe

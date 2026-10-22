@@ -992,7 +992,7 @@ def jira_transport(issues=None, projects=None):
                     'created':'2026-01-05T09:00:00.000+0000',
                     'description':{'type':'doc','content':[{'type':'paragraph','content':[
                         {'type':'text','text':'New accounts cannot sign in after registering.'}]}]},
-                    'comment':{'comments':[{'author':{'displayName':'Dana'},'created':'2026-01-06T10:00:00.000+0000',
+                    'comment':{'total':1,'comments':[{'author':{'displayName':'Dana'},'created':'2026-01-06T10:00:00.000+0000',
                         'body':{'type':'doc','content':[{'type':'paragraph','content':[
                             {'type':'text','text':'Caused by the session token being issued too early.'}]}]}}]}}}]})
         raise AssertionError(request.url)

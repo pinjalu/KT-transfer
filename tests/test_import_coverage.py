@@ -120,13 +120,17 @@ def test_jira_follows_pages_and_completes_at_exact_limit(monkeypatch, legacy):
 
 @pytest.mark.parametrize('gap', ['comments', 'comment_limit', 'text_limit', 'unknown_comments'])
 def test_jira_comment_and_text_gaps_are_visible(monkeypatch, gap):
-    monkeypatch.setattr(jira, 'LIMITS', replace(LIMITS, jira_max_comments=1))
-    comment = {'body':'A comment', 'author':{'displayName':'Someone'}}
+    monkeypatch.setattr(jira, 'LIMITS', replace(LIMITS, jira_max_comments=1, jira_max_issue_chars=3600))
+    comment = {'id':'1', 'body':'A comment', 'author':{'displayName':'Someone'}}
     fields = {'comment':{'comments':[comment]*(2 if gap == 'comment_limit' else 1),
                          'total':2 if gap in {'comments','comment_limit'} else 1}}
     if gap == 'unknown_comments': fields['comment'].pop('total')
     if gap == 'text_limit': fields['description'] = 'Long description. ' * 400
-    reader = jira_reader(lambda r: httpx.Response(200, json={'isLast':True, 'issues':[issue(**fields)]}))
+    def handler(request):
+        if request.url.path.endswith('/comment'):
+            return httpx.Response(200, json=fields['comment'])
+        return httpx.Response(200, json={'isLast':True, 'issues':[issue(**fields)]})
+    reader = jira_reader(handler)
     run(reader.issues('ENG'))
     assert reader.last_coverage['state'] == ('unknown' if gap == 'unknown_comments' else 'partial')
     assert reader.last_coverage['notes']
