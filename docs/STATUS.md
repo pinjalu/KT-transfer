@@ -1,5 +1,19 @@
 # Implementation and verification record
 
+## Task 5.3 source access checks, 22 October 2026
+
+Jira and Slack access checks now cover saved content before use, cached views and publication
+of generated external-source content. Jira verifies that imported comment text remains visible;
+changed snapshots require a new read. Confirmed denial clears the affected source and derived
+caches. Temporary verification failures block the response while retaining the saved import.
+Both interfaces hide cached content when checks fail, and removed file-backed credentials take
+effect without restarting.
+
+The read-only live check passed for four Jira issues and one Slack channel. All 404 Python tests,
+six isolated Chrome checks and the frontend build passed. Task 5.3 is **Done** for these scoped
+access checks. Tests simulate revoked access without changing the user's
+accounts. See [task 5.3](TASK_5_3.md) for the repeatable command, verification evidence and limits.
+
 ## Answer quality follow-up, 22 October 2026
 
 The Ask screen now presents a direct answer before supporting details. Retrieval prioritizes

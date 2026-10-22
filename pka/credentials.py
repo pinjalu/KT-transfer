@@ -16,6 +16,8 @@ from pka.connectors import registry
 
 MAX_VALUE = 500
 ENV_PATH = ROOT / '.env'
+_file_path = None
+_file_values = {}
 
 
 def writable() -> set:
@@ -34,23 +36,41 @@ def refresh() -> None:
     Only names the registry declares are refreshed, so this can never reach PATH or any other
     setting that happens to live in the same file.
     """
-    if not ENV_PATH.exists():
-        return
+    global _file_path, _file_values
+    if _file_path != ENV_PATH:
+        _file_path, _file_values = ENV_PATH, {}
     allowed = writable()
     try:
         lines = ENV_PATH.read_text(encoding='utf-8').splitlines()
+    except FileNotFoundError:
+        lines = []
     except OSError:
         return
+    current = {}
     for line in lines:
         if '=' not in line or line.lstrip().startswith('#'):
             continue
         name, _, value = line.partition('=')
         name, value = name.strip(), value.strip()
         if name in allowed:
+            current[name] = value
             if value:
                 os.environ[name] = value
             else:
                 os.environ.pop(name, None)
+    for name, previous in _file_values.items():
+        if name not in current and os.getenv(name) == previous:
+            os.environ.pop(name, None)
+    _file_values = current
+
+
+def source_fingerprint(name: str) -> str:
+    """Local identity marker only; never expose this or credential values in API output."""
+    import hashlib
+    import json
+    names = {'jira': ('JIRA_SITE', 'JIRA_EMAIL', 'JIRA_API_TOKEN'),
+             'slack': ('SLACK_USER_TOKEN',)}[name]
+    return hashlib.sha256(json.dumps([os.getenv(key, '') for key in names]).encode()).hexdigest()
 
 
 def status() -> dict:

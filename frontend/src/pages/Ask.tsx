@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Card, Chip, Empty, Failed, Missing, NoProject, PageHead, Segmented } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { useApi } from '../lib/useApi'
@@ -85,6 +85,13 @@ export function Ask() {
   const [question, setQuestion] = useState('')
   const [asking, setAsking] = useState(false)
   const foot = useRef<HTMLDivElement>(null)
+  const revision = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    const current = status.data?.knowledge_revision
+    if (current === undefined) return
+    if (revision.current !== undefined && revision.current !== current) setTurns([])
+    revision.current = current
+  }, [status.data?.knowledge_revision])
 
   const ready = status.data?.ready ?? false
   const busy = status.data?.busy ?? false
@@ -102,7 +109,9 @@ export function Ask() {
       setTurns((t) => t.map((x) => (x === turn ? { ...x, answer: body } : x)))
     } catch (exc) {
       const why = exc instanceof ApiError ? exc.message : 'The answer could not be generated.'
-      setTurns((t) => t.map((x) => (x === turn ? { ...x, failed: why } : x)))
+      const denied = exc instanceof ApiError && ['access_denied', 'scope', 'access', 'access_unverified', 'stale'].includes(exc.code)
+      setTurns((t) => t.map((x) => x === turn ? { ...x, failed: why }
+        : denied ? { ...x, answer: null, failed: 'Source access could not be verified. Retry after checking the connection.' } : x))
     } finally {
       setAsking(false)
       requestAnimationFrame(() => foot.current?.scrollIntoView({ block: 'end' }))

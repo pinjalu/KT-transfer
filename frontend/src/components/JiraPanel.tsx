@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Card, Chip, Dot, Missing } from './ui'
 import { Icon } from './Icon'
 import { JiraCredentials } from './JiraCredentials'
@@ -14,6 +14,7 @@ export function JiraPanel({ status, onChanged }: { status: Status | null; onChan
   const reading = status?.jira_reading ?? false
   const busy = status?.busy ?? false
   const chosen = picked ?? jira.data?.chosen ?? ''
+  useEffect(() => { jira.reload() }, [status?.knowledge_revision, jira.reload])
 
   const save = async (key: string) => {
     setPicked(key)

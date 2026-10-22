@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
-let state, answerId, answerScan, nextOffset = 0, loadedFiles = false, asking = false, lastScanId, renderedOverview = null;
+let state, answerId, answerScan, nextOffset = 0, loadedFiles = false, asking = false, lastScanId, renderedOverview = null, knowledgeRevision;
 
 async function api(path, body) {
   const response = await fetch('/api/' + path, {
@@ -40,6 +40,12 @@ function time(s) {
 async function refresh(initial = false) {
   try {
     state = await api('status');
+    if (knowledgeRevision !== undefined && knowledgeRevision !== state.knowledge_revision) {
+      clearAnswer();
+      renderedOverview = null;
+      $('overviewBody').replaceChildren();
+    }
+    knowledgeRevision = state.knowledge_revision;
     $('saveConfig').disabled = state.demo || state.busy;
     $('repo').disabled = state.demo;
     $('branch').disabled = state.demo;
@@ -1288,7 +1294,12 @@ async function refreshOverview() {
     $('overviewBadge').textContent = 'Not built';
     $('overviewState').textContent = r.reason || 'No overview yet.';
     if (renderedOverview !== null) { renderedOverview = null; $('overviewBody').replaceChildren(); }
-  } catch (e) {}
+  } catch (e) {
+    renderedOverview = null;
+    $('overviewBody').replaceChildren();
+    $('overviewBadge').textContent = 'Unavailable';
+    $('overviewState').textContent = e.message;
+  }
 }
 
 $('overviewButton').addEventListener('click', async () => {

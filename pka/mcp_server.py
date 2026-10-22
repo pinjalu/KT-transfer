@@ -109,9 +109,9 @@ async def jira_check_access() -> dict:
     return await guarded_on(jira, 'check_access')
 
 @server.tool(annotations=READ_ONLY)
-async def jira_check_issues_access(issue_keys: list[str]) -> dict:
+async def jira_check_issues_access(issue_keys: list[str], snapshots: dict[str, str] | None = None) -> dict:
     """Revalidate saved issues against the project fixed at server launch."""
-    return await guarded_on(jira, 'check_issues_access', project_key=JIRA_PROJECT, issue_keys=issue_keys)
+    return await guarded_on(jira, 'check_issues_access', project_key=JIRA_PROJECT, issue_keys=issue_keys, snapshots=snapshots)
 
 @server.tool(annotations=READ_ONLY)
 async def jira_list_projects() -> dict:
@@ -145,6 +145,13 @@ async def jira_list_issues(cursor: int = 0) -> dict:
 async def slack_list_channels() -> dict:
     """List the channels this account can see. Reading one still needs the saved allowlist."""
     return await guarded_on(slack, 'channels')
+
+@server.tool(annotations=READ_ONLY)
+async def slack_check_channel_access(channel_id: str) -> dict:
+    """Verify history access without importing messages or widening the saved allowlist."""
+    if channel_id not in SLACK_CHANNELS:
+        return {'ok':False,'code':'scope','error':'That channel is not in the saved allowlist.'}
+    return await guarded_on(slack, 'check_channel_access', channel_id=channel_id)
 
 @server.tool(annotations=READ_ONLY)
 async def slack_read_channel(channel_id: str) -> dict:

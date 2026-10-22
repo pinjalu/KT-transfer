@@ -13,6 +13,7 @@ export function SlackPanel({ status, onChanged }: { status: Status | null; onCha
   const [open, setOpen] = useState(false)
   const reading = status?.slack_reading ?? false
   const busy = status?.busy ?? false
+  useEffect(() => { slack.reload() }, [status?.knowledge_revision, slack.reload])
 
   // Seed the selection from what is stored, once, so a click is not undone by the next poll.
   useEffect(() => {

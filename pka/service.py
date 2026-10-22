@@ -6,7 +6,7 @@ import re
 import time
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 import httpx
-from pka import applog
+from pka import applog, credentials
 from pka.config import KEEP_LOGS, LIMITS, log_dir, now
 from pka.connectors.base import SourceError
 from pka.index import chunk_file, small_talk
@@ -258,6 +258,90 @@ class Service:
     def busy(self):
         return self.lock.locked()
 
+    def sync_source_credentials(self):
+        if self.demo:
+            return
+        credentials.refresh()
+        for name in ('jira', 'slack'):
+            saved = self.index.source_import(name)
+            if saved and saved.get('identity') != credentials.source_fingerprint(name):
+                self.index.discard_source(name)
+                self.access_warning = f'{name.title()} credentials changed. Read that source again.'
+
+    async def check_external_access(self, scan):
+        """Fail closed before using any saved external content, including cached views.
+
+        Issue-level Jira checks account for issue security. Slack checks actual history
+        permission for the imported channels. A transient outage blocks this request without
+        deleting the snapshot; a confirmed denial purges the affected source and its caches.
+        """
+        revision = self.index.revision
+        if self.demo:
+            return revision, {}
+        credentials.refresh()
+        cfg = self.index.settings() or {}
+        paths = self.index.indexed_paths(scan['id'])
+        identities = {}
+        for name in ('jira', 'slack'):
+            selected = [p for p in paths if p.startswith(name+'/')]
+            if not selected:
+                continue
+            saved = self.index.source_import(name)
+            identity = credentials.source_fingerprint(name)
+            scope = self.index.source_scope(name, cfg.get(name) or {})
+            if not saved or saved.get('identity') != identity or saved.get('scope') != scope:
+                self.index.discard_source(name)
+                raise SourceError('stale', f'{name.title()} selection or credentials changed. Read that source again before using it.')
+            identities[name] = identity
+            try:
+                async with self.connector_factory(cfg, self.demo) as source:
+                    if name == 'jira':
+                        keys = [p[5:] for p in selected]
+                        result = await source.jira_check_issues_access(keys,
+                            snapshots=self.index.source_digests(scan['id'], 'jira/'))
+                        if not isinstance(result, dict) or type(result.get('checked')) is not int or result['checked'] != len(keys):
+                            raise SourceError('access_unverified', 'Not every saved Jira issue was verified.')
+                    else:
+                        channels = {c['name']: c['id'] for c in (cfg.get('slack') or {}).get('channels', [])}
+                        for path in selected:
+                            channel_id = channels.get(path[6:])
+                            if not channel_id:
+                                raise SourceError('scope', 'A saved Slack channel is outside the current selection.')
+                            result = await source.slack_check_channel_access(channel_id)
+                            if not isinstance(result, dict) or result.get('readable') is not True or result.get('channel') != channel_id:
+                                raise SourceError('access_unverified', 'Slack history access was not confirmed.')
+            except SourceError as exc:
+                if exc.code in {'access_denied', 'scope', 'stale_source'}:
+                    self.index.discard_source(name)
+                    self.access_warning = f'{name.title()} content was disabled. Read that source again after checking access.'
+                    code = 'stale' if exc.code == 'stale_source' else exc.code
+                else:
+                    code = 'access_unverified'
+                raise SourceError(code, f'{name.title()} access could not be verified. {exc}') from None
+            except Exception:
+                raise SourceError('access_unverified', f'{name.title()} access could not be verified. No saved content was returned.') from None
+        checked = revision, identities
+        self.ensure_current(checked)
+        return checked
+
+    def ensure_current(self, checked):
+        """A concurrent revocation must also stop an in-flight model result being saved."""
+        revision, identities = checked
+        if identities:
+            credentials.refresh()
+        for name, identity in identities.items():
+            if credentials.source_fingerprint(name) != identity:
+                self.index.discard_source(name)
+        if self.index.revision != revision:
+            raise SourceError('stale', 'Project information changed during this request. Retry using the current sources.')
+
+    def import_metadata(self, report, scope, identity):
+        return {'scope':scope, 'identity':identity, 'report':report}
+
+    def check_cancelled(self):
+        if self.cancel.is_set():
+            raise SourceError('cancelled', 'Reading cancelled. Start a new read to try again.')
+
     async def background(self, name, work):
         """Run a read in the background without losing its failure.
 
@@ -470,6 +554,7 @@ class Service:
             if not scan:
                 raise SourceError('scan','Run a successful scan before building the overview.')
             self.cancel.clear()
+            checked = await self.check_external_access(scan)
             started = time.perf_counter()
             present = {p for p in ('slack/','jira/') if self.index.source_blocks(scan['id'],p)}
             topics = topics_for(present)
@@ -502,6 +587,8 @@ class Service:
             paths = self.index.code_paths(scan['id'])
 
             def payload_now(sections, done):
+                self.ensure_current(checked)
+                self.check_cancelled()
                 return {'scan_id':scan['id'],'commit':scan['commit'],'repo':scan['repo'],
                         'branch':scan.get('branch'),'scanned_at':scan.get('finished'),
                         'demo':self.demo,'sections':sections,'facts':facts,
@@ -536,10 +623,14 @@ class Service:
                 self.overview_progress = {'phase':topic['title'],'done':done,'total':len(topics)}
                 found = (await embed.vectors(topic['queries'])
                          if self.index.embedded(scan['id']) else None)
+                self.ensure_current(checked)
+                self.check_cancelled()
                 sources = self.index.search_many(topic['queries'], scan,
                                                  test_cap=topic.get('test_cap'),
                                                  vendor_cap=topic.get('vendor_cap', 0),
                                                  query_vectors=found)
+                if any(s['path'].startswith(('jira/', 'slack/')) for s in sources):
+                    await self.check_external_access(scan)
                 if not sources:
                     sections.append(section_from(topic, [], None,
                         'No indexed excerpt matched this topic, so nothing is claimed about it.',
@@ -567,6 +658,8 @@ class Service:
                                                      measure=not self.demo, facts=facts, paths=paths))
                         applog.failure('overview.topic_failed', topic=topic['key'], code=exc.code, msg=exc)
                 done += 1
+                if any(s['path'].startswith(('jira/', 'slack/')) for s in sources):
+                    await self.check_external_access(scan)
                 self.overview_progress = {'phase':topic['title'],'done':done,'total':len(topics)}
                 self.index.save_overview(scan['id'], scan['commit'], payload_now(sections, done))
             payload = payload_now(sections, done)
@@ -586,11 +679,19 @@ class Service:
         unreachable is reported rather than skipped silently.
         """
         async with self.lock:
+            self.cancel.clear()
             scan = self.index.active_scan()
             if not scan:
                 raise SourceError('scan','Scan a repository first, then add Slack to it.')
             if not wanted:
                 raise SourceError('slack','Choose at least one channel to read.')
+            credentials.refresh()
+            cfg = self.index.settings()
+            scope = self.index.source_scope('slack', {'workspace':workspace, 'channels':wanted})
+            if scope != self.index.source_scope('slack', cfg.get('slack') or {}):
+                raise SourceError('scope', 'Save the Slack channel selection before reading it.')
+            identity = credentials.source_fingerprint('slack')
+            checked = self.index.revision, {'slack':identity}
             applog.event('slack.begin', channels=len(wanted))
             started = time.perf_counter()
             blocks, report = [], []
@@ -612,12 +713,18 @@ class Service:
                                    'blocks':len(made),'error':''})
                     applog.event('slack.channel', channel=channel['name'],
                                  messages=len(messages), blocks=len(made))
-            stored = self.index.replace_slack(scan['id'], blocks)
+            self.check_cancelled()
+            self.ensure_current(checked)
             self.slack_progress = None
             elapsed = round(time.perf_counter()-started,1)
+            result = {'channels':report,'blocks':len(blocks),'elapsed_seconds':elapsed,
+                      'read_at':now(),'failed':sum(1 for r in report if r['error'])}
+            stored = self.index.replace_source(scan['id'], 'slack/', blocks,
+                self.import_metadata(result, scope, identity))
             applog.event('slack.end', channels=len(report), blocks=stored, secs=elapsed)
-            return {'channels':report,'blocks':stored,'elapsed_seconds':elapsed,
-                    'read_at':now(),'failed':sum(1 for r in report if r['error'])}
+            if result['failed']:
+                self.job_error = f"Slack import was partial: {result['failed']} channel(s) could not be read."
+            return result
 
     async def read_jira(self, project_key):
         """Read one Jira project into the index beside the code and Slack, through MCP.
@@ -627,11 +734,19 @@ class Service:
         pages of readable blocks rather than one payload, the way the file manifest does.
         """
         async with self.lock:
+            self.cancel.clear()
             scan = self.index.active_scan()
             if not scan:
                 raise SourceError('scan','Scan a repository first, then add Jira to it.')
             if not project_key:
                 raise SourceError('jira','Choose a project to read.')
+            credentials.refresh()
+            cfg = self.index.settings()
+            scope = self.index.source_scope('jira', {'project':project_key})
+            if scope != self.index.source_scope('jira', cfg.get('jira') or {}):
+                raise SourceError('scope', 'Save the Jira project selection before reading it.')
+            identity = credentials.source_fingerprint('jira')
+            checked = self.index.revision, {'jira':identity}
             applog.event('jira.begin', project=project_key)
             started = time.perf_counter()
             self.jira_progress = {'phase':'Reading '+project_key,'done':0,'total':1}
@@ -647,13 +762,17 @@ class Service:
                     self.jira_progress = {'phase':'Reading '+project_key,
                                           'done':len(blocks),'total':begun['blocks']}
                     cursor = page['next_cursor']
-            stored = self.index.replace_source(scan['id'], 'jira/', blocks)
+            self.check_cancelled()
+            self.ensure_current(checked)
             self.jira_progress = None
             elapsed = round(time.perf_counter()-started,1)
+            result = {'project':project_key,'issues':begun['issues'],'blocks':len(blocks),
+                      'elapsed_seconds':elapsed,'read_at':now()}
+            stored = self.index.replace_source(scan['id'], 'jira/', blocks,
+                self.import_metadata(result, scope, identity))
             applog.event('jira.end', project=project_key, issues=begun['issues'],
                          blocks=stored, secs=elapsed)
-            return {'project':project_key,'issues':begun['issues'],'blocks':stored,
-                    'elapsed_seconds':elapsed,'read_at':now()}
+            return result
 
     async def ask(self, question):
         started = time.perf_counter()
@@ -686,9 +805,11 @@ class Service:
                 if isinstance(exc,SourceError):
                     raise
                 raise SourceError('access','Could not verify GitHub access. No answer was generated.') from None
+            checked = await self.check_external_access(scan)
             applog.event('ask.begin', scan_id=scan['id'], repo=scan['repo'], **applog.question_fields(question))
             search_info = {}
             found = await embed.vectors([question]) if self.index.embedded(scan['id']) else None
+            self.ensure_current(checked)
             sources = self.index.search(question,scan,search_info,query_vectors=found)
             applog.event('ask.terms', asked=','.join(search_info.get('asked',[])) or 'none',
                          used=','.join(search_info.get('terms',[])) or 'none',
@@ -740,6 +861,11 @@ class Service:
                 except Exception:
                     response.update(statements=[],missing_information='Inspect the excerpts below.',error='The answer could not be generated.')
             response['elapsed_seconds'] = round(time.perf_counter()-started,2)
+            if any(s['path'].startswith(('jira/', 'slack/')) for s in sources):
+                await self.check_external_access(scan)
+                response['access_checked_at'] = now()
+                response['elapsed_seconds'] = round(time.perf_counter()-started,2)
+            self.ensure_current(checked)
             response['answer_id'] = self.index.record_answer(scan['id'],question,response,response['elapsed_seconds'])
             applog.event('ask.end', scan_id=scan['id'], answer_id=response['answer_id'],
                          statements=len(response.get('statements') or []), sources=len(sources),

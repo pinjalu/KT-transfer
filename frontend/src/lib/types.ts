@@ -24,6 +24,7 @@ export type Scan = {
 }
 
 export type Status = {
+  knowledge_revision: number
   settings: Settings
   scan: Scan | null
   last_successful_scan: Scan | null

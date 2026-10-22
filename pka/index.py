@@ -1,6 +1,7 @@
 """A small replaceable lexical retrieval layer: SQLite FTS5 + paths + symbols."""
 import ast
 import difflib
+import hashlib
 from contextlib import contextmanager
 import json
 import os
@@ -258,6 +259,7 @@ def chunk_file(path: str, content: str) -> list[dict]:
 class Index:
     def __init__(self, path):
         self.path = str(path)
+        self.revision = 0
         with self.db() as db:
             db.executescript('''
             PRAGMA journal_mode=WAL;
@@ -274,6 +276,7 @@ class Index:
                 floor REAL, probes INTEGER, created TEXT, PRIMARY KEY (scan_id, model));
             CREATE TABLE IF NOT EXISTS overviews (commit_sha TEXT PRIMARY KEY, scan_id INTEGER,
                 payload TEXT, created TEXT);
+            CREATE TABLE IF NOT EXISTS source_imports (name TEXT PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS answers (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, question TEXT,
                 response TEXT, elapsed REAL, created TEXT, rating TEXT DEFAULT 'not assessed',
                 sufficiency TEXT DEFAULT 'not assessed');
@@ -313,22 +316,70 @@ class Index:
             if (current.get('repo'), current.get('branch')) == (merged.get('repo'), merged.get('branch')):
                 return
             # The snapshot belonged to the old repository, so it cannot answer for the new one.
-            for table in ('chunks','search','answers','overviews','scans','vectors'):
+            self.revision += 1
+            self._vocab = None
+            for name in ('jira', 'slack'):
+                for key in ('read_at', 'import_report'):
+                    (merged.get(name) or {}).pop(key, None)
+            db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(merged),))
+            for table in ('chunks','search','answers','overviews','scans','vectors','source_imports','calibration'):
                 db.execute('DELETE FROM '+table)
             db.execute('UPDATE active SET scan_id=NULL')
+    @staticmethod
+    def source_scope(name, value):
+        if name == 'jira':
+            return {'project':str(value.get('project', '')).upper()}
+        if name == 'slack':
+            return {'workspace':value.get('workspace', ''),
+                    'channels':sorted([c['id'], c['name']] for c in value.get('channels', []))}
+        raise ValueError('Unknown source.')
+
+    def _changed(self, db):
+        """Derived content must never outlive the source snapshot it describes."""
+        self.revision += 1
+        self._vocab = None
+        db.execute('DELETE FROM answers')
+        db.execute('DELETE FROM overviews')
+        db.execute('DELETE FROM calibration')
+
+    def _drop_source(self, db, name):
+        prefix = name + '/'
+        db.execute('DELETE FROM search WHERE rowid IN (SELECT id FROM chunks WHERE path LIKE ?)', (prefix+'%',))
+        db.execute('DELETE FROM vectors WHERE chunk_id IN (SELECT id FROM chunks WHERE path LIKE ?)', (prefix+'%',))
+        db.execute('DELETE FROM chunks WHERE path LIKE ?', (prefix+'%',))
+        db.execute('DELETE FROM source_imports WHERE name=?', (name,))
+
     def configure_source(self, name, value):
-        """Save one connector's choice without clearing the code index, which it does not affect."""
+        """A changed source selection removes its old content immediately."""
         with self.db() as db:
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             settings = json.loads(row[0]) if row else {}
+            value = dict(value)
+            if self.source_scope(name, settings.get(name) or {}) != self.source_scope(name, value):
+                self._drop_source(db, name)
+                self._changed(db)
+                value.pop('read_at', None)
+                value.pop('import_report', None)
             settings[name] = value
             db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(settings),))
     def configure_slack(self, slack):
-        """Save the Slack choice without clearing the code index, which it does not affect."""
+        self.configure_source('slack', slack)
+
+    def source_import(self, name):
         with self.db() as db:
+            row = db.execute('SELECT payload FROM source_imports WHERE name=?', (name,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def discard_source(self, name):
+        """Remove inaccessible content and every answer/overview that could cite it."""
+        with self.db() as db:
+            self._drop_source(db, name)
+            self._changed(db)
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             settings = json.loads(row[0]) if row else {}
-            settings['slack'] = slack
+            source = settings.get(name) or {}
+            source.pop('read_at', None)
+            source.pop('import_report', None)
             db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(settings),))
     def new_scan(self, detail):
         with self.db() as db:
@@ -354,6 +405,17 @@ class Index:
     def activate(self, scan_id, chunks, detail):
         # Replace the whole snapshot in one transaction; deleted files cannot linger in retrieval.
         with self.db() as db:
+            had_external = db.execute("SELECT 1 FROM chunks WHERE path LIKE 'jira/%' OR path LIKE 'slack/%' LIMIT 1").fetchone()
+            self.revision += 1
+            self._vocab = None
+            db.execute('DELETE FROM source_imports')
+            row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
+            if row:
+                settings = json.loads(row[0])
+                for name in ('jira', 'slack'):
+                    for key in ('read_at', 'import_report'):
+                        (settings.get(name) or {}).pop(key, None)
+                db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(settings),))
             db.execute('DELETE FROM search')
             db.execute('DELETE FROM chunks')
             db.execute('DELETE FROM vectors')
@@ -366,12 +428,17 @@ class Index:
             db.execute('UPDATE scans SET status=?,detail=? WHERE id=?',(detail['status'],json.dumps(detail),scan_id))
             db.execute('DELETE FROM answers')
             db.execute('DELETE FROM overviews WHERE commit_sha<>?',(detail.get('commit',''),))
-    def replace_source(self, scan_id, prefix, blocks):
-        """Swap in this scan's Slack content, leaving the code snapshot alone.
+            if had_external:
+                db.execute('DELETE FROM overviews')
+    def replace_source(self, scan_id, prefix, blocks, import_meta=None):
+        """Replace one external source and its derived caches in one transaction.
     
         Reading again replaces what was read before rather than adding to it, so a message that
         was deleted or a channel that was removed from the list cannot linger in answers.
         """
+        if prefix not in {'jira/', 'slack/'}:
+            raise ValueError('Unknown source prefix.')
+        name = prefix[:-1]
         with self.db() as db:
             stale = [r[0] for r in db.execute(
                 'SELECT id FROM chunks WHERE scan_id=? AND path LIKE ?',(scan_id,prefix+'%')).fetchall()]
@@ -387,6 +454,15 @@ class Index:
                      block['symbols'],int(block['split']),block.get('url') or None))
                 db.execute('INSERT INTO search(rowid,path,symbols,text) VALUES(?,?,?,?)',
                     (cur.lastrowid,' '.join(words(block['path'])),block['symbols'],' '.join(words(block['text']))))
+            self._changed(db)
+            db.execute('DELETE FROM source_imports WHERE name=?', (name,))
+            if import_meta is not None:
+                db.execute('INSERT INTO source_imports VALUES(?,?)', (name, json.dumps(import_meta)))
+                row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
+                settings = json.loads(row[0]) if row else {}
+                settings.setdefault(name, {}).update(read_at=import_meta['report']['read_at'],
+                                                     import_report=import_meta['report'])
+                db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)', (json.dumps(settings),))
             return len(blocks)
     def replace_slack(self, scan_id, blocks):
         return self.replace_source(scan_id, 'slack/', blocks)
@@ -394,13 +470,32 @@ class Index:
         with self.db() as db:
             return db.execute('SELECT COUNT(*) FROM chunks WHERE scan_id=? AND path LIKE ?',
                               (scan_id,prefix+'%')).fetchone()[0]
+    def source_digests(self, scan_id, prefix):
+        """Hashes of saved source text for permission-sensitive snapshot checks."""
+        if prefix not in {'jira/', 'slack/'}:
+            raise ValueError('Unknown source prefix.')
+        grouped = {}
+        with self.db() as db:
+            for row in db.execute('SELECT path,text FROM chunks WHERE scan_id=? AND path LIKE ? ORDER BY path,start,id',
+                                  (scan_id, prefix+'%')):
+                grouped.setdefault(row['path'][len(prefix):], []).append(row['text'])
+        return {key: hashlib.sha256('\n'.join(parts).encode()).hexdigest() for key, parts in grouped.items()}
     def slack_blocks(self, scan_id):
         return self.source_blocks(scan_id, 'slack/')
     def invalidate(self):
         with self.db() as db:
+            self.revision += 1
+            self._vocab = None
             db.execute('UPDATE active SET scan_id=NULL')
-            for table in ('chunks','search','answers','overviews','vectors'):
+            for table in ('chunks','search','answers','overviews','vectors','source_imports','calibration'):
                 db.execute('DELETE FROM '+table)
+            row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
+            if row:
+                settings = json.loads(row[0])
+                for name in ('jira', 'slack'):
+                    for key in ('read_at', 'import_report'):
+                        (settings.get(name) or {}).pop(key, None)
+                db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(settings),))
     def recover(self):
         with self.db() as db:
             for row in db.execute("SELECT id,detail FROM scans WHERE status='running'").fetchall():

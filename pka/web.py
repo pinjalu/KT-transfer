@@ -177,6 +177,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
 
     @app.get('/api/status')
     async def status():
+        service.sync_source_credentials()
         scan = service.progress or index.latest()
         if scan:
             scan = {k:v for k,v in scan.items() if k != 'files'}
@@ -187,6 +188,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             # selection: until it is saved, nothing is read and nothing is answered.
             previous = index.settings() or {}
             return {'settings':None,'scan':None,'last_successful_scan':None,'ready':False,
+                    'knowledge_revision':index.revision,
                     'busy':False,'demo':demo,'limits':asdict(LIMITS),
                     'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
                     'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
@@ -198,6 +200,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                     'stored_project':{'repo':previous.get('repo',''),
                                       'branch':previous.get('branch','')} if previous.get('repo') else None}
         return {'settings':index.settings(),'scan':scan,'last_successful_scan':index.last_successful(),
+                'knowledge_revision':index.revision,
                 'busy':service.busy() or bool(service.task and not service.task.done()),'demo':demo,
                 'limits':asdict(LIMITS),'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
                 'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
@@ -254,7 +257,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
     @app.post('/api/scan/cancel')
     async def cancel():
         service.cancel.set()
-        return {'requested':True,'message':'Cancellation takes effect after the current GitHub request finishes.'}
+        return {'requested':True,'message':'Cancellation takes effect after the current connector or model request finishes.'}
 
     def _scope(key, cfg, scan):
         """What this platform is actually set to read, in the reader's own words."""
@@ -357,6 +360,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
 
     @app.post('/api/credentials')
     async def set_credentials(update: CredentialUpdate):
+        idle()
         if demo:
             raise HTTPException(409,'Example mode does not connect to anything.')
         try:
@@ -365,6 +369,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             raise HTTPException(422,str(exc)) from None
         # Names only. A credential value must never reach a log.
         listings.clear()   # new credentials may see a different set of channels or projects
+        service.sync_source_credentials()
         applog.event('credentials.saved', names=','.join(saved) or 'none')
         return {'saved':saved,'status':credentials.status()}
 
@@ -480,6 +485,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         scan = index.active_scan()
         if not scan:
             return {'available':False,'reason':'Run a successful scan first.'}
+        await service.check_external_access(scan)
         cached = index.overview(scan['commit'])
         if cached:
             # The reading order is derived from the indexed paths and no model touches it, so
@@ -568,6 +574,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         scan = index.active_scan()
         if not scan:
             return {'available':False,'reason':'Run a successful scan first.','features':[]}
+        await service.check_external_access(scan)
         payload = features.derive(index,scan,facts.derive(index,scan))
         return {'available':True,'reason':'',**features.listing(payload)}
 
@@ -576,6 +583,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         scan = index.active_scan()
         if not scan:
             raise HTTPException(409,'Run a successful scan first.')
+        await service.check_external_access(scan)
         payload = features.derive(index,scan,facts.derive(index,scan))
         found = next((f for f in payload['features'] if f['id'] == feature_id),None)
         if not found:

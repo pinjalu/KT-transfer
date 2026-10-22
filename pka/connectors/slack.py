@@ -61,6 +61,8 @@ class SlackSource:
                         await asyncio.sleep(wait)
                         continue
                     raise SourceError('rate_limit', f'Slack asked us to wait {wait} seconds. Try again shortly.')
+                if response.status_code in {401, 403, 404}:
+                    raise SourceError('access_denied', 'Slack no longer permits this history request.')
                 if response.status_code != 200:
                     raise SourceError('slack', f'Slack returned HTTP {response.status_code}.')
                 try:
@@ -69,9 +71,18 @@ class SlackSource:
                     raise SourceError('slack', 'Slack returned an unreadable response.') from None
                 if not body.get('ok'):
                     code = str(body.get('error', 'unknown'))
-                    raise SourceError('slack', REASONS.get(code, 'Slack refused the request: ' + code + '.'))
+                    raise SourceError('access_denied' if code in REASONS else 'slack',
+                                      REASONS.get(code, 'Slack refused the request: ' + code + '.'))
                 return body
         raise SourceError('network', 'Slack request failed.')
+
+    async def check_channel_access(self, channel_id: str) -> dict:
+        # A successful channel listing does not establish permission to read its history.
+        # Discard the probe message; this call never updates the saved snapshot.
+        body = await self._get(HISTORY_METHOD, {'channel': channel_id, 'limit': 1})
+        if not isinstance(body.get('messages'), list):
+            raise SourceError('slack', 'Slack history access could not be verified.')
+        return {'channel': channel_id, 'readable': True}
 
     async def channels(self) -> list:
         """Every channel this token can see. Reading one still needs it in the allowlist."""

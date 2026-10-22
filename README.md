@@ -289,6 +289,15 @@ Automatic checks are not factual accuracy. Reports exclude generated prose and s
 `--inspect-report report.json --case database` displays an exact retained answer for review.
 See [task 5.2](docs/TASK_5_2.md) for the baseline, review rubric and commands.
 
+## Checking saved source access
+
+`python -m pka.access_check --output data/acceptance/access.json` rechecks the saved Jira
+issues and Slack channels through the real MCP connector, using a disposable database copy.
+It leaves the application's index unchanged and records no source text or credentials.
+The app also runs these checks before using cached external information. Changed Jira text
+requires **Read issues** again; a temporary verification failure blocks answers until retry.
+See [task 5.3](docs/TASK_5_3.md) for the behavior, tests and limitations.
+
 ## Measuring retrieval
 
 Whether an answer is any good is decided mostly before the model is reached: if the file that holds the answer never comes back, no amount of explaining rescues it. `python -m pka.evaluate` scores retrieval against a labelled question set without calling Ollama at all, which makes it deterministic and fast enough to run after every change.

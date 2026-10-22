@@ -19,7 +19,10 @@ export function useApi<T>(path: string, poll = 0): Load<T> {
 
   useEffect(() => {
     let live = true
+    let inFlight = false
     const run = async () => {
+      if (inFlight) return
+      inFlight = true
       try {
         const body = await get(path)
         if (!live) return
@@ -27,8 +30,10 @@ export function useApi<T>(path: string, poll = 0): Load<T> {
         setError(null)
       } catch (exc) {
         if (!live) return
+        setData(null)
         setError(exc instanceof ApiError ? exc.message : 'Something went wrong.')
       } finally {
+        inFlight = false
         if (live) setLoading(false)
       }
     }

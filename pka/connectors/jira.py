@@ -10,6 +10,7 @@ decides what is actually read.
 """
 import asyncio
 import base64
+import hashlib
 import ipaddress
 import re
 from urllib.parse import urlparse
@@ -179,27 +180,41 @@ class JiraSource:
                 break
         return collected[:LIMITS.jira_max_issues]
 
-    async def check_issues_access(self, project_key: str, issue_keys: list[str]) -> dict:
-        """Check that imported issues remain visible to this account."""
+    async def check_issues_access(self, project_key: str, issue_keys: list[str], snapshots=None) -> dict:
+        """Check issue security and the continued visibility of saved issue/comment text."""
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,40}', project_key or ''):
             raise SourceError('scope', 'No valid Jira project was selected.')
         keys = sorted(set(issue_keys))
         if len(keys) > LIMITS.jira_max_issues or any(
                 not re.fullmatch(re.escape(project_key) + r'-[0-9]+', key, re.I) for key in keys):
             raise SourceError('scope', 'An issue is outside the selected Jira project.')
+        if snapshots is not None and (set(snapshots) != set(keys) or any(
+                not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)
+                for value in snapshots.values())):
+            raise SourceError('scope', 'Saved Jira content does not match the selected issues.')
         await self.check_access()  # Search can otherwise return an anonymous empty result.
         visible = set()
         for start in range(0, len(keys), 50):
             batch = keys[start:start+50]
             params = {'jql': 'project = "' + project_key + '" AND key IN (' +
                       ','.join('"'+key+'"' for key in batch) + ')',
-                      'fields': 'key', 'maxResults': 50}
+                      'fields': FIELDS if snapshots is not None else 'key', 'maxResults': 50}
             seen = set()
             while True:
                 body = await self._get(SEARCH, params)
                 if not isinstance(body.get('issues'), list):
                     raise SourceError('jira', 'Jira access could not be verified.')
                 visible.update(i.get('key', '').upper() for i in body['issues'])
+                if snapshots is not None:
+                    for issue in body['issues']:
+                        key = issue.get('key', '')
+                        if key not in snapshots:
+                            raise SourceError('jira', 'Jira access returned an unexpected issue.')
+                        current = hashlib.sha256(issue_block(self.site, issue)['text'].encode()).hexdigest()
+                        if current != snapshots[key]:
+                            # Issue-level access alone cannot authorize a previously visible
+                            # comment. A content or visibility change requires a new read.
+                            raise SourceError('stale_source', 'Saved Jira content changed or is no longer fully visible. Read the project again.')
                 token = body.get('nextPageToken')
                 if not token:
                     if body.get('isLast') is False:
