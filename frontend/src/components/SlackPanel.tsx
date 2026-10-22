@@ -5,8 +5,10 @@ import { useApi } from '../lib/useApi'
 import { ApiError, get, post } from '../lib/api'
 import type { SlackReply } from '../lib/sources'
 import type { Status } from '../lib/types'
+import { ImportCoverage } from './ImportCoverage'
+import type { Coverage } from './ImportCoverage'
 
-export function SlackPanel({ status, onChanged }: { status: Status | null; onChanged: () => void }) {
+export function SlackPanel({ status, onChanged, coverage }: { status: Status | null; onChanged: () => void; coverage?: Coverage }) {
   const slack = useApi<SlackReply>('/api/slack/channels')
   const [note, setNote] = useState('')
   const [chosen, setChosen] = useState<Record<string, string> | null>(null)
@@ -129,7 +131,7 @@ export function SlackPanel({ status, onChanged }: { status: Status | null; onCha
               ? 'Scan the repository first'
               : slack.data?.read_at
               ? `Last read: ${new Date(slack.data.read_at).toLocaleString()}`
-              : slack.data?.blocks ? `${slack.data.blocks} messages indexed` : 'Not read yet'}
+              : slack.data?.blocks ? `${slack.data.blocks} message excerpts stored` : 'Not read yet'}
           </p>
         </div>
       </div>
@@ -170,6 +172,7 @@ export function SlackPanel({ status, onChanged }: { status: Status | null; onCha
         </div>
       )}
 
+      <ImportCoverage coverage={coverage} />
       <p className="conn-caveat">
         Who wrote a message is not resolved to a name, because that needs a permission this
         deliberately does not ask for. Reading again replaces what was read before, so a deleted

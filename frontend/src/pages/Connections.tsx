@@ -4,6 +4,8 @@ import { Icon } from '../components/Icon'
 import { JiraPanel } from '../components/JiraPanel'
 import { SlackPanel } from '../components/SlackPanel'
 import { ImportHistory } from '../components/ImportHistory'
+import { ImportCoverage } from '../components/ImportCoverage'
+import type { CoverageReply } from '../components/ImportCoverage'
 import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
 import type { Platforms, Status } from '../lib/types'
@@ -17,6 +19,7 @@ function pct(scan: { processed?: number; total?: number } | null) {
 export function Connections() {
   const [tab, setTab] = useState('Connections')
   const status = useApi<Status>('/api/status', 2000)
+  const coverage = useApi<CoverageReply>('/api/import-coverage', 2000, status.data?.knowledge_revision)
   const platforms = useApi<Platforms>('/api/platforms')
 
   const settings = status.data?.settings
@@ -111,6 +114,7 @@ export function Connections() {
       <Tabs items={['Connections', 'Import history']} active={tab} onPick={setTab} />
 
       {note && <p className="conn-note">{note}</p>}
+      {coverage.error && <Failed message={coverage.error} onRetry={coverage.reload} />}
       <p className="conn-note">Refresh repository reads the code again and clears saved Jira and Slack content.
         Then use Read issues and Read messages below to refresh those sources, and build the Project overview again.</p>
 
@@ -200,10 +204,11 @@ export function Connections() {
               </div>
             )}
             {scan?.error && <div className="conn-warn"><Failed message={scan.error} /></div>}
+            <ImportCoverage coverage={coverage.data?.sources.github} />
           </Card>
 
-          <JiraPanel status={status.data ?? null} onChanged={status.reload} />
-          <SlackPanel status={status.data ?? null} onChanged={status.reload} />
+          <JiraPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.jira} />
+          <SlackPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.slack} />
 
           <Card title="More sources"
                 sub="Connect additional project information. All read-only.">

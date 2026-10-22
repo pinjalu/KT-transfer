@@ -15,7 +15,7 @@ from pka.config import ROOT, KEEP_LOGS, LIMITS, data_dir, log_dir, validate_sele
 from pka import credentials, oauth
 from pka.connectors import registry
 from pka.connectors.base import SourceError
-from pka import facts, features
+from pka import facts, features, coverage
 from pka.index import Index
 from pka.overview import reading_order, topics_for
 from pka.service import Service
@@ -213,6 +213,13 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                 'slack_progress':service.slack_progress,
                 'overview_building':service.overview_progress is not None,
                 'overview_progress':service.overview_progress}
+
+    @app.get('/api/import-coverage')
+    async def import_coverage():
+        if not chosen['this_run']:
+            return {'sources':{}}
+        service.sync_source_credentials()
+        return coverage.describe(service)
 
     @app.get('/api/scan-files')
     async def scan_files(offset: int = 0):

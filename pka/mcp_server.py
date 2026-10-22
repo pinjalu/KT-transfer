@@ -128,7 +128,8 @@ async def jira_begin_read() -> dict:
         issues = await reader.issues(JIRA_PROJECT)
         _jira_blocks.clear()
         _jira_blocks.extend(issue_block(reader.site, issue) for issue in issues)
-        return {'project':JIRA_PROJECT,'issues':len(issues),'blocks':len(_jira_blocks)}
+        return {'project':JIRA_PROJECT,'issues':len(issues),'blocks':len(_jira_blocks),
+                'coverage':getattr(reader, 'last_coverage', None)}
     return await attempt(work)
 
 @server.tool(annotations=READ_ONLY)
@@ -154,12 +155,12 @@ async def slack_check_channel_access(channel_id: str) -> dict:
     return await guarded_on(slack, 'check_channel_access', channel_id=channel_id)
 
 @server.tool(annotations=READ_ONLY)
-async def slack_read_channel(channel_id: str) -> dict:
+async def slack_read_channel(channel_id: str, include_coverage: bool = False) -> dict:
     """Read one channel. A channel outside the allowlist fixed at launch is refused here."""
     if channel_id not in SLACK_CHANNELS:
         return {'ok':False,'code':'scope',
                 'error':'That channel is not in the allowlist saved for this run.'}
-    return await guarded_on(slack, 'messages', channel_id=channel_id)
+    return await guarded_on(slack, 'read_channel' if include_coverage else 'messages', channel_id=channel_id)
 
 if __name__ == '__main__':
     server.run(transport='stdio')

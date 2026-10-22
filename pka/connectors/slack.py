@@ -107,6 +107,7 @@ class SlackSource:
     async def messages(self, channel_id: str, oldest: str = '') -> list:
         """Messages in one channel, oldest first, with thread replies folded in beneath."""
         collected, cursor, pages = [], '', 0
+        history_incomplete, skipped, seen_cursors = False, 0, set()
         while pages < LIMITS.slack_max_pages and len(collected) < LIMITS.slack_max_messages:
             params = {'channel': channel_id, 'limit': 200}
             if cursor:
@@ -114,34 +115,75 @@ class SlackSource:
             if oldest:
                 params['oldest'] = oldest
             body = await self._get(HISTORY_METHOD, params)
-            for message in body.get('messages', []):
+            batch = body.get('messages')
+            if not isinstance(batch, list):
+                raise SourceError('slack', 'Slack returned an unreadable message page.')
+            for position, message in enumerate(batch):
                 if message.get('subtype') in {'channel_join', 'channel_leave'}:
+                    skipped += 1
                     continue
                 if not (message.get('text') or '').strip():
+                    skipped += 1
                     continue
                 collected.append(message)
                 if len(collected) >= LIMITS.slack_max_messages:
+                    history_incomplete |= position + 1 < len(batch)
                     break
             cursor = (body.get('response_metadata') or {}).get('next_cursor', '')
             pages += 1
-            if not (body.get('has_more') and cursor):
+            more = bool(body.get('has_more') or cursor)
+            if not more:
                 break
+            if (not cursor or cursor in seen_cursors or pages >= LIMITS.slack_max_pages
+                    or len(collected) >= LIMITS.slack_max_messages):
+                history_incomplete = True
+                break
+            seen_cursors.add(cursor)
         collected.sort(key=lambda m: float(m.get('ts', 0) or 0))
         out = []
-        threads = 0
+        threads = failed_threads = skipped_threads = truncated_threads = 0
         for message in collected:
             out.append(message)
-            if message.get('reply_count') and threads < LIMITS.slack_max_threads:
+            if message.get('reply_count') and threads >= LIMITS.slack_max_threads:
+                skipped_threads += 1
+            elif message.get('reply_count'):
                 threads += 1
                 try:
                     body = await self._get(REPLIES_METHOD, {'channel': channel_id,
                                                             'ts': message['ts'], 'limit': 100})
                 except SourceError:
+                    failed_threads += 1
                     continue
-                for reply in body.get('messages', [])[1:]:
+                replies = body.get('messages')
+                if not isinstance(replies, list):
+                    failed_threads += 1
+                    continue
+                replies = [r for r in replies if r.get('ts') != message.get('ts')]
+                if (body.get('has_more') or (body.get('response_metadata') or {}).get('next_cursor')
+                        or len(replies) < int(message.get('reply_count') or 0)):
+                    truncated_threads += 1
+                for reply in replies:
                     if (reply.get('text') or '').strip():
                         out.append({**reply, 'in_thread': True})
+        notes = []
+        if history_incomplete:
+            notes.append('Channel history is incomplete: a message/page limit or pagination gap stopped the read.')
+        if failed_threads:
+            notes.append(f'{failed_threads} thread(s) could not be read.')
+        if skipped_threads:
+            notes.append(f'{skipped_threads} thread(s) were skipped at the thread limit.')
+        if truncated_threads:
+            notes.append(f'{truncated_threads} thread(s) have additional replies that were not read.')
+        self.last_coverage = {'state':'partial' if notes else 'complete', 'notes':notes,
+            'history_messages':len(collected), 'replies':len(out)-len(collected), 'pages':pages,
+            'excluded_events':skipped, 'threads_failed':failed_threads,
+            'threads_skipped':skipped_threads, 'threads_truncated':truncated_threads,
+            'oldest':out[0].get('ts') if out else None, 'newest':max((m.get('ts', '0') for m in out), key=float) if out else None}
         return out
+
+    async def read_channel(self, channel_id: str) -> dict:
+        messages = await self.messages(channel_id)
+        return {'messages':messages, 'coverage':self.last_coverage}
 
 
 def permalink(workspace: str, channel_id: str, ts: str) -> str:

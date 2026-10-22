@@ -6,8 +6,10 @@ import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
 import type { JiraReply } from '../lib/sources'
 import type { Status } from '../lib/types'
+import { ImportCoverage } from './ImportCoverage'
+import type { Coverage } from './ImportCoverage'
 
-export function JiraPanel({ status, onChanged }: { status: Status | null; onChanged: () => void }) {
+export function JiraPanel({ status, onChanged, coverage }: { status: Status | null; onChanged: () => void; coverage?: Coverage }) {
   const jira = useApi<JiraReply>('/api/jira/projects')
   const [note, setNote] = useState('')
   const [picked, setPicked] = useState<string | null>(null)
@@ -87,7 +89,7 @@ export function JiraPanel({ status, onChanged }: { status: Status | null; onChan
               ? 'Scan the repository first'
               : jira.data?.read_at
               ? `Last read: ${new Date(jira.data.read_at).toLocaleString()}`
-              : jira.data?.blocks ? `${jira.data.blocks} issues indexed` : 'Not read yet'}
+              : jira.data?.blocks ? `${jira.data.blocks} issue excerpts stored` : 'Not read yet'}
           </p>
         </div>
       </div>
@@ -117,6 +119,7 @@ export function JiraPanel({ status, onChanged }: { status: Status | null; onChan
 
       <JiraCredentials disabled={busy || !!status?.demo}
                        onSaved={() => { jira.reload(); onChanged() }} />
+      <ImportCoverage coverage={coverage} />
       <p className="conn-caveat">Reading again replaces saved issues, including edits and deletions,
         and clears previous answers and the overview. Build the overview again after reading.</p>
 

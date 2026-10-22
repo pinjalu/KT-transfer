@@ -824,7 +824,11 @@ class Service:
                     self.slack_progress = {'phase':'Reading #'+channel['name'],
                                            'done':len(report),'total':len(wanted)}
                     try:
-                        messages = await source.slack_messages(channel['id'])
+                        if hasattr(source, 'slack_read'):
+                            read = await source.slack_read(channel['id'])
+                            messages, coverage = read['messages'], read.get('coverage')
+                        else:
+                            messages, coverage = await source.slack_messages(channel['id']), None
                     except SourceError as exc:
                         report.append({'name':channel['name'],'messages':0,'blocks':0,'error':str(exc)})
                         applog.failure('slack.channel_failed', channel=channel['name'], msg=exc)
@@ -832,7 +836,7 @@ class Service:
                     made = transcript(channel['name'], messages, workspace, channel['id'])
                     blocks.extend(made)
                     report.append({'name':channel['name'],'messages':len(messages),
-                                   'blocks':len(made),'error':''})
+                                   'blocks':len(made),'error':'','coverage':coverage})
                     applog.event('slack.channel', channel=channel['name'],
                                  messages=len(messages), blocks=len(made))
             self.check_cancelled()
@@ -841,11 +845,14 @@ class Service:
             elapsed = round(time.perf_counter()-started,1)
             result = {'channels':report,'blocks':len(blocks),'elapsed_seconds':elapsed,
                       'read_at':now(),'failed':sum(1 for r in report if r['error'])}
+            partial = len(report) < len(wanted) or result['failed'] or any((r.get('coverage') or {}).get('state') == 'partial' for r in report)
+            result['coverage_state'] = ('partial' if partial else 'complete' if all(
+                (r.get('coverage') or {}).get('state') == 'complete' for r in report) else 'unknown')
             stored = self.index.replace_source(scan['id'], 'slack/', blocks,
                 self.import_metadata(result, scope, identity))
             applog.event('slack.end', channels=len(report), blocks=stored, secs=elapsed)
-            if result['failed']:
-                self.job_error = f"Slack import was partial: {result['failed']} channel(s) could not be read."
+            if partial:
+                self.job_error = 'Slack import was partial. Check import coverage for missing channels, messages or replies.'
             return result
 
     async def read_jira(self, project_key):
@@ -889,11 +896,13 @@ class Service:
             self.jira_progress = None
             elapsed = round(time.perf_counter()-started,1)
             result = {'project':project_key,'issues':begun['issues'],'blocks':len(blocks),
-                      'elapsed_seconds':elapsed,'read_at':now()}
+                      'elapsed_seconds':elapsed,'read_at':now(),'coverage':begun.get('coverage')}
             stored = self.index.replace_source(scan['id'], 'jira/', blocks,
                 self.import_metadata(result, scope, identity))
             applog.event('jira.end', project=project_key, issues=begun['issues'],
                          blocks=stored, secs=elapsed)
+            if (result.get('coverage') or {}).get('state') == 'partial':
+                self.job_error = 'Jira import was partial. Check import coverage for missing issues, comments or shortened text.'
             return result
 
     async def ask(self, question):

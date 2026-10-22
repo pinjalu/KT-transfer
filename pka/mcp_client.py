@@ -60,6 +60,8 @@ class ConnectorClient:
         return await self.call('slack_list_channels')
     async def slack_messages(self, channel_id):
         return await self.call('slack_read_channel', channel_id=channel_id)
+    async def slack_read(self, channel_id):
+        return await self.call('slack_read_channel', channel_id=channel_id, include_coverage=True)
     async def slack_check_channel_access(self, channel_id):
         return await self.call('slack_check_channel_access', channel_id=channel_id)
 

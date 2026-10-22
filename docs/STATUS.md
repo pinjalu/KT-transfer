@@ -1,5 +1,18 @@
 # Implementation and verification record
 
+## Task 5.6 import coverage, 22 October 2026
+
+Task 5.6 is **Done**. Connections shows per-source coverage, separate item/excerpt counts,
+read times, limits and omission reasons. Jira reports missing comments and shortened issue
+text; Slack reports channel, history and thread gaps. Partial reads update the job banner.
+Old imports without coverage metadata stay explicitly unknown, and failed refreshes retain
+the previous import with its original timestamp.
+
+All **458 Python tests**, **seven isolated Chrome checks**, and the production frontend build
+passed. The running app was restarted with its 1,099 chunks and two source imports preserved.
+Browser checks used fixture HTTP responses through the actual adapters and app. See
+[task 5.6](TASK_5_6.md) for verification and scope limits.
+
 ## Task 5.5 background jobs, 22 October 2026
 
 Task 5.5 is **Done**. Scans, Jira and Slack reads, and overview builds now save their job state

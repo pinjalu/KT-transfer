@@ -159,12 +159,16 @@ class JiraSource:
         # The key is checked above, so it cannot carry anything into the query.
         jql = f'project = "{project_key}" ORDER BY created ASC'
         collected, token, pages = [], '', 0
+        legacy, incomplete, uncertain = False, False, False
+        seen_tokens = set()
         while pages < LIMITS.jira_max_pages and len(collected) < LIMITS.jira_max_issues:
             params = {'jql': jql, 'maxResults': 50, 'fields': FIELDS}
-            if token:
+            if legacy:
+                params['startAt'] = len(collected)
+            elif token:
                 params['nextPageToken'] = token
             try:
-                body = await self._get(SEARCH, params)
+                body = await self._get(SEARCH_LEGACY if legacy else SEARCH, params)
             except SourceError as exc:
                 if exc.code != 'jira':
                     raise
@@ -172,13 +176,54 @@ class JiraSource:
                 params.pop('nextPageToken', None)
                 params['startAt'] = len(collected)
                 body = await self._get(SEARCH_LEGACY, params)
-            batch = body.get('issues', [])
-            collected.extend(batch)
+                legacy = True
+            batch = body.get('issues')
+            if not isinstance(batch, list):
+                raise SourceError('jira', 'Jira returned an unreadable issue page.')
+            room = LIMITS.jira_max_issues - len(collected)
+            collected.extend(batch[:room])
+            incomplete |= len(batch) > room
             token = body.get('nextPageToken', '')
             pages += 1
-            if not batch or (not token and body.get('isLast', True)):
+            if legacy and isinstance(body.get('total'), int):
+                more = params['startAt'] + len(batch) < body['total']
+            else:
+                more = bool(token) or body.get('isLast') is False
+                uncertain |= 'isLast' not in body and not token
+            if not more:
                 break
-        return collected[:LIMITS.jira_max_issues]
+            if (not batch or pages >= LIMITS.jira_max_pages or len(collected) >= LIMITS.jira_max_issues
+                    or (not legacy and (not token or token in seen_tokens))):
+                incomplete = True
+                break
+            seen_tokens.add(token)
+        missing_comments = unknown_comments = comments = 0
+        for issue in collected:
+            field = (issue.get('fields') or {}).get('comment') or {}
+            included = (field.get('comments') or [])[:LIMITS.jira_max_comments]
+            comments += len(included)
+            total = field.get('total')
+            if len(field.get('comments') or []) > len(included) or (isinstance(total, int) and total > len(included)):
+                missing_comments += 1
+            elif not isinstance(total, int):
+                unknown_comments += 1
+        shortened = sum(bool(issue_block(self.site, issue)['split']) for issue in collected)
+        notes = []
+        if incomplete:
+            notes.append('More issues may exist: an issue/page limit or pagination gap stopped the read.')
+        if missing_comments:
+            notes.append(f'{missing_comments} issue(s) have comments that were not included.')
+        if shortened:
+            notes.append(f'{shortened} issue(s) had text shortened to the per-issue size limit.')
+        partial = bool(notes)
+        if unknown_comments:
+            notes.append(f'Comment totals were not supplied for {unknown_comments} issue(s); comment coverage is unknown.')
+        if uncertain:
+            notes.append('Jira did not confirm the final issue page; issue coverage is unknown.')
+        self.last_coverage = {'state':'partial' if partial else 'unknown' if notes else 'complete',
+            'notes':notes, 'issues':len(collected), 'pages':pages, 'comments':comments,
+            'issues_missing_comments':missing_comments, 'issues_shortened':shortened}
+        return collected
 
     async def check_issues_access(self, project_key: str, issue_keys: list[str], snapshots=None) -> dict:
         """Check issue security and the continued visibility of saved issue/comment text."""

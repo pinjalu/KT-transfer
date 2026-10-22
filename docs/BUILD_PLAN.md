@@ -48,7 +48,7 @@ placeholder; only the user token path works.
 | Recheck Jira and Slack access before using information | Done. Saved Jira issue/comment visibility and Slack history permissions are rechecked before use, cached views, and publication of generated external-source content. See `TASK_5_3.md` for verification and limits. |
 | Refresh saved information and cached answers | Done. Transactional source revisions survive restarts; source replacement clears derived caches and open views reload safely. Repository scans invalidate same-commit overviews. See `TASK_5_4.md` for tests, live refresh checks and limits. |
 | Improve background jobs, cancellation and retries | Done. Saved job states, shared progress/cancel/retry controls, duplicate-start protection and interrupted-job recovery. Cancellation waits for a safe checkpoint; retries require an explicit action. See `TASK_5_5.md`. |
-| Show import coverage and incomplete reads | Done. |
+| Show import coverage and incomplete reads | Done. Connections displays per-source counts, saved-read times, limits and omission reasons. Jira comment/text gaps and Slack history/thread gaps are recorded; older imports remain coverage-unknown until reread. See `TASK_5_6.md`. |
 | Improve connection screens and source labels | Not started. This is mockup 02. |
 | Complete final acceptance and update documentation | Not started. |
 | Provide inspectable evidence for important claims | Done. |
