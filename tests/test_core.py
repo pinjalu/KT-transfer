@@ -405,14 +405,15 @@ def test_overview_builds_each_topic_with_its_own_sources(index):
     assert o['commit'] and o['reading_order']
     assert 'not from the whole repository' in o['scope_note']
 
-def test_overview_is_cached_by_commit_and_cleared_on_reconfigure(index):
+def test_overview_cache_is_cleared_on_rescan_and_reconfigure(index):
     svc = Service(index, True, connector_factory=fixture_connector)
     run(svc.scan())
     o = run(svc.build_overview())
     assert index.overview(o['commit'])['commit'] == o['commit']
     assert index.overview('f'*40) is None, 'a different commit must not reuse this overview'
     run(svc.scan())
-    assert index.overview(o['commit']) is not None, 'same commit keeps the cached overview'
+    assert index.overview(o['commit']) is None, 'same commit can have different scan coverage'
+    run(svc.build_overview())
     index.configure({'repo':'demo/other','branch':'main'})
     assert index.overview(o['commit']) is None
 

@@ -54,7 +54,7 @@ export function SlackPanel({ status, onChanged }: { status: Status | null; onCha
     setNote('')
     try {
       await post('/api/slack/read')
-      setNote('Reading messages. This replaces whatever was read before.')
+      setNote('')
       onChanged()
     } catch (exc) {
       setNote(exc instanceof ApiError ? exc.message : 'Could not start reading.')
@@ -174,6 +174,7 @@ export function SlackPanel({ status, onChanged }: { status: Status | null; onCha
         Who wrote a message is not resolved to a name, because that needs a permission this
         deliberately does not ask for. Reading again replaces what was read before, so a deleted
         message or a channel dropped from this list cannot linger in an answer.
+        Previous answers and the overview are cleared. Build the overview again after reading.
       </p>
     </Card>
   )

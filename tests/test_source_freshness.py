@@ -370,6 +370,90 @@ def test_import_failure_rolls_back_both_data_and_cache_invalidation(state):
     assert 'jira/ENG-1' in index.indexed_paths(index.active_scan()['id'])
 
 
+def test_revision_survives_restart_and_is_shared_by_index_instances(state):
+    index, _, _, _ = state
+    previous = index.revision
+    reopened = Index(index.path)
+    assert reopened.revision == previous
+    import_one(state, 'jira')
+    assert reopened.revision == index.revision == previous + 1
+    assert Index(index.path).revision == previous + 1
+    reopened.vocabulary(index.active_scan()['id'])
+    index.replace_source(index.active_scan()['id'], 'jira/', [
+        issue_block('https://acme.atlassian.net', {'key':'ENG-2', 'fields':{'summary':'Zebraprocessor'}})])
+    assert 'zebraprocessor' in reopened.vocabulary(index.active_scan()['id'])
+
+
+def test_revision_and_caches_roll_back_when_metadata_write_fails(state):
+    index, _, _, _ = state
+    import_one(state, 'jira')
+    answer = cache(index)
+    previous = index.revision
+    # Fails after _changed, so even the version increment must roll back.
+    with pytest.raises(KeyError):
+        index.replace_source(index.active_scan()['id'], 'jira/', [], {'report':{}})
+    assert index.revision == Index(index.path).revision == previous
+    assert index.overview(COMMIT)
+    assert index.feedback(answer, 'correct', 'sufficient')
+    assert index.source_blocks(index.active_scan()['id'], 'jira/') == 1
+
+
+@pytest.mark.parametrize('name', ['jira', 'slack'])
+def test_refresh_replaces_edited_and_deleted_text_and_next_answer(state, name):
+    index, svc, source, _ = state
+    import_one(state, name)
+    scan = index.active_scan()
+    answer = cache(index)
+    previous = index.revision
+    with index.db() as db:
+        cid = db.execute('SELECT id FROM chunks WHERE path LIKE ?', (name+'/%',)).fetchone()[0]
+        db.execute('INSERT INTO vectors VALUES(?,?,?)', (cid, scan['id'], b'old vector'))
+    async def edited_issues(cursor=0):
+        return {'blocks':[issue_block('https://acme.atlassian.net',
+            {'key':'ENG-2', 'fields':{'summary':'Zebraprocessor uses neutronqueue'}})], 'next_cursor':None}
+    async def edited_messages(channel_id):
+        return [{'ts':'1700000001.0', 'user':'U1', 'text':
+                 'Zebraprocessor uses neutronqueue. The team confirmed this configuration for processing incoming requests.'}]
+    source.jira_issues = edited_issues
+    source.slack_messages = edited_messages
+    import_one(state, name)
+    assert index.revision == previous + 1
+    with index.db() as db:
+        assert not db.execute('SELECT 1 FROM vectors WHERE chunk_id=?', (cid,)).fetchone()
+        text = '\n'.join(r[0] for r in db.execute('SELECT text FROM chunks WHERE path LIKE ?', (name+'/%',)))
+        assert 'password verification' not in text and 'neutronqueue' in text
+    assert not index.feedback(answer, 'correct', 'sufficient')
+    assert index.overview(COMMIT) is None
+    async def answer_from_refreshed_source(question, sources):
+        evidence = next(s for s in sources if 'neutronqueue' in s['text'])
+        return {'statements':[{'text':'Zebraprocessor uses neutronqueue.',
+                              'source_ids':[evidence['source_id']]}], 'missing_information':''}
+    svc.generator = answer_from_refreshed_source
+    result = run(svc.ask('What does Zebraprocessor use?'))
+    assert any('neutronqueue' in s['text'] for s in result['statements'])
+    assert any(s['path'].startswith(name+'/') for s in result['sources'])
+    async def empty_issues(cursor=0):
+        return {'blocks':[], 'next_cursor':None}
+    async def empty_messages(channel_id):
+        return []
+    source.jira_issues = empty_issues
+    source.slack_messages = empty_messages
+    import_one(state, name)
+    assert index.source_blocks(scan['id'], name+'/') == 0
+    assert 'neutronqueue' not in index.vocabulary(scan['id'])
+
+
+def test_starting_scan_invalidates_open_answers_before_network_completes(state):
+    index, _, _, _ = state
+    answer = cache(index)
+    previous = index.revision
+    index.new_scan({'status':'running'})
+    assert index.revision == previous + 1
+    assert index.active_scan() is None
+    assert index.overview(COMMIT) is None
+    assert not index.feedback(answer, 'correct', 'sufficient')
+
+
 def test_jira_recheck_covers_comment_visibility_not_only_issue_visibility():
     issue = {'key':'ENG-1', 'fields':{'summary':'Login', 'comment':{'comments':[
         {'id':'1', 'body':'Restricted discussion', 'author':{'displayName':'Engineer'}}]}}}

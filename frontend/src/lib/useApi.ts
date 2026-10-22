@@ -9,10 +9,9 @@ export type Load<T> = {
 }
 
 /** Reads one endpoint. A failure is kept and shown, never swallowed into an empty screen. */
-export function useApi<T>(path: string, poll = 0): Load<T> {
-  const [data, setData] = useState<T | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+export function useApi<T>(path: string, poll = 0, revision?: number): Load<T> {
+  const key = `${path}:${revision ?? ''}`
+  const [result, setResult] = useState<{ key: string; data: T | null; error: string | null } | null>(null)
   const [tick, setTick] = useState(0)
 
   const reload = useCallback(() => setTick((n) => n + 1), [])
@@ -26,22 +25,21 @@ export function useApi<T>(path: string, poll = 0): Load<T> {
       try {
         const body = await get(path)
         if (!live) return
-        setData(body as T)
-        setError(null)
+        setResult({ key, data: body as T, error: null })
       } catch (exc) {
         if (!live) return
-        setData(null)
-        setError(exc instanceof ApiError ? exc.message : 'Something went wrong.')
+        setResult({ key, data: null, error: exc instanceof ApiError ? exc.message : 'Something went wrong.' })
       } finally {
         inFlight = false
-        if (live) setLoading(false)
       }
     }
     void run()
     if (!poll) return () => { live = false }
     const timer = setInterval(run, poll)
     return () => { live = false; clearInterval(timer) }
-  }, [path, poll, tick])
+  }, [path, poll, tick, key])
 
-  return { data, error, loading, reload }
+  // Hide the previous snapshot immediately, including while its replacement is loading.
+  const current = result?.key === key ? result : null
+  return { data: current?.data ?? null, error: current?.error ?? null, loading: !current, reload }
 }

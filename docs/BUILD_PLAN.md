@@ -46,7 +46,7 @@ placeholder; only the user token path works.
 | Test live GitHub, Jira and Slack connections | Partly. GitHub only. |
 | Evaluate answer quality | Progress. `pka/answer_evaluation.py` runs source-checked questions through the app and measures retrieval, citations, reference phrases and refusal behavior separately. Human correctness and source-sufficiency review remains pending; see `TASK_5_2.md`. |
 | Recheck Jira and Slack access before using information | Done. Saved Jira issue/comment visibility and Slack history permissions are rechecked before use, cached views, and publication of generated external-source content. See `TASK_5_3.md` for verification and limits. |
-| Refresh saved information and cached answers | Partly. Overview caches by commit; nothing else. |
+| Refresh saved information and cached answers | Done. Transactional source revisions survive restarts; source replacement clears derived caches and open views reload safely. Repository scans invalidate same-commit overviews. See `TASK_5_4.md` for tests, live refresh checks and limits. |
 | Improve background jobs, cancellation and retries | Partly. |
 | Show import coverage and incomplete reads | Done. |
 | Improve connection screens and source labels | Not started. This is mockup 02. |

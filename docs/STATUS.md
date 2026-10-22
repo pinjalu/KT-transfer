@@ -1,5 +1,17 @@
 # Implementation and verification record
 
+## Task 5.4 source and cache refresh, 22 October 2026
+
+Task 5.4 is **Done**. Source revisions now persist transactionally across restarts; repository
+rescans invalidate derived content even at the same commit. Open overview, architecture and
+feature data reload after a revision change, ignoring late responses from old requests.
+Connections accurately labels repository refresh and explains the Jira, Slack and overview steps.
+
+All **409 Python tests**, **five isolated Chrome checks**, and the frontend production build
+passed. Live refreshes of four Jira issues and one Slack channel passed on a disposable index,
+including cache invalidation, persisted refresh state and a final access check. The user's saved
+index and answer reviews remain intact. See [task 5.4](TASK_5_4.md) for evidence and limitations.
+
 ## Task 5.3 source access checks, 22 October 2026
 
 Jira and Slack access checks now cover saved content before use, cached views and publication

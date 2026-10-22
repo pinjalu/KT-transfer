@@ -500,7 +500,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                                                     commit='' if demo else scan['commit'])}
         return {'available':bool(cached),'building':service.overview_progress is not None,
                 'progress':service.overview_progress,'overview':cached,
-                'reason':'' if cached else 'No overview has been built for this commit yet.'}
+                'reason':'' if cached else 'No overview has been built for the current information yet.'}
 
     @app.post('/api/overview')
     async def build_overview():

@@ -96,7 +96,7 @@ export function Connections() {
         actions={
           <Button kind="primary" icon="refresh" disabled={busy}
                   onClick={() => act(() => post('/api/scan'), 'Scan started.')}>
-            {running ? 'Reading…' : 'Refresh selected sources'}
+            {running ? 'Reading…' : 'Refresh repository'}
           </Button>
         } />
 
@@ -111,6 +111,8 @@ export function Connections() {
       <Tabs items={['Connections', 'Import history']} active={tab} onPick={setTab} />
 
       {note && <p className="conn-note">{note}</p>}
+      <p className="conn-note">Refresh repository reads the code again and clears saved Jira and Slack content.
+        Then use Read issues and Read messages below to refresh those sources, and build the Project overview again.</p>
 
       {status.data?.job_error && (
         <div className="conn-job-error">

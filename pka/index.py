@@ -259,7 +259,6 @@ def chunk_file(path: str, content: str) -> list[dict]:
 class Index:
     def __init__(self, path):
         self.path = str(path)
-        self.revision = 0
         with self.db() as db:
             db.executescript('''
             PRAGMA journal_mode=WAL;
@@ -267,6 +266,8 @@ class Index:
             CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY AUTOINCREMENT, status TEXT, detail TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS active (id INTEGER PRIMARY KEY CHECK(id=1), scan_id INTEGER);
             INSERT OR IGNORE INTO active VALUES(1,NULL);
+            CREATE TABLE IF NOT EXISTS knowledge_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
+            INSERT OR IGNORE INTO knowledge_state VALUES(1,0);
             CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, scan_id INTEGER, path TEXT,
                 start INTEGER, end INTEGER, text TEXT, symbols TEXT, split INTEGER);
             CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path, symbols, text, tokenize='porter unicode61');
@@ -282,6 +283,16 @@ class Index:
                 sufficiency TEXT DEFAULT 'not assessed');
             ''')
             self._migrate(db)
+    @property
+    def revision(self):
+        # Committed alongside the snapshot: survives restart and cannot advance on rollback.
+        with self.db() as db:
+            return db.execute('SELECT revision FROM knowledge_state WHERE id=1').fetchone()[0]
+
+    def _advance_revision(self, db):
+        db.execute('UPDATE knowledge_state SET revision=revision+1 WHERE id=1')
+        self._vocab = None
+
     def _migrate(self, db):
         # Added after the first release, so an existing database is upgraded in place.
         columns = {r[1] for r in db.execute('PRAGMA table_info(chunks)').fetchall()}
@@ -316,8 +327,7 @@ class Index:
             if (current.get('repo'), current.get('branch')) == (merged.get('repo'), merged.get('branch')):
                 return
             # The snapshot belonged to the old repository, so it cannot answer for the new one.
-            self.revision += 1
-            self._vocab = None
+            self._advance_revision(db)
             for name in ('jira', 'slack'):
                 for key in ('read_at', 'import_report'):
                     (merged.get(name) or {}).pop(key, None)
@@ -336,8 +346,7 @@ class Index:
 
     def _changed(self, db):
         """Derived content must never outlive the source snapshot it describes."""
-        self.revision += 1
-        self._vocab = None
+        self._advance_revision(db)
         db.execute('DELETE FROM answers')
         db.execute('DELETE FROM overviews')
         db.execute('DELETE FROM calibration')
@@ -383,6 +392,7 @@ class Index:
             db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(settings),))
     def new_scan(self, detail):
         with self.db() as db:
+            self._changed(db)
             db.execute('UPDATE active SET scan_id=NULL')
             cur = db.execute('INSERT INTO scans(status,detail) VALUES(?,?)',('running',json.dumps(detail)))
             return cur.lastrowid
@@ -405,9 +415,7 @@ class Index:
     def activate(self, scan_id, chunks, detail):
         # Replace the whole snapshot in one transaction; deleted files cannot linger in retrieval.
         with self.db() as db:
-            had_external = db.execute("SELECT 1 FROM chunks WHERE path LIKE 'jira/%' OR path LIKE 'slack/%' LIMIT 1").fetchone()
-            self.revision += 1
-            self._vocab = None
+            self._changed(db)
             db.execute('DELETE FROM source_imports')
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             if row:
@@ -426,10 +434,6 @@ class Index:
                     (cur.lastrowid,' '.join(words(c['path'])),c['symbols'],' '.join(words(c['text']))))
             db.execute('UPDATE active SET scan_id=?',(scan_id,))
             db.execute('UPDATE scans SET status=?,detail=? WHERE id=?',(detail['status'],json.dumps(detail),scan_id))
-            db.execute('DELETE FROM answers')
-            db.execute('DELETE FROM overviews WHERE commit_sha<>?',(detail.get('commit',''),))
-            if had_external:
-                db.execute('DELETE FROM overviews')
     def replace_source(self, scan_id, prefix, blocks, import_meta=None):
         """Replace one external source and its derived caches in one transaction.
     
@@ -484,8 +488,7 @@ class Index:
         return self.source_blocks(scan_id, 'slack/')
     def invalidate(self):
         with self.db() as db:
-            self.revision += 1
-            self._vocab = None
+            self._advance_revision(db)
             db.execute('UPDATE active SET scan_id=NULL')
             for table in ('chunks','search','answers','overviews','vectors','source_imports','calibration'):
                 db.execute('DELETE FROM '+table)
@@ -511,7 +514,8 @@ class Index:
         because it is read once and asked many times.
         """
         cached = getattr(self, '_vocab', None)
-        if cached and cached[0] == scan_id:
+        revision = self.revision
+        if cached and cached[0] == (scan_id, revision):
             return cached[1]
         with self.db() as db:
             rows = db.execute('SELECT path,symbols,text FROM chunks WHERE scan_id=?',(scan_id,)).fetchall()
@@ -523,7 +527,7 @@ class Index:
         # A number carries meaning however short it is: issue 17, version 3, port 80. Dropping
         # everything under three characters made every ticket number an unknown word.
         vocab = {w for w in vocab if len(w) > 2 or w.isdigit()}
-        self._vocab = (scan_id, vocab)
+        self._vocab = ((scan_id, revision), vocab)
         return vocab
 
     def resolve(self, tokens: list[str], vocab: set) -> tuple[list[str], list[str], dict]:
@@ -908,8 +912,10 @@ class Index:
             db.execute('INSERT OR REPLACE INTO overviews VALUES(?,?,?,?)',
                        (commit_sha,scan_id,json.dumps(payload),now()))
     def overview(self, commit_sha):
-        """The cached overview for this commit, or None. Keyed by commit so a refresh that
-        lands on the same commit keeps it and a new commit rebuilds it."""
+        """Cached overview for the current snapshot; every source refresh invalidates it.
+
+        A commit alone cannot identify scan coverage, imported issues or messages.
+        """
         with self.db() as db:
             row = db.execute('SELECT payload,created FROM overviews WHERE commit_sha=?',(commit_sha,)).fetchone()
             if not row:

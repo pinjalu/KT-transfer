@@ -298,6 +298,16 @@ The app also runs these checks before using cached external information. Changed
 requires **Read issues** again; a temporary verification failure blocks answers until retry.
 See [task 5.3](docs/TASK_5_3.md) for the behavior, tests and limitations.
 
+## Refreshing saved information
+
+In **Connections**, use **Refresh repository** for code, **Read issues** for the selected Jira
+project, and **Read messages** for the saved Slack channels. A repository refresh clears the
+external imports, so read Jira and Slack again afterward. Each source refresh clears previous
+answers and the overview; then choose **Build overview** in Project overview. **Refresh overview**
+only regenerates from saved information and does not fetch source changes. The refresh version
+survives app restarts, and open pages discard old content when their status poll detects it.
+See [task 5.4](docs/TASK_5_4.md) for failure behavior, verification and limits.
+
 ## Measuring retrieval
 
 Whether an answer is any good is decided mostly before the model is reached: if the file that holds the answer never comes back, no amount of explaining rescues it. `python -m pka.evaluate` scores retrieval against a labelled question set without calling Ollama at all, which makes it deterministic and fast enough to run after every change.

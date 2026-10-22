@@ -9,7 +9,6 @@ import type { FactGroup, Overview as Body, OverviewReply, Section } from '../lib
 import type { Status } from '../lib/types'
 import { factsOf, sectionOf } from '../lib/overview'
 import './overview.css'
-
 const MODES = ['Beginner', 'Developer', 'Architect'] as const
 type Mode = (typeof MODES)[number]
 
@@ -69,8 +68,8 @@ function Facts({ group }: { group: FactGroup }) {
 export function Overview() {
   const [mode, setMode] = useState<Mode>('Beginner')
   const status = useApi<Status>('/api/status', 5000)
-  const reply = useApi<OverviewReply>('/api/overview', 4000)
-  const features = useApi<FeatureReply>('/api/features')
+  const reply = useApi<OverviewReply>('/api/overview', 4000, status.data?.knowledge_revision)
+  const features = useApi<FeatureReply>('/api/features', 0, status.data?.knowledge_revision)
   const [note, setNote] = useState('')
   const [blocked, setBlocked] = useState(false)
   const busy = status.data?.busy ?? false
@@ -148,6 +147,8 @@ export function Overview() {
         } />
 
       {note && <p className="ov-note">{note}</p>}
+      <p className="ov-note">Refresh overview rebuilds it from saved information. To get source changes,
+        use <Link to="/connections">Connections</Link> first. Source refreshes clear previous answers and the overview.</p>
 
       {/* A scan running elsewhere is why every button here is disabled, so this screen says
           so rather than leaving a reader to guess at an inert page. */}
@@ -181,7 +182,7 @@ export function Overview() {
         <Card>
           {/* The backend's reason for having no overview is the same sentence as the title,
               so printing both said it twice. Only a reason that adds something is shown. */}
-          <Empty title="No overview has been built for this commit yet."
+          <Empty title="No overview has been built for the current information yet."
                  detail={reply.data?.reason && !reply.data.reason.startsWith('No overview has been built')
                    ? reply.data.reason
                    : 'Build one to read a handover of this project, in the order it is worth reading.'}

@@ -117,6 +117,8 @@ export function JiraPanel({ status, onChanged }: { status: Status | null; onChan
 
       <JiraCredentials disabled={busy || !!status?.demo}
                        onSaved={() => { jira.reload(); onChanged() }} />
+      <p className="conn-caveat">Reading again replaces saved issues, including edits and deletions,
+        and clears previous answers and the overview. Build the overview again after reading.</p>
 
     </Card>
   )

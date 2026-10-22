@@ -135,7 +135,7 @@ function Detail({ card, picked, onClose }:
 
 export function Architecture() {
   const status = useApi<Status>('/api/status', 5000)
-  const reply = useApi<OverviewReply>('/api/overview', 6000)
+  const reply = useApi<OverviewReply>('/api/overview', 6000, status.data?.knowledge_revision)
   const [tab, setTab] = useState('')
   const [picked, setPicked] = useState('')
 
