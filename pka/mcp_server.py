@@ -148,11 +148,11 @@ async def slack_list_channels() -> dict:
     return await guarded_on(slack, 'channels')
 
 @server.tool(annotations=READ_ONLY)
-async def slack_check_channel_access(channel_id: str) -> dict:
+async def slack_check_channel_access(channel_id: str, snapshot_digest: str = '') -> dict:
     """Verify history access without importing messages or widening the saved allowlist."""
     if channel_id not in SLACK_CHANNELS:
         return {'ok':False,'code':'scope','error':'That channel is not in the saved allowlist.'}
-    return await guarded_on(slack, 'check_channel_access', channel_id=channel_id)
+    return await guarded_on(slack, 'check_channel_access', channel_id=channel_id, snapshot_digest=snapshot_digest)
 
 @server.tool(annotations=READ_ONLY)
 async def slack_read_channel(channel_id: str, include_coverage: bool = False) -> dict:

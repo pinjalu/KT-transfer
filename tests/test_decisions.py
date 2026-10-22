@@ -137,10 +137,10 @@ class Source(FixtureSource):
     async def slack_messages(self,channel_id):
         content=('We decided to use PostgreSQL for receipts.' if channel_id=='C1' else 'I propose a billing audit.')
         return [{'ts':'1700000000.000000','user':'U1','text':'Different message.' if self.changed else content}]
-    async def slack_check_channel_access(self,channel_id):
+    async def slack_check_channel_access(self,channel_id,snapshot_digest=''):
         self.checks.append(channel_id)
         if self.denied:raise self.denied
-        return {'readable':True,'channel':channel_id}
+        return {'readable':True,'channel':channel_id,'snapshot':snapshot_digest}
     async def jira_check_issues_access(self,*args,**kwargs):raise AssertionError('Slack summaries must not need Jira')
 
 

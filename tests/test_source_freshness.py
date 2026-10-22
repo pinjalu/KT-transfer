@@ -50,11 +50,11 @@ class Sources(FixtureSource):
             raise self.denied
         return {'checked':len(issue_keys)}
 
-    async def slack_check_channel_access(self, channel_id):
+    async def slack_check_channel_access(self, channel_id, snapshot_digest=''):
         self.checked.append(('slack', channel_id))
         if self.denied:
             raise self.denied
-        return {'channel':channel_id, 'readable':True}
+        return {'channel':channel_id, 'readable':True, 'snapshot':snapshot_digest}
 
 
 @pytest.fixture
@@ -312,7 +312,7 @@ def test_permission_tools_cannot_widen_the_server_scope(monkeypatch):
     assert run(mcp_server.jira_check_issues_access(['OPS-1']))['code'] == 'scope'
 
 
-def test_partial_slack_import_reports_missing_channels_and_removes_their_old_content(state):
+def test_denied_slack_refresh_purges_source_and_derived_content(state):
     index, svc, source, _ = state
     channels = [{'id':'C1','name':'eng'}, {'id':'C2','name':'private'}]
     index.configure_slack({'workspace':'acme','channels':channels})
@@ -325,11 +325,12 @@ def test_partial_slack_import_reports_missing_channels_and_removes_their_old_con
         return await original(channel_id)
     source.slack_messages = partial
     report = run(svc.background('slack', svc.read_slack('acme', channels)))
-    assert report['failed'] == 1
-    assert 'partial' in svc.job_error
+    assert report is None
+    assert svc.job_status()['state'] == 'failed'
     assert 'slack/private' not in index.indexed_paths(index.active_scan()['id'])
     assert index.overview(COMMIT) is None
-    assert index.settings()['slack']['import_report']['failed'] == 1
+    assert index.source_import('slack') is None
+    assert index.slack_blocks(index.active_scan()['id']) == 0
 
 
 @pytest.mark.parametrize('action', ['invalidate','repository'])

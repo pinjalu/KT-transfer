@@ -7,7 +7,7 @@ then sets a build order.
 
 Current verification is recorded in [task 5.8](TASK_5_8.md). Phase counts below are the original
 9 October inventory, not current completion percentages. Individual task rows have been updated
-where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.4.
+where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.5.
 
 The backend is already FastAPI (`pka/web.py`, `fastapi==0.142.2`). Nothing needs to be moved onto
 FastAPI. The original missing-functionality counts below describe the 9 October baseline; the current screen coverage is listed below.
@@ -115,8 +115,11 @@ Task 6.4 adds a dedicated Team decisions screen with channel summaries, verified
 quotes, imported messages and status filters. Conservative wording checks distinguish explicit
 recorded choices from proposals, historical context and unclear evidence; possible conflicts
 retain both cited positions. Results are saved and generated through background jobs. These
-checks do not establish current policy or complete semantic correctness. Fuller threads and
-edit/deletion handling remain task 6.5. See [task 6.4](TASK_6_4.md).
+checks do not establish current policy or complete semantic correctness. See [task 6.4](TASK_6_4.md).
+Task 6.5 adds bounded reply pagination, message identities/edit times/permalinks and snapshot
+rechecks that invalidate changed or missing source text and derived results. Transient failures
+withhold unchecked content. Live event subscriptions and complete archives remain outside this
+scope. See [task 6.5](TASK_6_5.md).
 
 ### Phase 08, Tests, failures and troubleshooting — 0 done, 1 partly, 9 not started
 
@@ -152,7 +155,7 @@ configuration change (`OLLAMA_MODEL`) rather than work.
 | 04 Ask assistant | Yes | Conversation history, follow-ups, the two-part feedback row |
 | 05 Feature explorer | No | Everything. Needs the feature concept first. |
 | 06 Jira tasks | Partly | Explanation, cited requirements and related files/discussions implemented; requirement implementation comparison remains |
-| 07 Team decisions | Partly | Cited channel summaries, conservative status labels and possible conflicts implemented; fuller threads, current-policy verification and code implementation evidence remain |
+| 07 Team decisions | Partly | Cited summaries, status labels, bounded threads and content rechecks implemented; current-policy verification and code implementation evidence remain |
 | 08 Architecture | Mostly | Tabs for APIs, database, external services, deployment; node detail panel |
 | 09 Troubleshooting | No | Symptom input, cause ranking, where to check, suggested checks and tests |
 | 10 Settings | No | Team, permissions, model settings, refresh schedule, activity log |

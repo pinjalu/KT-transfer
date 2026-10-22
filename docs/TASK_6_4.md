@@ -1,5 +1,8 @@
 # Task 6.4 — Summarise Slack decisions with sources
 
+This record describes the original task 6.4 delivery. [Task 6.5](TASK_6_5.md) subsequently adds
+thread pagination, message metadata/permalinks and checks for changed or removed source text.
+
 Open **Team decisions**, choose an imported Slack channel and click **Summarize decisions**.
 The screen shows concise points, supporting quotes and full imported passages. The shared job
 banner keeps generation visible when navigating to other screens; cancellation, retry and

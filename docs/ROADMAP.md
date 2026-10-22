@@ -60,8 +60,10 @@ Task 6.4 provides saved channel summaries with exact quotes, recorded authors/ti
 source links, conservative decision/proposal/historical/unclear labels and possible conflicts.
 All substantive imported passages are read in bounded background requests. Current channel
 access is rechecked; source changes invalidate summaries. Labels describe recorded wording,
-not verified current policy. Fuller thread reconstruction and edit/deletion handling remain
-task 6.5; the broader acceptance criteria below are not yet fully met. See [task 6.4](TASK_6_4.md).
+not verified current policy. See [task 6.4](TASK_6_4.md). Task 6.5 adds bounded thread pagination,
+message-level evidence and edit/deletion-sensitive content checks. Changed or absent content
+invalidates derived caches; transient failures withhold unchecked results. Full archives and
+live event subscriptions are outside this scope. See [task 6.5](TASK_6_5.md).
 
 Replace the disabled Slack placeholder. Require an explicit channel allowlist and a connection authorised to read those channels. Read relevant messages and thread replies with cursors, timestamps and permalinks. Account for channel membership changes, deleted/edited messages, retention limits, API restrictions and token revocation. Do not silently add channels or direct messages.
 

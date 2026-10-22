@@ -62,8 +62,8 @@ class ConnectorClient:
         return await self.call('slack_read_channel', channel_id=channel_id)
     async def slack_read(self, channel_id):
         return await self.call('slack_read_channel', channel_id=channel_id, include_coverage=True)
-    async def slack_check_channel_access(self, channel_id):
-        return await self.call('slack_check_channel_access', channel_id=channel_id)
+    async def slack_check_channel_access(self, channel_id, snapshot_digest=''):
+        return await self.call('slack_check_channel_access', channel_id=channel_id, snapshot_digest=snapshot_digest)
 
 @asynccontextmanager
 async def connect(settings: dict, demo: bool = False):

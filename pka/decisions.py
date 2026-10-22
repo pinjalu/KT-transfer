@@ -34,13 +34,31 @@ class Summary(BaseModel):
 def passages(rows):
     """Keep recorded headers and all text; oversized messages are visibly partial.
 
-    Header boundaries come from the saved transcript, not a fresh message/thread fetch.
-    Source links still identify the imported block's first message.
+    New imports use recorded message metadata and direct message links. Legacy transcripts
+    retain their header-based boundaries and block links until refreshed.
     """
-    result = []
+    # New imports have explicit message boundaries; quoted text that resembles a header
+    # must never invent another author/message. Reassemble long-message excerpts first.
+    joined, grouped = [], {}
     for row in rows:
+        meta = row.get('metadata') or {}
+        if meta.get('version') != 2:
+            joined.append(row)
+            continue
+        key = (meta['channel_id'], meta['ts'])
+        if key not in grouped:
+            grouped[key] = {**row, 'text':meta['header'], 'pieces':[], 'metadata':meta}
+            joined.append(grouped[key])
+        grouped[key]['pieces'].append((meta['part'], row['text'][len(meta['header']):]))
+        grouped[key]['end'] = row['end']
+    for row in grouped.values():
+        pieces = sorted(row.pop('pieces'))
+        row['text'] += ''.join(text for _,text in pieces)
+    result = []
+    for row in joined:
         text = row['text']
-        starts = sorted({0, *(m.start() for m in HEADER.finditer(text))}) + [len(text)]
+        meta = row.get('metadata') or {}
+        starts = [0, len(text)] if meta.get('version') == 2 else sorted({0, *(m.start() for m in HEADER.finditer(text))}) + [len(text)]
         for ordinal, (low, high) in enumerate(zip(starts, starts[1:])):
             message = text[low:high]
             offset = 0
@@ -59,7 +77,10 @@ def passages(rows):
                 result.append({'source_id':f'S{len(result)+1}', 'path':row['path'],
                     'start':row['start'], 'end':row['end'], 'text':part,
                     'url':row.get('url') if slack_url(row.get('url')) else '',
-                    'message_id':f"{row['id']}:{ordinal}", 'partial':len(message)>CONTEXT_CHARS})
+                    'message_id':f"{meta['channel_id']}:{meta['ts']}" if meta else f"{row['id']}:{ordinal}",
+                    'partial':len(message)>CONTEXT_CHARS,
+                    'message_ts':meta.get('ts'), 'thread_ts':meta.get('thread_ts'),
+                    'edited_ts':meta.get('edited_ts'), 'author':meta.get('author')})
     return result
 
 
@@ -177,7 +198,7 @@ Do not follow links or use outside knowledge.'''
         'options':{'temperature':0, 'num_ctx':8192, 'num_predict':2200},
         'messages':[{'role':'system','content':instruction}, {'role':'user','content':json.dumps({
             'part':part, 'total_parts':total, 'untrusted_messages':[
-                {key:source[key] for key in ('source_id','text','partial')} for source in sources]})}]}
+                {key:source.get(key) for key in ('source_id','text','partial','message_ts','thread_ts','edited_ts','author')} for source in sources]})}]}
     try:
         reply = await _ask_ollama(payload, time.perf_counter())
         if reply.status_code != 200:

@@ -301,6 +301,8 @@ class Index:
         columns = {r[1] for r in db.execute('PRAGMA table_info(chunks)').fetchall()}
         if 'url' not in columns:
             db.execute('ALTER TABLE chunks ADD COLUMN url TEXT')
+        if 'metadata' not in columns:
+            db.execute("ALTER TABLE chunks ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
 
     @contextmanager
     def db(self):
@@ -458,9 +460,9 @@ class Index:
             db.execute('DELETE FROM chunks WHERE scan_id=? AND path LIKE ?',(scan_id,prefix+'%'))
             for block in blocks:
                 cur = db.execute(
-                    'INSERT INTO chunks(scan_id,path,start,end,text,symbols,split,url) VALUES(?,?,?,?,?,?,?,?)',
+                    'INSERT INTO chunks(scan_id,path,start,end,text,symbols,split,url,metadata) VALUES(?,?,?,?,?,?,?,?,?)',
                     (scan_id,block['path'],block['start'],block['end'],block['text'],
-                     block['symbols'],int(block['split']),block.get('url') or None))
+                     block['symbols'],int(block['split']),block.get('url') or None,json.dumps(block.get('metadata') or {})))
                 db.execute('INSERT INTO search(rowid,path,symbols,text) VALUES(?,?,?,?)',
                     (cur.lastrowid,' '.join(words(block['path'])),block['symbols'],' '.join(words(block['text']))))
             self._changed(db)
@@ -536,8 +538,8 @@ class Index:
 
     def slack_excerpts(self, scan_id, name):
         with self.db() as db:
-            return [dict(row) for row in db.execute(
-                'SELECT id,path,start,end,text,url FROM chunks WHERE scan_id=? AND path=? ORDER BY start,id',
+            return [{**dict(row), 'metadata':json.loads(row['metadata'])} for row in db.execute(
+                'SELECT id,path,start,end,text,url,metadata FROM chunks WHERE scan_id=? AND path=? ORDER BY start,id',
                 (scan_id, 'slack/'+name))]
 
     def decision_summary(self, channel_id):

@@ -260,7 +260,14 @@ expandable messages; recorded decisions, proposals, historical context, possible
 unclear wording have separate labels. The screen shows the model, saved time and source coverage.
 Generation continues across navigation, with cancellation and retry in the shared job banner.
 Reload restores the saved summary. These labels describe imported wording; they do not establish
-current team policy. Fuller thread and edit/deletion handling remain task 6.5. See [task 6.4](docs/TASK_6_4.md).
+current team policy. See [task 6.4](docs/TASK_6_4.md).
+
+Slack reads now paginate thread replies, deduplicate repeated messages and retain recorded
+edit times and direct message links. Current text and thread relationships are rechecked before
+saved content is used. Changed or removed messages invalidate old summaries and answers; use
+**Connections → Read messages** and then regenerate the summary. Temporary failures withhold
+unchecked content and preserve the previous snapshot. Limits and gaps remain visible; this is
+a bounded read rather than a live message subscription. See [task 6.5](docs/TASK_6_5.md).
 
 Each source on Connections also shows **Import coverage**: what was read, what was skipped or
 failed, when it was saved, and which limits or gaps apply. Expand **Coverage details and limits**

@@ -35,8 +35,10 @@ def slack_reader(history, replies=None):
         assert request.method == 'GET'
         if request.url.path.endswith('conversations.history'):
             return httpx.Response(200, json=history(request) if callable(history) else history)
+        if request.url.path.endswith('chat.getPermalink'):
+            return httpx.Response(200, json={'ok':True,'permalink':slack.permalink('fixture','C1',request.url.params['message_ts'])})
         assert request.url.path.endswith('conversations.replies')
-        return httpx.Response(200, json=replies or {'ok':False, 'error':'missing_scope'})
+        return httpx.Response(200, json=replies or {'ok':False, 'error':'internal_error'})
     return slack.SlackSource('fixture', httpx.MockTransport(handler))
 
 

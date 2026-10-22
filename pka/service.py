@@ -10,7 +10,7 @@ from pka import applog, credentials
 from pka.config import KEEP_LOGS, LIMITS, log_dir, now
 from pka.connectors.base import SourceError
 from pka.index import chunk_file, small_talk
-from pka.connectors.slack import transcript
+from pka.connectors.slack import transcript, snapshot as slack_snapshot
 from pka import embed, jira_tasks, jira_links, decisions
 from pka.facts import derive as derive_facts
 from pka.diagram import build as build_diagrams
@@ -403,8 +403,8 @@ class Service:
     async def check_external_access(self, scan, names=('jira', 'slack')):
         """Fail closed before using any saved external content, including cached views.
 
-        Issue-level Jira checks account for issue security. Slack checks actual history
-        permission for the imported channels. A transient outage blocks this request without
+        Issue-level Jira checks account for issue security. Slack rechecks the imported
+        message snapshot, including replies. A transient outage blocks this request without
         deleting the snapshot; a confirmed denial purges the affected source and its caches.
         """
         revision = self.index.revision
@@ -439,10 +439,17 @@ class Service:
                             channel_id = channels.get(path[6:])
                             if not channel_id:
                                 raise SourceError('scope', 'A saved Slack channel is outside the current selection.')
-                            result = await source.slack_check_channel_access(channel_id)
+                            digest = (saved.get('snapshots') or {}).get(channel_id)
+                            if not digest:
+                                raise SourceError('stale_source', 'This Slack import predates message checks. Read Slack again.')
+                            result = await source.slack_check_channel_access(channel_id, snapshot_digest=digest)
                             if not isinstance(result, dict) or result.get('readable') is not True or result.get('channel') != channel_id:
                                 raise SourceError('access_unverified', 'Slack history access was not confirmed.')
+                            if result.get('snapshot') != digest:
+                                raise SourceError('access_unverified', 'Not every saved Slack message was verified.')
             except SourceError as exc:
+                if self.index.revision != revision:
+                    raise SourceError('stale', 'Project information changed during the source check. Retry using the current sources.') from None
                 if exc.code in {'access_denied', 'scope', 'stale_source'}:
                     self.index.discard_source(name)
                     self.access_warning = f'{name.title()} content was disabled. Read that source again after checking access.'
@@ -853,7 +860,7 @@ class Service:
             checked = self.index.revision, {'slack':identity}
             applog.event('slack.begin', channels=len(wanted))
             started = time.perf_counter()
-            blocks, report = [], []
+            blocks, report, snapshots = [], [], {}
             async with self.connector_factory(self.index.settings(),self.demo) as source:
                 for channel in wanted[:LIMITS.slack_max_channels]:
                     if self.cancel.is_set():
@@ -867,10 +874,15 @@ class Service:
                         else:
                             messages, coverage = await source.slack_messages(channel['id']), None
                     except SourceError as exc:
+                        if exc.code in {'access_denied', 'stale_source'}:
+                            self.index.discard_source('slack')
+                            self.access_warning = 'Slack content changed or became unavailable. Read Slack again after checking access.'
+                            raise
                         report.append({'name':channel['name'],'messages':0,'blocks':0,'error':str(exc)})
                         applog.failure('slack.channel_failed', channel=channel['name'], msg=exc)
                         continue
                     made = transcript(channel['name'], messages, workspace, channel['id'])
+                    snapshots[channel['id']] = slack_snapshot(messages)
                     blocks.extend(made)
                     report.append({'name':channel['name'],'messages':len(messages),
                                    'blocks':len(made),'error':'','coverage':coverage})
@@ -885,9 +897,14 @@ class Service:
             partial = len(report) < len(wanted) or result['failed'] or any((r.get('coverage') or {}).get('state') == 'partial' for r in report)
             result['coverage_state'] = ('partial' if partial else 'complete' if all(
                 (r.get('coverage') or {}).get('state') == 'complete' for r in report) else 'unknown')
+            if self.index.source_import('slack') and (result['failed'] or any(
+                    (r.get('coverage') or {}).get('verification_safe') is False for r in report)):
+                raise SourceError('access_unverified', 'Slack refresh could not verify all previously imported content. The earlier snapshot was retained; resolve the read gap and retry.')
             stored = self.index.replace_source(scan['id'], 'slack/', blocks,
-                self.import_metadata(result, scope, identity))
+                {**self.import_metadata(result, scope, identity), 'snapshots':snapshots})
             applog.event('slack.end', channels=len(report), blocks=stored, secs=elapsed)
+            if self.access_warning.startswith('Slack'):
+                self.access_warning = ''
             if partial:
                 self.job_error = 'Slack import was partial. Check import coverage for missing channels, messages or replies.'
             return result

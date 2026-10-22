@@ -149,7 +149,8 @@ async def check_slack(client, settings, result):
     total = 0
     workspace = (settings.get('slack') or {}).get('workspace') or ''
     for channel in selected:
-        messages = await client.slack_messages(channel['id'])
+        read = await client.slack_read(channel['id']) if hasattr(client, 'slack_read') else None
+        messages = read['messages'] if read else await client.slack_messages(channel['id'])
         require(isinstance(messages, list), 'Slack did not return a message list.')
         for message in messages:
             require(isinstance(message, dict) and isinstance(message.get('text'), str) and message['text'].strip(),
@@ -158,13 +159,17 @@ async def check_slack(client, settings, result):
         total += len(messages)
         record(result, 'scoped_channel_read', channel_id=channel['id'], messages=len(messages),
                thread_replies=sum(bool(m.get('in_thread')) for m in messages))
-        if workspace and messages:
+        if messages and (workspace or all(m.get('permalink') for m in messages)):
             blocks = transcript(channel.get('name', channel['id']), messages, workspace, channel['id'])
-            prefix = f'https://{workspace}.slack.com/archives/{channel["id"]}/p'
-            require(bool(blocks) and all(b['url'].startswith(prefix) for b in blocks), 'Slack citation construction failed.')
+            require(bool(blocks) and all(re.fullmatch(r'https://[a-zA-Z0-9-]+\.slack\.com/archives/'+re.escape(channel['id'])+r'/p\d+', b['url']) for b in blocks), 'Slack citation construction failed.')
             record(result, 'message_citations_built', blocks=len(blocks))
-    if not workspace:
-        result['warnings'].append('No Slack workspace name is saved. Message links cannot be built until it is set.')
+        if read and messages:
+            require(bool(read.get('snapshot')), 'Slack did not return a message snapshot.')
+            verified = await client.slack_check_channel_access(channel['id'], snapshot_digest=read['snapshot'])
+            require(verified.get('snapshot') == read['snapshot'], 'Slack messages changed or could not be rechecked.')
+            record(result, 'message_snapshot_rechecked', channel_id=channel['id'])
+        if messages and not workspace and not all(m.get('permalink') for m in messages):
+            result['warnings'].append('Some Slack message links were unavailable. Set the workspace name or retry the read.')
     if not total:
         result['status'] = 'incomplete'
         result['message'] = 'History access worked, but no readable messages were available to validate a content read.'

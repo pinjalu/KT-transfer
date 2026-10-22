@@ -67,6 +67,9 @@ def external(index, name, available):
         result['summary'] = f'{len(channels)-failed} of {len(cfg.get("channels", []))} selected channels read.'
         result['counts'] += [metric('Channels read', len(channels)-failed), metric('Failed channels', failed),
                              metric('Messages and replies read', sum(c.get('messages', 0) for c in channels))]
+        for key, label in (('reply_pages','Reply pages read'), ('edited_messages','Edited messages read'),
+                           ('deleted_events','Deleted-message markers excluded')):
+            result['counts'].append(metric(label, sum((c.get('coverage') or {}).get(key, 0) for c in channels)))
         for channel in channels:
             coverage = channel.get('coverage') or {}
             notes = ([channel['error']] if channel.get('error') else []) + (coverage.get('notes') or [])
@@ -75,8 +78,9 @@ def external(index, name, available):
             result['details'].append({'name':'#'+channel['name'],
                 'summary':'Failed to read' if channel.get('error') else f"{channel.get('messages', 0)} messages and replies; {channel.get('blocks', 0)} excerpts",
                 'notes':notes})
-        result['notes'].append(f'Reads at most {LIMITS.slack_max_messages} top-level messages and {LIMITS.slack_max_threads} threads per channel. Replies use one page per thread.')
+        result['notes'].append(f'Reads at most {LIMITS.slack_max_messages} history messages and {LIMITS.slack_max_threads} threads per channel. Each thread is paginated up to {LIMITS.slack_max_reply_pages} pages or {LIMITS.slack_max_replies} replies, with {LIMITS.slack_max_channel_replies} replies per channel overall.')
         result['notes'].append('Join/leave events and messages without text are excluded.')
+        result['notes'].append('Refresh replaces the saved snapshot. Edits and missing messages within the current readable window invalidate saved answers when content is rechecked. This is a bounded read, not a live event subscription; retention, history limits and concurrent edits can affect coverage.')
     if result['state'] == 'unknown':
         result['notes'].append(f'Completeness was not established for this saved import. Use {action} to record current coverage.')
     if result['state'] == 'partial':

@@ -82,6 +82,9 @@ class Limits:
     slack_max_messages: int = 600
     slack_max_pages: int = 10
     slack_max_threads: int = 40
+    slack_max_replies: int = 1000
+    slack_max_reply_pages: int = 20
+    slack_max_channel_replies: int = 2000
     jira_max_issues: int = 300
     jira_max_pages: int = 10
     jira_max_comments: int = 1000

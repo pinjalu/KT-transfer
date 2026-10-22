@@ -146,10 +146,10 @@ class Sources(FixtureSource):
         return {'checked':len(issue_keys)}
     async def slack_messages(self,channel_id):
         return [{'ts':'1700000000.0','user':'U1','text':'ENG-1: proposed login password handling.'}]
-    async def slack_check_channel_access(self,channel_id):
+    async def slack_check_channel_access(self,channel_id,snapshot_digest=''):
         self.checks.append('slack')
         if self.slack_denied: raise self.slack_denied
-        return {'readable':True,'channel':channel_id}
+        return {'readable':True,'channel':channel_id,'snapshot':snapshot_digest}
 
 
 @pytest.fixture

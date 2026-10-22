@@ -1,5 +1,29 @@
 # Implementation and verification record
 
+## Task 6.5 Slack threads and message changes, 22 October 2026
+
+Task 6.5 adds bounded thread pagination, broadcast/page deduplication, per-message evidence,
+direct permalinks and recorded edit times. Current channel snapshots are checked before using
+saved content. Changed, missing or inaccessible text invalidates source and derived caches;
+transient failures withhold unchecked content. Successful refresh replaces the snapshot.
+Concurrent checks cannot purge newer imports, and fast summary jobs now update the screen
+even when they finish between polls. See [task 6.5](TASK_6_5.md) for scope and limits.
+
+The production frontend build, all 663 regression tests, 214 final affected checks and eight
+Chrome checks passed. Browser checks covered later-page evidence, deduplication, edit times,
+direct links, coverage, edited/deleted content, outage/recovery, refresh and 900-pixel layout.
+A live read-only MCP check imported three messages into six excerpts/four summary passages
+and verified current snapshots and direct links twice. The real channel had no thread replies;
+multi-page and removal scenarios were verified with controlled Slack HTTP responses.
+
+The local app was restarted with a database backup and its selected Slack channel refreshed,
+preserving GitHub and Jira imports. The initial summary regeneration hit Ollama's 180-second
+response timeout; retry through the background-job controls succeeded with qwen3:1.7b and
+eight saved points. Three further Chrome checks confirmed the live summary, message dates,
+direct links and persistence across Jira navigation/reload, with no page errors or new
+generation requests. Excel task 6.5 is **Done**, with other rows and workbook features preserved.
+This task does not add a live event subscription or guarantee complete workspace history.
+
 ## Task 6.4 Slack discussion summaries with sources, 22 October 2026
 
 Task 6.4 replaces the Team decisions placeholder with selected-channel summaries, exact
@@ -17,7 +41,7 @@ saved evidence, model details and navigation/reload with no generation requests 
 This second generation produced nine points. Both runs
 correctly kept the long, partial conversation's status unclear rather than asserting agreement.
 See [task 6.4](TASK_6_4.md) for evidence rules and limitations. Task 6.4 is **Done within this
-summary scope**. Fuller Slack threads and edit/deletion handling remain task 6.5.
+summary scope**. Fuller Slack threads and edit/deletion handling are covered by task 6.5 above.
 
 ## Task 6.3 related files and discussions, 22 October 2026
 
@@ -28,7 +52,7 @@ what was matched. Each source is checked before use; no model or external write 
 The production build, 561 regression tests, 74 final focused checks, 14 Chrome checks and twelve live relationship
 reads across six saved Jira tasks passed. See [task 6.3](TASK_6_3.md) for scope and limits.
 Task 6.3 is **Done**. Decision summarization is covered by task 6.4 above; fuller Slack thread handling
-remains task 6.5. These links do not verify requirement implementation.
+is covered by task 6.5 above. These links do not verify requirement implementation.
 
 ## Task 6.2 selected Jira task explanations, 22 October 2026
 

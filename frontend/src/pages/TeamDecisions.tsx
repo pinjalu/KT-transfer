@@ -9,7 +9,7 @@ import './team-decisions.css'
 
 const LABELS = { decision: 'Recorded decision', proposal: 'Proposal', historical: 'Historical context', conflict: 'Possible conflict', unclear: 'Unclear decision status' }
 type Kind = keyof typeof LABELS
-type Source = { source_id: string; path: string; start: number; text: string; url: string; partial: boolean }
+type Source = { source_id: string; path: string; start: number; text: string; url: string; partial: boolean; message_ts?: string; thread_ts?: string; edited_ts?: string }
 type Point = { text: string; kind: Kind; source_ids: string[]; quotes: { source_id: string; text: string }[]; source_wording: boolean }
 type Summary = { items: Point[]; model: string; generated_at: string; parts: number; passages_read: number; excerpts_read: number; demo: boolean }
 type Channel = { id: string; name: string; excerpts?: number }
@@ -18,8 +18,9 @@ type Detail = { channel: Channel; sources: Source[]; summary: Summary | null; re
 function Evidence({ source }: { source: Source }) {
   return <div className="decision-evidence">
     <p className="jira-muted">{source.source_id} · #{source.path.slice(6)} · Imported excerpt {source.start}{source.partial && ' · Part of a long message'}</p>
+    {source.thread_ts && <p className="jira-muted">{source.thread_ts === source.message_ts ? 'Message posted' : 'Reply to message posted'} {new Date(Number(source.thread_ts) * 1000).toLocaleString()}{source.edited_ts && ` · Edited ${new Date(Number(source.edited_ts) * 1000).toLocaleString()}`}</p>}
     <pre className="jira-related-text">{source.text}</pre>
-    {source.url ? <a href={source.url} target="_blank" rel="noreferrer">Open excerpt in Slack ↗</a>
+    {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.message_ts ? 'Open message in Slack' : 'Open excerpt in Slack'} ↗</a>
       : <p className="jira-muted">No Slack permalink was stored for this excerpt.</p>}
   </div>
 }
@@ -30,12 +31,13 @@ function ChannelSummary({ channelId, status }: { channelId: string; status: Stat
   const running = !!job && ['queued', 'running', 'cancelling'].includes(job.state)
   const [pending, setPending] = useState(false), [started, setStarted] = useState(false), [error, setError] = useState('')
   const [filter, setFilter] = useState('all'), [page, setPage] = useState(0)
-  const reload = reply.reload, previous = useRef(job?.state)
+  const jobVersion = job ? `${job.id}:${job.state}` : ''
+  const reload = reply.reload, previous = useRef(jobVersion)
   useEffect(() => {
-    if (previous.current !== job?.state && job && !running) reload()
-    previous.current = job?.state
+    if (previous.current !== jobVersion && job && !running) reload()
+    previous.current = jobVersion
     if (job) setStarted(false)
-  }, [job?.id, job?.state, running, reload])
+  }, [jobVersion, running, reload])
   useEffect(() => {
     const visible = () => { if (document.visibilityState === 'visible') reload() }
     document.addEventListener('visibilitychange', visible)
@@ -65,7 +67,7 @@ function ChannelSummary({ channelId, status }: { channelId: string; status: Stat
       {(running || started) && <p role="status">You can visit other screens. This summary will keep running in the background.</p>}
       {error && <Failed message={error} />}
       {job && ['failed', 'cancelled', 'interrupted'].includes(job.state) && <p className="jira-note">The latest attempt {job.state}. {job.error} {summary && 'The saved summary below is from the earlier successful attempt.'}</p>}
-      <p className="jira-note">Labels describe wording in imported messages. Verify current agreement in Slack. Saved excerpts may omit replies or later changes; a source link opens the first message of its imported excerpt.</p>
+      <p className="jira-note">Labels describe wording in imported messages. Verify current agreement in Slack. Messages and replies are rechecked before saved content is used. If they changed, read Slack again in Connections. Import limits may omit older threads or later replies.</p>
       <p className="jira-muted">{readAt ? `Messages read ${new Date(readAt).toLocaleString()}. ` : ''}Import coverage: {coverage.state || 'unknown'}.</p>
       {coverage.state !== 'complete' && <p className="jira-note"><Chip tone="warn">Coverage {coverage.state || 'unknown'}</Chip> Check <Link to="/connections">Connections</Link> for missing messages and import limits.</p>}
     </Card>
