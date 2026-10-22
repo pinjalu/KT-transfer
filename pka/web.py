@@ -159,7 +159,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
 
     def idle():
         if service.busy() or (service.task and not service.task.done()):
-            raise HTTPException(409,'Another scan or answer is in progress. Wait or cancel the scan.')
+            raise HTTPException(409,'Another task is running. Wait for it to finish or cancel the current job.')
 
     # The built React interface, if it has been built. `npm run build` in frontend/ writes it.
     # Without it the original single-page interface is still served, so a checkout with no Node
@@ -192,7 +192,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                     'busy':False,'demo':demo,'limits':asdict(LIMITS),
                     'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
                     'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
-                    'warning':'','job_error':'','job_name':'',
+                    'warning':'','job_error':'','job_name':'','job':None,
                     'jira_reading':False,'jira_progress':None,
                     'slack_reading':False,'slack_progress':None,
                     'overview_building':False,'overview_progress':None,
@@ -206,6 +206,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                 'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
                 'warning':service.access_warning,'ready':index.active_scan() is not None,
                 'job_error':service.job_error,'job_name':service.job_name,
+                'job':service.job_status(),
                 'jira_reading':service.jira_progress is not None,
                 'jira_progress':service.jira_progress,
                 'slack_reading':service.slack_progress is not None,
@@ -251,13 +252,26 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         idle()
         if not index.settings():
             raise HTTPException(409,'Save a repository and branch first.')
-        service.task = asyncio.create_task(service.background('scan',service.scan()))
-        return {'started':True}
+        return {'started':True, 'job_id':service.start_job('scan')}
 
     @app.post('/api/scan/cancel')
     async def cancel():
-        service.cancel.set()
-        return {'requested':True,'message':'Cancellation takes effect after the current connector or model request finishes.'}
+        # Compatibility for the original interface; all new controls bind to a specific job ID.
+        job = service.job_status()
+        if not job or job['kind'] != 'scan':
+            raise HTTPException(409, 'No repository scan is running.')
+        return service.cancel_job(job['id'])
+
+    @app.post('/api/jobs/{job_id}/cancel')
+    async def cancel_job(job_id: int):
+        return service.cancel_job(job_id)
+
+    @app.post('/api/jobs/{job_id}/retry')
+    async def retry_job(job_id: int):
+        job = service.job_status()
+        if not job or job['id'] != job_id:
+            raise HTTPException(409, 'This is no longer the current job. Refresh its status.')
+        return {'started':True, 'job_id':service.start_job(job['kind'], retry_id=job_id)}
 
     def _scope(key, cfg, scan):
         """What this platform is actually set to read, in the reader's own words."""
@@ -427,9 +441,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         cfg = index.settings() or {}
         saved = cfg.get('slack') or {}
         # The token is not passed on. It is handed to the MCP server at launch instead.
-        service.task = asyncio.create_task(service.background('slack',
-            service.read_slack(saved.get('workspace',''), saved.get('channels',[]))))
-        return {'started':True,'channels':len(saved.get('channels',[]))}
+        return {'started':True, 'job_id':service.start_job('slack'), 'channels':len(saved.get('channels',[]))}
 
     def jira_credentials():
         credentials.refresh()
@@ -477,8 +489,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         if not key:
             raise HTTPException(409,'Choose a Jira project first.')
         # Only the key travels. The site, email and token go to the MCP server at launch.
-        service.task = asyncio.create_task(service.background('jira',service.read_jira(key)))
-        return {'started':True,'project':key}
+        return {'started':True, 'job_id':service.start_job('jira'), 'project':key}
 
     @app.get('/api/overview')
     async def overview():
@@ -509,8 +520,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             raise HTTPException(409,'Run a successful scan before building the overview.')
         scan = index.active_scan()
         present = {p for p in ('slack/','jira/') if index.source_blocks(scan['id'],p)}
-        service.task = asyncio.create_task(service.background('overview',service.build_overview()))
-        return {'started':True,'topics':len(topics_for(present))}
+        return {'started':True, 'job_id':service.start_job('overview'), 'topics':len(topics_for(present))}
 
     @app.post('/api/ask')
     async def ask(question: Question):

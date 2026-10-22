@@ -1,5 +1,19 @@
 # Implementation and verification record
 
+## Task 5.5 background jobs, 22 October 2026
+
+Task 5.5 is **Done**. Scans, Jira and Slack reads, and overview builds now save their job state
+and show progress, cancellation and explicit retry controls across React pages. Navigation and
+reload preserve the current job. Duplicate starts and stale actions are refused; unfinished
+jobs become Interrupted after an app restart. Cancellation waits for the current request to
+reach a safe checkpoint.
+
+All **429 Python tests**, **five isolated Chrome checks**, and the frontend production build
+passed. Browser checks used delayed fixture connectors and a fixture model through the real
+API; they did not contact live source accounts. The running app was restarted and reconnected
+to the same project; its 1,099 chunks and two source imports were preserved. See
+[task 5.5](TASK_5_5.md) for evidence and limits.
+
 ## Task 5.4 source and cache refresh, 22 October 2026
 
 Task 5.4 is **Done**. Source revisions now persist transactionally across restarts; repository

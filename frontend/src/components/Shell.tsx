@@ -1,19 +1,21 @@
+import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { DESTINATIONS } from '../nav'
 import { Sidebar } from './Sidebar'
 import { Icon } from './Icon'
 import { useApi } from '../lib/useApi'
-
-type Status = {
-  demo?: boolean
-  settings?: { repo?: string; branch?: string } | null
-  scan?: { status?: string; commit?: string } | null
-}
+import type { Status } from '../lib/types'
+import { BackgroundJob } from './BackgroundJob'
+import { JOB_CHANGED } from '../lib/api'
 
 export function Shell() {
   const location = useLocation()
   // Polled rather than read once: a scan changes this while the user is looking at another screen.
-  const { data } = useApi<Status>('/api/status', 4000)
+  const { data, reload } = useApi<Status>('/api/status', 2000)
+  useEffect(() => {
+    window.addEventListener(JOB_CHANGED, reload)
+    return () => window.removeEventListener(JOB_CHANGED, reload)
+  }, [reload])
   const repo = data?.settings?.repo ?? ''
   const project = repo ? repo.split('/').pop()! : ''
   const here = DESTINATIONS.find((d) => d.path === location.pathname)
@@ -40,6 +42,7 @@ export function Shell() {
           </div>
         </header>
         <main className="page">
+          <BackgroundJob job={data?.awaiting_project ? null : data?.job ?? null} onChanged={reload} />
           <Outlet />
         </main>
       </div>

@@ -114,13 +114,6 @@ export function Connections() {
       <p className="conn-note">Refresh repository reads the code again and clears saved Jira and Slack content.
         Then use Read issues and Read messages below to refresh those sources, and build the Project overview again.</p>
 
-      {status.data?.job_error && (
-        <div className="conn-job-error">
-          <Failed message={`The last ${status.data.job_name || 'background'} read did not finish: `
-                           + status.data.job_error} />
-        </div>
-      )}
-
       {tab === 'Connections' && (
         <div className="stack conn-stack">
           <Card>
@@ -184,9 +177,6 @@ export function Connections() {
                 <div className="bar"><div className="bar-fill" style={{ width: `${pct(scan)}%` }} /></div>
                 <span className="bar-pct">{pct(scan)}%</span>
                 <span className="bar-phase">{scan?.phase}</span>
-                <Button kind="secondary" onClick={() => act(() => post('/api/scan/cancel'), 'Cancelling.')}>
-                  Cancel
-                </Button>
               </div>
             )}
 

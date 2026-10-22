@@ -1,0 +1,12 @@
+.background-job { display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
+  padding: var(--s4) var(--s5); margin-bottom: var(--s5); border: 1px solid var(--border-strong);
+  background: var(--surface); border-radius: var(--r-md); }
+.background-job-copy { min-width: 0; }
+.background-job-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s3); }
+.background-job-title > span, .background-job p { font-size: 13px; color: var(--ink-soft); }
+.background-job p { margin: var(--s2) 0 0; overflow-wrap: anywhere; }
+.background-job-actions { display: flex; gap: var(--s2); flex-shrink: 0; }
+@media (max-width: 800px) {
+  .background-job { align-items: flex-start; flex-direction: column; }
+  .background-job-actions { flex-wrap: wrap; }
+}

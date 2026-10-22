@@ -24,6 +24,7 @@ export type Scan = {
 }
 
 export type Status = {
+  job?: BackgroundJob | null
   knowledge_revision: number
   settings: Settings
   scan: Scan | null
@@ -51,6 +52,20 @@ export type Status = {
 }
 
 export type Progress = { phase?: string; read?: number; total?: number; done?: number } | null
+
+export type BackgroundJob = {
+  id: number
+  kind: 'scan' | 'overview' | 'jira' | 'slack'
+  state: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | 'interrupted'
+  attempt: number
+  error: string
+  started_at: string
+  finished_at: string | null
+  can_cancel: boolean
+  can_retry: boolean
+  progress: { phase?: string; done?: number; processed?: number; total?: number;
+              embed_done?: number; embed_total?: number } | null
+}
 
 export type Platform = {
   key: string

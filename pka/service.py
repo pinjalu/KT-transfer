@@ -254,9 +254,109 @@ class Service:
         # The last background read's failure, kept so the browser can be told about it.
         self.job_error = ''
         self.job_name = ''
+        self.job = self.index.latest_job()
+        if self.job:
+            self.job_error = self.job['error']
+            self.job_name = self.job['kind']
 
     def busy(self):
-        return self.lock.locked()
+        return self.lock.locked() or bool(self.task and not self.task.done())
+
+    def job_scope(self, kind):
+        cfg = self.index.settings() or {}
+        scope = {key:cfg.get(key, '') for key in ('repo', 'branch')}
+        for name in ('jira', 'slack'):
+            if kind in {name, 'overview'}:
+                scope[name] = self.index.source_scope(name, cfg.get(name) or {})
+        return scope
+
+    def validate_job(self, kind):
+        if kind not in {'scan', 'overview', 'jira', 'slack'}:
+            raise SourceError('job', 'Unknown background job.')
+        cfg = self.index.settings() or {}
+        if not cfg.get('repo'):
+            raise SourceError('config', 'Save a repository and branch first.')
+        if kind != 'scan' and not self.index.active_scan():
+            raise SourceError('scan', 'Run a successful repository scan first.')
+        if kind == 'jira' and not (cfg.get('jira') or {}).get('project'):
+            raise SourceError('scope', 'Choose a Jira project first.')
+        if kind == 'slack' and not (cfg.get('slack') or {}).get('channels'):
+            raise SourceError('scope', 'Choose Slack channels first.')
+
+    def job_status(self):
+        if not self.job:
+            return None
+        scope = self.job_scope(self.job['kind'])
+        if any(self.job['scope'].get(k) != scope[k] for k in ('repo', 'branch')):
+            return None
+        result = {k:v for k,v in self.job.items() if k != 'scope'}
+        active = result['state'] in {'queued', 'running', 'cancelling'}
+        progress = {'scan':self.progress, 'overview':self.overview_progress,
+                    'jira':self.jira_progress, 'slack':self.slack_progress}.get(result['kind'])
+        result['progress'] = ({k:progress.get(k) for k in ('phase', 'done', 'total', 'processed', 'embed_done', 'embed_total')}
+                              if active and progress else None)
+        result['can_cancel'] = active and bool(self.task and not self.task.done())
+        result['can_retry'] = (not self.busy() and scope == self.job['scope'] and
+                               result['state'] in {'failed', 'partial', 'cancelled', 'interrupted'})
+        if result['can_retry']:
+            try:
+                self.validate_job(result['kind'])
+            except SourceError:
+                result['can_retry'] = False
+        return result
+
+    def _new_job(self, kind, previous=None):
+        self.cancel.clear()
+        self.job_error, self.job_name = '', kind
+        self.job = self.index.create_job({'kind':kind, 'state':'queued', 'scope':self.job_scope(kind),
+            'started_at':now(), 'finished_at':None, 'error':'', 'code':'',
+            'attempt':previous['attempt']+1 if previous else 1,
+            'retry_of':previous['id'] if previous else None})
+        return self.job
+
+    def start_job(self, kind, retry_id=None):
+        # Reserve the slot before returning to the event loop. Rapid clicks cannot queue duplicates.
+        if self.busy():
+            raise SourceError('busy', 'Another task is running. Wait for it to finish or cancel it.')
+        self.validate_job(kind)
+        previous = None
+        if retry_id is not None:
+            current = self.job_status()
+            if not current or current['id'] != retry_id or current['kind'] != kind or not current['can_retry']:
+                raise SourceError('stale_job', 'This job cannot be retried. Check the current selection and job status.')
+            previous = self.job
+        job = self._new_job(kind, previous)
+        self.task = asyncio.create_task(self.background(kind, job_id=job['id']))
+        return job['id']
+
+    def cancel_job(self, job_id):
+        current = self.job_status()
+        if not current or current['id'] != job_id or not current['can_cancel']:
+            raise SourceError('stale_job', 'This job is no longer running. Refresh its status.')
+        self.cancel.set()
+        self.job['state'] = 'cancelling'
+        self.index.save_job(self.job)
+        return {'requested':True, 'job_id':job_id,
+                'message':'Cancellation requested. Waiting for the current connector or model request to finish.'}
+
+    def begin_work(self):
+        # A queued job may already have a cancellation request; never erase that request.
+        if asyncio.current_task() is not self.task:
+            self.cancel.clear()
+        self.check_cancelled()
+
+    def job_work(self, kind):
+        cfg = self.index.settings() or {}
+        if self.job['scope'] != self.job_scope(kind):
+            raise SourceError('stale', 'The source selection changed before this job started.')
+        if kind == 'scan':
+            return self.scan()
+        if kind == 'overview':
+            return self.build_overview()
+        if kind == 'jira':
+            return self.read_jira((cfg.get('jira') or {}).get('project', ''))
+        selected = cfg.get('slack') or {}
+        return self.read_slack(selected.get('workspace', ''), selected.get('channels', []))
 
     def sync_source_credentials(self):
         if self.demo:
@@ -342,7 +442,7 @@ class Service:
         if self.cancel.is_set():
             raise SourceError('cancelled', 'Reading cancelled. Start a new read to try again.')
 
-    async def background(self, name, work):
+    async def background(self, name, work=None, job_id=None):
         """Run a read in the background without losing its failure.
 
         A task created and never awaited hands its exception to the event loop, which printed a
@@ -355,18 +455,38 @@ class Service:
         the interface spinning. Only one of these runs at a time, which the lock and the idle
         check already guarantee.
         """
-        self.job_error, self.job_name = '', name
+        if job_id is None:
+            self._new_job(name)
+        state, code = 'succeeded', ''
         try:
-            return await work
+            self.check_cancelled()
+            self.job['state'] = 'running'
+            self.index.save_job(self.job)
+            result = await (work if work is not None else self.job_work(name))
+            if name == 'scan':
+                scan = self.index.latest() or {}
+                state = {'complete':'succeeded'}.get(scan.get('status'), scan.get('status', 'failed'))
+                self.job_error = scan.get('error') or ''
+                code = scan.get('error_code') or (state if state != 'succeeded' else '')
+            elif self.job_error or (name == 'overview' and any(s.get('error') for s in (result or {}).get('sections', []))):
+                state, code = 'partial', 'partial'
+                self.job_error = self.job_error or 'Some overview sections could not be built. Retry to rebuild them.'
+            return result
         except asyncio.CancelledError:
+            state, code = 'interrupted', 'interrupted'
+            self.job_error = 'The app stopped before this job finished. Retry when ready.'
             raise
         except SourceError as exc:
+            state, code = ('cancelled' if exc.code == 'cancelled' else 'failed'), exc.code
             self.job_error = str(exc)
             applog.failure('job.failed', job=name, code=exc.code, msg=exc)
         except Exception:
+            state, code = 'failed', 'unexpected'
             self.job_error = 'That could not be completed. See the debug log for what happened.'
             applog.failure('job.crashed', job=name)
         finally:
+            self.job.update(state=state, code=code, error=self.job_error, finished_at=now())
+            self.index.save_job(self.job)
             self.slack_progress = self.jira_progress = self.overview_progress = None
 
     async def scan(self):
@@ -374,7 +494,7 @@ class Service:
             cfg = self.index.settings()
             if not cfg:
                 raise SourceError('config','Configure a repository first.')
-            self.cancel.clear()
+            self.begin_work()
             self.access_warning = ''
             d = {'status':'running','repo':cfg['repo'],'branch':cfg['branch'],'demo':self.demo,
                  'started':now(),'finished':None,'commit':None,'read':0,'skipped':0,'failed':0,
@@ -452,6 +572,7 @@ class Service:
                     d['phase'] = 'Reading the text for meaning'
                     self.progress = {'id':scan_id,**d}
                     d['embedded'] = await self.embed_snapshot(scan_id)
+                    self.check_cancelled()
                     self.index.save_scan(scan_id,d)
             except asyncio.CancelledError:
                 d.update(status='interrupted',finished=now(),phase='Stopped',error='Application stopped during scan. Start a new scan.')
@@ -460,7 +581,8 @@ class Service:
                 raise
             except Exception as exc:
                 d.update(status='cancelled' if isinstance(exc,SourceError) and exc.code=='cancelled' else 'failed',
-                         finished=now(),phase='Stopped',error=str(exc) if isinstance(exc,SourceError) else 'Scan failed unexpectedly. Check connectivity and restart the application.')
+                         finished=now(),phase='Stopped',error=str(exc) if isinstance(exc,SourceError) else 'Scan failed unexpectedly. Check connectivity and restart the application.',
+                         error_code=exc.code if isinstance(exc,SourceError) else 'unexpected')
                 self.index.save_scan(scan_id,d)
                 self.index.invalidate()
             finally:
@@ -553,7 +675,7 @@ class Service:
             scan = self.index.active_scan()
             if not scan:
                 raise SourceError('scan','Run a successful scan before building the overview.')
-            self.cancel.clear()
+            self.begin_work()
             checked = await self.check_external_access(scan)
             started = time.perf_counter()
             present = {p for p in ('slack/','jira/') if self.index.source_blocks(scan['id'],p)}
@@ -679,7 +801,7 @@ class Service:
         unreachable is reported rather than skipped silently.
         """
         async with self.lock:
-            self.cancel.clear()
+            self.begin_work()
             scan = self.index.active_scan()
             if not scan:
                 raise SourceError('scan','Scan a repository first, then add Slack to it.')
@@ -734,7 +856,7 @@ class Service:
         pages of readable blocks rather than one payload, the way the file manifest does.
         """
         async with self.lock:
-            self.cancel.clear()
+            self.begin_work()
             scan = self.index.active_scan()
             if not scan:
                 raise SourceError('scan','Scan a repository first, then add Jira to it.')

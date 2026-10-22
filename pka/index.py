@@ -278,6 +278,7 @@ class Index:
             CREATE TABLE IF NOT EXISTS overviews (commit_sha TEXT PRIMARY KEY, scan_id INTEGER,
                 payload TEXT, created TEXT);
             CREATE TABLE IF NOT EXISTS source_imports (name TEXT PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, detail TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS answers (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, question TEXT,
                 response TEXT, elapsed REAL, created TEXT, rating TEXT DEFAULT 'not assessed',
                 sufficiency TEXT DEFAULT 'not assessed');
@@ -501,11 +502,32 @@ class Index:
                 db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(settings),))
     def recover(self):
         with self.db() as db:
+            for row in db.execute('SELECT id,detail FROM jobs').fetchall():
+                detail = json.loads(row['detail'])
+                if detail['state'] in {'queued', 'running', 'cancelling'}:
+                    detail.update(state='interrupted', finished_at=now(), code='interrupted',
+                                  error='The app stopped before this job finished. Retry when ready.')
+                    db.execute('UPDATE jobs SET detail=? WHERE id=?', (json.dumps(detail), row['id']))
             for row in db.execute("SELECT id,detail FROM scans WHERE status='running'").fetchall():
                 detail = json.loads(row['detail'])
                 detail.update(status='interrupted',finished=now(),error='Previous scan was interrupted. Start a new scan.')
                 db.execute('UPDATE scans SET status=?,detail=? WHERE id=?',('interrupted',json.dumps(detail),row['id']))
                 db.execute('UPDATE active SET scan_id=NULL')
+    def create_job(self, detail):
+        with self.db() as db:
+            job_id = db.execute('INSERT INTO jobs(detail) VALUES(?)', (json.dumps(detail),)).lastrowid
+            db.execute('DELETE FROM jobs WHERE id NOT IN (SELECT id FROM jobs ORDER BY id DESC LIMIT 30)')
+            return {**detail, 'id':job_id}
+
+    def save_job(self, job):
+        with self.db() as db:
+            db.execute('UPDATE jobs SET detail=? WHERE id=?', (json.dumps(job), job['id']))
+
+    def latest_job(self):
+        with self.db() as db:
+            row = db.execute('SELECT id,detail FROM jobs ORDER BY id DESC LIMIT 1').fetchone()
+            return {**json.loads(row['detail']), 'id':row['id']} if row else None
+
     def vocabulary(self, scan_id: int) -> set:
         """Every word that actually appears in this snapshot, used to understand the question.
 
