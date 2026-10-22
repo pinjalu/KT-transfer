@@ -279,6 +279,7 @@ class Index:
                 payload TEXT, created TEXT);
             CREATE TABLE IF NOT EXISTS source_imports (name TEXT PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, detail TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS jira_explanations (issue_key TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS answers (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, question TEXT,
                 response TEXT, elapsed REAL, created TEXT, rating TEXT DEFAULT 'not assessed',
                 sufficiency TEXT DEFAULT 'not assessed');
@@ -333,7 +334,7 @@ class Index:
                 for key in ('read_at', 'import_report'):
                     (merged.get(name) or {}).pop(key, None)
             db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(merged),))
-            for table in ('chunks','search','answers','overviews','scans','vectors','source_imports','calibration'):
+            for table in ('chunks','search','answers','overviews','scans','vectors','source_imports','calibration','jira_explanations'):
                 db.execute('DELETE FROM '+table)
             db.execute('UPDATE active SET scan_id=NULL')
     @staticmethod
@@ -351,6 +352,7 @@ class Index:
         db.execute('DELETE FROM answers')
         db.execute('DELETE FROM overviews')
         db.execute('DELETE FROM calibration')
+        db.execute('DELETE FROM jira_explanations')
 
     def _drop_source(self, db, name):
         prefix = name + '/'
@@ -485,13 +487,47 @@ class Index:
                                   (scan_id, prefix+'%')):
                 grouped.setdefault(row['path'][len(prefix):], []).append(row['text'])
         return {key: hashlib.sha256('\n'.join(parts).encode()).hexdigest() for key, parts in grouped.items()}
+
+    def jira_issues(self, scan_id):
+        with self.db() as db:
+            rows = db.execute('SELECT path,text,url FROM chunks WHERE scan_id=? AND path LIKE ? ORDER BY path,start,id',
+                              (scan_id, 'jira/%')).fetchall()
+        found = {}
+        for row in rows:
+            key = row['path'][5:]
+            if key not in found:
+                headline = row['text'].splitlines()[0] if row['text'] else key
+                found[key] = {'key':key, 'title':headline.removeprefix(key+':').strip() or key,
+                              'url':row['url'], 'excerpts':0}
+            found[key]['excerpts'] += 1
+        return list(found.values())
+
+    def jira_excerpts(self, scan_id, key):
+        with self.db() as db:
+            rows = db.execute('SELECT path,start,end,text,url FROM chunks WHERE scan_id=? AND path=? ORDER BY start,id',
+                              (scan_id, 'jira/'+key)).fetchall()
+        return [{'source_id':f'J{i+1}', **dict(row)} for i,row in enumerate(rows)]
+
+    def jira_explanation(self, key):
+        with self.db() as db:
+            row = db.execute('SELECT payload FROM jira_explanations WHERE issue_key=? AND revision=?',
+                             (key, self.revision)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def save_jira_explanation(self, key, revision, payload):
+        with self.db() as db:
+            current = db.execute('SELECT revision FROM knowledge_state WHERE id=1').fetchone()[0]
+            if current != revision:
+                raise ValueError('The source revision changed before the explanation was saved.')
+            db.execute('INSERT OR REPLACE INTO jira_explanations VALUES(?,?,?)',
+                       (key, revision, json.dumps(payload)))
     def slack_blocks(self, scan_id):
         return self.source_blocks(scan_id, 'slack/')
     def invalidate(self):
         with self.db() as db:
             self._advance_revision(db)
             db.execute('UPDATE active SET scan_id=NULL')
-            for table in ('chunks','search','answers','overviews','vectors','source_imports','calibration'):
+            for table in ('chunks','search','answers','overviews','vectors','source_imports','calibration','jira_explanations'):
                 db.execute('DELETE FROM '+table)
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             if row:

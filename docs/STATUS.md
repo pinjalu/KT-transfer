@@ -1,12 +1,22 @@
 # Implementation and verification record
 
+## Task 6.2 selected Jira task explanations, 22 October 2026
+
+Task 6.2 adds a searchable imported-task list and grounded explanations with requested work,
+acceptance criteria, clarification questions, exact supporting quotes and model details.
+Explanations use the shared background job lifecycle, persist across navigation/restarts,
+and are invalidated by source changes. Jira access is rechecked before use and publication.
+See [task 6.2](TASK_6_2.md) for verification and scope. Code/discussion linking remains task 6.3.
+The production build, 515 regression tests, 35 final focused checks, ten Chrome checks and
+scoped live Jira/Ollama checks passed. Task 6.2 is **Done within this explanation scope**.
+
 ## Task 6.1 Jira requirements and comments, 22 October 2026
 
 Task 6.1 is **Done within the documented import scope and limits**. Custom text fields retain
 their Jira names, incomplete comment lists are paginated, and long issue text becomes multiple
 searchable excerpts. Access rechecks cover those excerpts. Coverage reports remaining limits.
 All 487 tests, 38 final affected checks, five Chrome checks and scoped live Jira reads passed.
-See [task 6.1](TASK_6_1.md). The dedicated Jira explanation screen remains task 6.2.
+See [task 6.1](TASK_6_1.md). The dedicated Jira explanation screen is covered by task 6.2 above.
 
 ## Task 5.8 acceptance and documentation, 22 October 2026
 

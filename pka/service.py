@@ -11,7 +11,7 @@ from pka.config import KEEP_LOGS, LIMITS, log_dir, now
 from pka.connectors.base import SourceError
 from pka.index import chunk_file, small_talk
 from pka.connectors.slack import transcript
-from pka import embed
+from pka import embed, jira_tasks
 from pka.facts import derive as derive_facts
 from pka.diagram import build as build_diagrams
 from pka.roles import describe as describe_roles
@@ -264,6 +264,8 @@ class Service:
         self.overview_progress = None
         self.slack_progress = None
         self.jira_progress = None
+        self.jira_task_progress = None
+        self.jira_generator = jira_tasks.generate
         self.access_warning = ''
         # The last background read's failure, kept so the browser can be told about it.
         self.job_error = ''
@@ -280,12 +282,14 @@ class Service:
         cfg = self.index.settings() or {}
         scope = {key:cfg.get(key, '') for key in ('repo', 'branch')}
         for name in ('jira', 'slack'):
-            if kind in {name, 'overview'}:
+            if kind in {name, 'overview'} or kind == 'jira_task' and name == 'jira':
                 scope[name] = self.index.source_scope(name, cfg.get(name) or {})
+        if kind == 'jira_task':
+            scope['revision'] = self.index.revision
         return scope
 
-    def validate_job(self, kind):
-        if kind not in {'scan', 'overview', 'jira', 'slack'}:
+    def validate_job(self, kind, target=''):
+        if kind not in {'scan', 'overview', 'jira', 'slack', 'jira_task'}:
             raise SourceError('job', 'Unknown background job.')
         cfg = self.index.settings() or {}
         if not cfg.get('repo'):
@@ -296,6 +300,8 @@ class Service:
             raise SourceError('scope', 'Choose a Jira project first.')
         if kind == 'slack' and not (cfg.get('slack') or {}).get('channels'):
             raise SourceError('scope', 'Choose Slack channels first.')
+        if kind == 'jira_task':
+            self.jira_task_key(target)
 
     def job_status(self):
         if not self.job:
@@ -306,7 +312,8 @@ class Service:
         result = {k:v for k,v in self.job.items() if k != 'scope'}
         active = result['state'] in {'queued', 'running', 'cancelling'}
         progress = {'scan':self.progress, 'overview':self.overview_progress,
-                    'jira':self.jira_progress, 'slack':self.slack_progress}.get(result['kind'])
+                    'jira':self.jira_progress, 'slack':self.slack_progress,
+                    'jira_task':self.jira_task_progress}.get(result['kind'])
         result['progress'] = ({k:progress.get(k) for k in ('phase', 'done', 'total', 'processed', 'embed_done', 'embed_total')}
                               if active and progress else None)
         result['can_cancel'] = active and bool(self.task and not self.task.done())
@@ -314,32 +321,35 @@ class Service:
                                result['state'] in {'failed', 'partial', 'cancelled', 'interrupted'})
         if result['can_retry']:
             try:
-                self.validate_job(result['kind'])
+                self.validate_job(result['kind'], self.job.get('target', ''))
             except SourceError:
                 result['can_retry'] = False
         return result
 
-    def _new_job(self, kind, previous=None):
+    def _new_job(self, kind, previous=None, target=''):
         self.cancel.clear()
         self.job_error, self.job_name = '', kind
         self.job = self.index.create_job({'kind':kind, 'state':'queued', 'scope':self.job_scope(kind),
             'started_at':now(), 'finished_at':None, 'error':'', 'code':'',
             'attempt':previous['attempt']+1 if previous else 1,
-            'retry_of':previous['id'] if previous else None})
+            'retry_of':previous['id'] if previous else None, 'target':target})
         return self.job
 
-    def start_job(self, kind, retry_id=None):
+    def start_job(self, kind, retry_id=None, target=''):
         # Reserve the slot before returning to the event loop. Rapid clicks cannot queue duplicates.
         if self.busy():
             raise SourceError('busy', 'Another task is running. Wait for it to finish or cancel it.')
-        self.validate_job(kind)
         previous = None
         if retry_id is not None:
             current = self.job_status()
             if not current or current['id'] != retry_id or current['kind'] != kind or not current['can_retry']:
                 raise SourceError('stale_job', 'This job cannot be retried. Check the current selection and job status.')
             previous = self.job
-        job = self._new_job(kind, previous)
+            target = previous.get('target', '')
+        if kind == 'jira_task':
+            target = self.jira_task_key(target)
+        self.validate_job(kind, target)
+        job = self._new_job(kind, previous, target)
         self.task = asyncio.create_task(self.background(kind, job_id=job['id']))
         return job['id']
 
@@ -367,6 +377,8 @@ class Service:
             return self.scan()
         if kind == 'overview':
             return self.build_overview()
+        if kind == 'jira_task':
+            return self.explain_jira_task(self.job['target'])
         if kind == 'jira':
             return self.read_jira((cfg.get('jira') or {}).get('project', ''))
         selected = cfg.get('slack') or {}
@@ -382,7 +394,7 @@ class Service:
                 self.index.discard_source(name)
                 self.access_warning = f'{name.title()} credentials changed. Read that source again.'
 
-    async def check_external_access(self, scan):
+    async def check_external_access(self, scan, names=('jira', 'slack')):
         """Fail closed before using any saved external content, including cached views.
 
         Issue-level Jira checks account for issue security. Slack checks actual history
@@ -396,7 +408,7 @@ class Service:
         cfg = self.index.settings() or {}
         paths = self.index.indexed_paths(scan['id'])
         identities = {}
-        for name in ('jira', 'slack'):
+        for name in names:
             selected = [p for p in paths if p.startswith(name+'/')]
             if not selected:
                 continue
@@ -502,6 +514,7 @@ class Service:
             self.job.update(state=state, code=code, error=self.job_error, finished_at=now())
             self.index.save_job(self.job)
             self.slack_progress = self.jira_progress = self.overview_progress = None
+            self.jira_task_progress = None
 
     async def scan(self):
         async with self.lock:
@@ -917,6 +930,78 @@ class Service:
                          blocks=stored, secs=elapsed)
             if (result.get('coverage') or {}).get('state') == 'partial':
                 self.job_error = 'Jira import was partial. Check import coverage for missing issues, comments or shortened text.'
+            return result
+
+    def jira_task_key(self, key):
+        cfg = self.index.settings() or {}
+        project = (cfg.get('jira') or {}).get('project', '').upper()
+        key = (key or '').strip().upper()
+        if not project or not re.fullmatch(re.escape(project)+r'-[0-9]+', key):
+            raise SourceError('scope', 'Choose an imported task from the selected Jira project.')
+        scan = self.index.active_scan()
+        if not scan or not self.index.jira_excerpts(scan['id'], key):
+            raise SourceError('jira_task', 'This task is not in the current import. Read Jira issues in Connections first.')
+        return key
+
+    async def jira_task_list(self):
+        scan = self.index.active_scan()
+        if not scan:
+            return {'issues':[], 'reason':'Scan the repository and read Jira issues in Connections first.'}
+        checked = await self.check_external_access(scan, names=('jira',))
+        issues = self.index.jira_issues(scan['id'])
+        self.ensure_current(checked)
+        return {'issues':issues, 'reason':'' if issues else 'No Jira tasks were imported. Use Read issues in Connections.',
+                'revision':checked[0], 'read_at':((self.index.source_import('jira') or {}).get('report') or {}).get('read_at')}
+
+    async def jira_task_detail(self, key):
+        key = self.jira_task_key(key)
+        scan = self.index.active_scan()
+        checked = await self.check_external_access(scan, names=('jira',))
+        sources = self.index.jira_excerpts(scan['id'], key)
+        issue = next(item for item in self.index.jira_issues(scan['id']) if item['key'] == key)
+        result = {'issue':issue, 'sources':sources, 'explanation':self.index.jira_explanation(key),
+                  'revision':checked[0], 'access_checked_at':now(),
+                  'coverage':((self.index.source_import('jira') or {}).get('report') or {}).get('coverage')}
+        self.ensure_current(checked)
+        return result
+
+    async def explain_jira_task(self, key):
+        async with self.lock:
+            self.begin_work()
+            key = self.jira_task_key(key)
+            scan = self.index.active_scan()
+            checked = await self.check_external_access(scan, names=('jira',))
+            sources = self.index.jira_excerpts(scan['id'], key)
+            groups = jira_tasks.batches(sources)
+            metadata = jira_tasks.metadata_text(sources)
+            result = {section:[] for section in jira_tasks.SECTIONS}
+            started = time.perf_counter()
+            seen = {section:set() for section in jira_tasks.SECTIONS}
+            for number, group in enumerate(groups, 1):
+                self.check_cancelled()
+                self.ensure_current(checked)
+                self.jira_task_progress = {'phase':'Explaining '+key, 'done':number-1, 'total':len(groups)}
+                raw = (jira_tasks.demo(group) if self.demo else
+                       await self.jira_generator(group, number, len(groups)))
+                self.check_cancelled()
+                self.ensure_current(checked)
+                parsed = jira_tasks.checked_points(raw, group, allow_questions=len(groups)==1, metadata=metadata)
+                for section, points in parsed.items():
+                    for point in points:
+                        normalized = re.sub(r'\s+', ' ', point['text']).strip().casefold()
+                        if normalized not in seen[section]:
+                            result[section].append(point)
+                            seen[section].add(normalized)
+            if not any(result[section] for section in jira_tasks.SECTIONS):
+                raise SourceError('answer_format', 'No supported task explanation was produced. Inspect the imported excerpts or retry.')
+            await self.check_external_access(scan, names=('jira',))
+            self.check_cancelled()
+            self.ensure_current(checked)
+            result.update(issue_key=key, sources=sources, revision=checked[0], generated_at=now(),
+                model='Example mode' if self.demo else os.getenv('OLLAMA_MODEL', 'qwen3:1.7b'),
+                demo=self.demo, excerpts_read=len(sources), parts=len(groups),
+                elapsed_seconds=round(time.perf_counter()-started, 2))
+            self.index.save_jira_explanation(key, checked[0], result)
             return result
 
     async def ask(self, question):

@@ -1,0 +1,21 @@
+.jira-layout { display: grid; grid-template-columns: minmax(200px, 270px) minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.jira-detail { display: grid; gap: var(--s5); min-width: 0; }
+.jira-search { display: grid; gap: var(--s2); color: var(--ink-soft); font-size: 13px; }
+.jira-search input { width: 100%; padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); font: inherit; }
+.jira-task-list { display: grid; gap: var(--s2); margin-top: var(--s4); max-height: 65vh; overflow-y: auto; }
+.jira-task-list button { display: grid; gap: var(--s1); text-align: left; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); background: var(--surface); overflow-wrap: anywhere; }
+.jira-task-list button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-wash); }
+.jira-task-list button span { font-size: 13px; }
+.jira-muted, .jira-note { color: var(--ink-soft); font-size: 13px; }
+.jira-note { margin-top: var(--s3); }
+.jira-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s4); }
+.jira-points { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s4); }
+.jira-quote { margin-top: var(--s2); color: var(--ink-soft); font-size: 13px; }
+.jira-quote summary, .jira-source summary { cursor: pointer; color: var(--link); }
+.jira-quote blockquote { margin: var(--s2) 0 0; border-left: 3px solid var(--border-strong); padding: var(--s2) var(--s3); white-space: pre-wrap; overflow-wrap: anywhere; }
+.jira-sources { display: grid; gap: var(--s4); }
+.jira-source { border: 1px solid var(--border); border-radius: var(--r-sm); padding: var(--s3); scroll-margin-top: 90px; }
+.jira-source:target { outline: 2px solid var(--accent); }
+.jira-source pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow-y: auto; margin-bottom: 0; }
+.jira-source details { margin-top: var(--s2); }
+@media (max-width: 1100px) { .jira-layout { grid-template-columns: minmax(0, 1fr); } .jira-task-list { max-height: 230px; } }

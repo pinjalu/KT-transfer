@@ -472,6 +472,25 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                 'read_at':(cfg.get('jira') or {}).get('read_at',''),
                 'blocks':index.source_blocks((index.active_scan() or {}).get('id',0),'jira/')}
 
+    @app.get('/api/jira/tasks')
+    async def jira_tasks():
+        if not chosen['this_run']:
+            return {'issues':[], 'reason':'Choose a project in Connections first.', 'awaiting_project':True}
+        return await service.jira_task_list()
+
+    @app.get('/api/jira/tasks/{issue_key}')
+    async def jira_task(issue_key: str):
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose a project in Connections first.')
+        return await service.jira_task_detail(issue_key)
+
+    @app.post('/api/jira/tasks/{issue_key}/explain')
+    async def explain_jira_task(issue_key: str):
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose a project in Connections first.')
+        idle()
+        return {'started':True, 'job_id':service.start_job('jira_task', target=issue_key)}
+
     @app.post('/api/jira/project')
     async def save_jira_project(choice: JiraChoice):
         idle()

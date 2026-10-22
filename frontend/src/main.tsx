@@ -8,6 +8,7 @@ import { Connections } from './pages/Connections'
 import { Ask } from './pages/Ask'
 import { Overview } from './pages/Overview'
 import { Architecture } from './pages/Architecture'
+import { JiraTasks } from './pages/JiraTasks'
 import './tokens.css'
 import './shell.css'
 
@@ -28,14 +29,7 @@ createRoot(document.getElementById('root')!).render(
                 'A worked journey per feature, derived from routes and imports',
                 'Related components, each linking to the line behind it',
               ]} />} />
-          <Route path="jira" element={
-            <Pending step="Step 8" title="Jira tasks"
-              lead="Issues are read and indexed today. Nothing yet explains one issue on its own."
-              items={[
-                'Requirement extraction from the description and acceptance criteria',
-                'Evidence found or not found, per requirement, against the code',
-                'Open questions built from the requirements that matched nothing',
-              ]} />} />
+          <Route path="jira" element={<JiraTasks />} />
           <Route path="decisions" element={
             <Pending step="Step 9" title="Team decisions"
               lead="Slack is indexed and one overview topic mentions decisions. This makes them browsable."

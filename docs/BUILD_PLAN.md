@@ -7,7 +7,7 @@ then sets a build order.
 
 Current verification is recorded in [task 5.8](TASK_5_8.md). Phase counts below are the original
 9 October inventory, not current completion percentages. Individual task rows have been updated
-where later acceptance records exist. The workbook uses separate ticket/task IDs (5.1–5.8).
+where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.2.
 
 The backend is already FastAPI (`pka/web.py`, `fastapi==0.142.2`). Nothing needs to be moved onto
 FastAPI. The original missing-functionality counts below describe the 9 October baseline; the current screen coverage is listed below.
@@ -21,10 +21,10 @@ FastAPI. The original missing-functionality counts below describe the 9 October 
 | Not started | 47 | 37% |
 | **Total titles in the chart** | **126** | |
 
-The React sidebar now has ten destinations. Home, Connections, Project overview, Ask assistant
-and Architecture have implemented views. Feature explorer, Jira tasks, Team decisions,
+The React sidebar now has ten destinations. Home, Connections, Project overview, Ask assistant,
+Jira tasks and Architecture have implemented views. Feature explorer, Team decisions,
 Troubleshooting and Settings explicitly show planned functionality. The original wizard remains
-at `/legacy`. Importing Jira/Slack does not complete their dedicated analysis screens.
+at `/legacy`. Jira explanations are available; task-to-code linking and Slack decision browsing remain planned.
 
 ## Phase by phase
 
@@ -103,9 +103,10 @@ from a static read and need either documentation or logs.
 Task 6.1 now reads visible descriptions, named custom text fields and paginated comments into
 bounded excerpts alongside code. It reports configured limits and incomplete reads; see
 [task 6.1](TASK_6_1.md). Attachments and non-text custom fields are excluded.
-What does not exist is anything that takes one issue and explains it: no per-issue endpoint, no
-requirement extraction, no table comparing each requirement against evidence in the code, no open
-questions list. That is mockup 06 end to end.
+Task 6.2 adds a per-issue endpoint and screen for cited explanations, requested work, explicit
+acceptance criteria and suggested clarification questions. Results run as background jobs and
+are saved against the current source revision. See [task 6.2](TASK_6_2.md). Comparing requirements
+against code and linking related discussions remain task 6.3 and subsequent work.
 
 Slack decisions are one model-written topic inside the overview. Separating agreed from proposed
 from historical, and surfacing conflicting points, is asked of a 1.7B model rather than derived.
@@ -144,7 +145,7 @@ configuration change (`OLLAMA_MODEL`) rather than work.
 | 03 Project overview | Mostly | "Who uses it", "Main features", feature-shaped sections |
 | 04 Ask assistant | Yes | Conversation history, follow-ups, the two-part feedback row |
 | 05 Feature explorer | No | Everything. Needs the feature concept first. |
-| 06 Jira tasks | No | Per-issue explanation, requirement table, related evidence, open questions |
+| 06 Jira tasks | Partly | Explanation and cited requirements implemented; code comparison and related discussions remain |
 | 07 Team decisions | No | Decision extraction, status classification, conflict detection |
 | 08 Architecture | Mostly | Tabs for APIs, database, external services, deployment; node detail panel |
 | 09 Troubleshooting | No | Symptom input, cause ranking, where to check, suggested checks and tests |

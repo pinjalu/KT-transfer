@@ -2,7 +2,7 @@
 
 Understand one GitHub project with a local assistant. Configure a repository and branch, scan a specific commit, ask a question in ordinary English, and inspect the code excerpts behind the answer.
 
-The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Separate Jira task analysis, team decision browsing and other planned screens remain unfinished. See [current acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
+The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, selected Jira task explanations, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Linking Jira tasks to code and discussions, team decision browsing and other planned screens remain unfinished. See [Jira task explanations](docs/TASK_6_2.md), [baseline acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
 
 Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windows PowerShell in this project's folder. Python 3.10 or newer is required. Current target-machine checks are recorded in [task 5.8](docs/TASK_5_8.md); older platform checks remain in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
 
@@ -230,12 +230,21 @@ Potential secret filenames, dependency folders, build artefacts, lock files, sym
 
 Refresh is manual. Short transient failures get bounded retries; longer rate-limit waits are reported so you can retry later. Interrupted scans restart from the beginning. There is no scheduled sync or incremental backfill yet.
 
-Repository scans, Jira and Slack reads, and overview builds have a shared job banner in the
+Repository scans, Jira and Slack reads, overview builds and Jira task explanations have a shared job banner in the
 React interface. You can navigate or reload while they run. **Cancel job** requests a safe stop;
 the current connector or model request must finish first. **Retry job** starts a new attempt
 after a failure, cancellation, partial result or app interruption. Jobs do not restart
 automatically, and only one job or answer runs at a time. The latest result is saved across
 app restarts. See [task 5.5](docs/TASK_5_5.md) for behavior and verification.
+
+After reading issues in Connections, open **Jira tasks**, select an imported issue and click
+**Explain task**. The screen shows its purpose, requested work, explicit acceptance criteria
+and suggested clarification questions. Each point has a citation and an inspectable supporting
+quote; model name and generation time remain visible. You can navigate while the explanation
+runs, reload a saved result, or cancel and retry through the shared job banner. Jira access is
+checked before returning imported text or saved explanations, and before publishing a new
+result. A source refresh clears old explanations. Missing details stay explicit; this screen
+does not verify code implementation. See [task 6.2](docs/TASK_6_2.md) for limits.
 
 Each source on Connections also shows **Import coverage**: what was read, what was skipped or
 failed, when it was saved, and which limits or gaps apply. Expand **Coverage details and limits**

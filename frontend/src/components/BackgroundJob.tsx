@@ -4,7 +4,7 @@ import type { BackgroundJob as Job } from '../lib/types'
 import { Button, Chip } from './ui'
 import './background-job.css'
 
-const NAMES = { scan: 'Repository scan', overview: 'Project overview', jira: 'Jira read', slack: 'Slack read' }
+const NAMES = { scan: 'Repository scan', overview: 'Project overview', jira: 'Jira read', slack: 'Slack read', jira_task: 'Jira task explanation' }
 const STATES = { queued: 'Queued', running: 'Running', cancelling: 'Cancelling', succeeded: 'Completed',
   partial: 'Completed with gaps', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
 
@@ -34,7 +34,7 @@ export function BackgroundJob({ job, onChanged }: { job: Job | null; onChanged: 
     <section className="background-job" aria-label="Background job">
       <div className="background-job-copy">
         <div className="background-job-title">
-          <strong>{NAMES[job.kind]}</strong>
+          <strong>{NAMES[job.kind]}{job.target ? ` · ${job.target}` : ''}</strong>
           <Chip tone={job.state === 'failed' ? 'bad' : job.state === 'succeeded' ? 'ok' : 'info'}>
             {STATES[job.state]}
           </Chip>
