@@ -7,7 +7,7 @@ import json
 from dataclasses import replace
 import httpx
 import pytest
-from fastapi.testclient import TestClient
+from auth_helpers import OwnerClient as TestClient
 from pka.config import LIMITS, now, normalise_repo, validate_selection
 from pka.connectors.base import SourceError
 from pka.connectors.fixture import FixtureSource, COMMIT, FILES

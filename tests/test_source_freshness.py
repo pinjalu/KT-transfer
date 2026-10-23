@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
+from auth_helpers import OwnerClient as TestClient
 
 from pka import credentials
 from pka.config import now

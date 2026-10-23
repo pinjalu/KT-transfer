@@ -7,7 +7,7 @@ then sets a build order.
 
 Current verification is recorded in [task 5.8](TASK_5_8.md). Phase counts below are the original
 9 October inventory, not current completion percentages. Individual task rows have been updated
-where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.5.
+where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.6.
 
 The backend is already FastAPI (`pka/web.py`, `fastapi==0.142.2`). Nothing needs to be moved onto
 FastAPI. The original missing-functionality counts below describe the 9 October baseline; the current screen coverage is listed below.
@@ -136,11 +136,12 @@ Deployment and operations stop at listing container, pipeline and hosting files 
 walkthrough exists as eighteen ordered steps in `pka/overview.py`, which covers the structure
 title partly, but the per-feature KT section needs the feature concept from Phase 06.
 
-### Phase 10, Team use and further improvements — 0 done, 2 partly, 6 not started
+### Phase 10, Team use and further improvements — local owner login implemented
 
-Deliberately not started. `ROADMAP.md` names a gate before multiple users, and that gate has not
-been passed: no authentication, no sessions, no per-user permission checks, no audit records. The
-application is single user and local on purpose.
+Task 6.6 implements a local owner account, password sign-in, server-side sessions, expiry,
+logout and password recovery. See [task 6.6](TASK_6_6.md). The gate before multiple users has
+not passed: per-user source permissions, isolated credentials and audit records remain.
+The application remains single user and local.
 
 Semantic search is built and off by default and has never been measured. A larger local model is a
 configuration change (`OLLAMA_MODEL`) rather than work.
@@ -158,7 +159,7 @@ configuration change (`OLLAMA_MODEL`) rather than work.
 | 07 Team decisions | Partly | Cited summaries, status labels, bounded threads and content rechecks implemented; current-policy verification and code implementation evidence remain |
 | 08 Architecture | Mostly | Tabs for APIs, database, external services, deployment; node detail panel |
 | 09 Troubleshooting | No | Symptom input, cause ranking, where to check, suggested checks and tests |
-| 10 Settings | No | Team, permissions, model settings, refresh schedule, activity log |
+| 10 Settings | Partly | Owner password/session controls available from the username; team, permissions, model settings, refresh schedule and activity log remain |
 
 ## Build order
 

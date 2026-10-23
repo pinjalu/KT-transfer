@@ -2,6 +2,7 @@
 // does not carry this header, which is what stops another page in the browser from driving it.
 const HEADER = { 'x-pka-request': '1' }
 export const JOB_CHANGED = 'pka:job-changed'
+export const AUTH_REQUIRED = 'pka:auth-required'
 
 export class ApiError extends Error {
   status: number
@@ -55,6 +56,9 @@ async function send(path: string, init: RequestInit = {}): Promise<unknown> {
     const code = body && typeof body === 'object' && 'code' in body
       ? String((body as { code: unknown }).code)
       : ''
+    if (response.status === 401 && code === 'session_required') {
+      window.dispatchEvent(new Event(AUTH_REQUIRED))
+    }
     throw new ApiError(detail, response.status, code)
   }
   return body

@@ -10,14 +10,17 @@ import { Overview } from './pages/Overview'
 import { Architecture } from './pages/Architecture'
 import { JiraTasks } from './pages/JiraTasks'
 import { TeamDecisions } from './pages/TeamDecisions'
+import { AuthGate } from './components/AuthGate'
+import { Account } from './pages/Account'
 import './tokens.css'
 import './shell.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <AuthGate><BrowserRouter>
       <Routes>
         <Route element={<Shell />}>
+          <Route path="account" element={<Account />} />
           <Route index element={<Home />} />
           <Route path="connections" element={<Connections />} />
           <Route path="overview" element={<Overview />} />
@@ -43,7 +46,7 @@ createRoot(document.getElementById('root')!).render(
               ]} />} />
           <Route path="settings" element={
             <Pending step="Step 12" title="Settings"
-              lead="Model and refresh settings exist as environment variables. Team access does not exist at all."
+              lead="Use your username in the top bar for password and session controls. Model and refresh settings remain environment variables."
               items={[
                 'General, Model, Refresh and Activity, all backed by what is already stored',
                 'Team and access stays empty until the multi-user gate in ROADMAP.md is passed',
@@ -52,6 +55,6 @@ createRoot(document.getElementById('root')!).render(
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </BrowserRouter></AuthGate>
   </StrictMode>,
 )

@@ -1,5 +1,33 @@
 # Implementation and verification record
 
+## Task 6.6 owner login and secure sessions, 23 October 2026
+
+Task 6.6 adds one local owner account, one-time setup, salted password hashes and persistent
+server-side sessions. Project APIs require sign-in. Account controls support password changes,
+current/all-session logout and local terminal recovery. Sessions expire after 30 minutes without
+interaction or eight hours after login. Slack OAuth approval is bound to the initiating session.
+See [task 6.6](TASK_6_6.md) for the authentication boundary and deployment limits.
+
+All 694 regression tests, the production frontend build, dependency check and authenticated
+HTTP/MCP example smoke passed on 23 October. The test suite emitted one existing Starlette
+test-client deprecation warning. Seven fresh-account Chrome checks covered setup/confirmation, HttpOnly cookies,
+navigation/reload/background scanning, cross-tab logout, revoked-cookie replay, incorrect login,
+password changes, idle/absolute expiry, mobile layout and sign-out-all. Two further Chrome checks
+confirmed that the local app shows owner setup and denies unauthenticated project requests.
+No browser page errors were reported. Browser tests used disposable accounts and simulated sources.
+
+The local app was started after a fresh database backup. All 20 existing project database tables
+were unchanged, including SQLite metadata. The owner setup code remains in its local file so the
+user can choose their own credentials. No production owner account was created by the checks.
+The prior task's implementation and browser evidence were present when this work resumed; the
+tracker and final verification record had not yet been completed.
+
+Task 6.6 is **Done within this local-owner scope**. The tracker now records the final test and
+browser results, with every unrelated cell, style and native workbook part preserved.
+Verification artifacts are in `outputs/task-6-6-2026-10-23/` beside the project folder.
+This remains one owner on loopback HTTP. Team membership, per-user source permissions and
+isolated credentials remain tasks 6.7–6.8. Task 5.2's human quality ratings remain open.
+
 ## Task 6.5 Slack threads and message changes, 22 October 2026
 
 Task 6.5 adds bounded thread pagination, broadcast/page deduplication, per-message evidence,

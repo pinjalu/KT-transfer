@@ -7,7 +7,7 @@ import logging
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
+from auth_helpers import OwnerClient as TestClient
 
 from pka import credentials, decisions
 from pka.config import LIMITS

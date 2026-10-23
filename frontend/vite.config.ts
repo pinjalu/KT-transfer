@@ -25,9 +25,12 @@ export default defineConfig({
         target: API,
         changeOrigin: true,
         configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('origin', API)
-            proxyReq.setHeader('x-pka-request', '1')
+          proxy.on('proxyReq', (proxyReq, req) => {
+            // Preserve foreign origins so the backend rejects them. Do not manufacture
+            // the application header for a cross-origin form or another local page.
+            if (!req.headers.origin || req.headers.origin === `http://${req.headers.host}`) {
+              proxyReq.setHeader('origin', API)
+            }
           })
         },
       },

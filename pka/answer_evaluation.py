@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import hashlib
+import getpass
 import json
 import math
 from pathlib import Path
@@ -206,7 +207,7 @@ def inspect_case(report, case_id, db_path):
             'generation_error': bool(answer.get('error')), 'sources': answer['sources']}
 
 
-async def run_live(spec, output, url='http://127.0.0.1:8000', timeout=240, transport=None):
+async def run_live(spec, output, url='http://127.0.0.1:8000', timeout=240, transport=None, login=None):
     validate_spec(spec)
     url = local_url(url)
     report = {'task_id': '5.2', 'version': 1, 'started_at': now(), 'repo': spec['repo'],
@@ -218,6 +219,9 @@ async def run_live(spec, output, url='http://127.0.0.1:8000', timeout=240, trans
               'results': []}
     async with httpx.AsyncClient(base_url=url, transport=transport, trust_env=False, follow_redirects=False,
                                  timeout=timeout, headers={'X-PKA-Request': '1'}) as client:
+        if login:
+            response = await client.post('/api/auth/login', json=login)
+            response.raise_for_status()
         response = await client.get('/api/status')
         response.raise_for_status()
         status = response.json()
@@ -258,6 +262,7 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, help='Metrics-only JSON report; required except when inspecting.')
     parser.add_argument('--url', default='http://127.0.0.1:8000')
     parser.add_argument('--timeout', type=float, default=240)
+    parser.add_argument('--username', help='Local owner username. Password is requested through hidden terminal input.')
     parser.add_argument('--review-report', type=Path, help='Existing report to annotate instead of making live requests.')
     parser.add_argument('--reviews', type=Path, help='Human reviews bound to the report dataset and response hashes.')
     parser.add_argument('--inspect-report', type=Path, help='Print one exact retained answer and its excerpts for review, without saving them.')
@@ -279,7 +284,8 @@ def main(argv=None):
             report = apply_reviews(read(args.review_report), read(args.reviews))
             save_report(args.output, report)
         else:
-            report = asyncio.run(run_live(read(args.set), args.output, args.url, args.timeout))
+            login = {'username':args.username, 'password':getpass.getpass('Owner password: ')} if args.username else None
+            report = asyncio.run(run_live(read(args.set), args.output, args.url, args.timeout, login=login))
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error, httpx.HTTPError):
         print('Evaluation could not start or save. Check the set, app scope, connection and output path.')
         return 1

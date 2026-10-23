@@ -1,3 +1,4 @@
+from auth_helpers import auth_cookies
 import asyncio
 from contextlib import asynccontextmanager
 import json
@@ -265,7 +266,7 @@ def test_api_validates_scope_and_runs_one_background_job_without_auto_generation
         entered,release=asyncio.Event(),asyncio.Event()
         async def model(sources,part,total):entered.set();await release.wait();return answer(sources)
         svc.decision_generator=model
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://localhost:8000',headers={'X-PKA-Request':'1'}) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), cookies=auth_cookies(app),base_url='http://localhost:8000',headers={'X-PKA-Request':'1'}) as client:
             assert (await client.get('/api/decisions/channels')).json()['channels']==[]
             assert (await client.get('/api/decisions/channels/C1')).status_code==409
             await client.post('/api/config',json={'repo':'acme/shop','branch':'main'})

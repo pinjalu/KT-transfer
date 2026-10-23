@@ -9,10 +9,13 @@ from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 from pka import applog
 from pka.config import ROOT, KEEP_LOGS, LIMITS, data_dir, log_dir, validate_selection
 from pka import credentials, oauth
+from pka.auth import AuthStore, digest
+from pka import auth_web
 from pka.connectors import registry
 from pka.connectors.base import SourceError
 from pka import facts, features, coverage
@@ -116,10 +119,12 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                 pass
     app = FastAPI(title='Project Knowledge Assistant',docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
     app.state.service = service
+    auth = AuthStore(index.path)
+    app.state.auth = auth
+    auth_web.install(app, auth)
 
     callbacks = {p['oauth']['redirect_path'] for p in registry.PLATFORMS if p.get('oauth')}
 
-    @app.middleware('http')
     async def local_only(request: Request, call_next):
         host = request.headers.get('host','').split(':')[0].lower()
         origin = request.headers.get('origin')
@@ -145,7 +150,27 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                     return JSONResponse({'detail':'Request too large.'},status_code=413)
             except ValueError:
                 return JSONResponse({'detail':'Invalid request size.'},status_code=400)
+        protected = (request.url.path.startswith('/api/') and request.url.path not in auth_web.PUBLIC_API
+                     or request.url.path == '/legacy')
+        if protected:
+            session = await run_in_threadpool(auth.session, auth_web.token(request, auth), auth_web.origin(request))
+            if not session:
+                if returning or request.url.path == '/legacy':
+                    return RedirectResponse('/login', status_code=303)
+                response = JSONResponse({'detail':'Sign in to continue.', 'code':'session_required'}, status_code=401)
+                auth_web.clear_cookie(response, request, auth)
+                return response
+            request.state.owner = session
         result = await call_next(request)
+        # A logout or password reset while a slow read runs must withhold that read's result.
+        if protected and request.url.path.startswith('/api/') and not request.url.path.startswith('/api/auth/'):
+            if not await run_in_threadpool(auth.session, auth_web.token(request, auth), auth_web.origin(request)):
+                return JSONResponse({'detail':'Your session ended. Sign in again.', 'code':'session_required'}, status_code=401)
+        return result
+
+    @app.middleware('http')
+    async def security_headers(request: Request, call_next):
+        result = await local_only(request, call_next)
         result.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
         result.headers['X-Content-Type-Options'] = 'nosniff'
         result.headers['Referrer-Policy'] = 'no-referrer'
@@ -162,14 +187,16 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             raise HTTPException(409,'Another task is running. Wait for it to finish or cancel the current job.')
 
     # The built React interface, if it has been built. `npm run build` in frontend/ writes it.
-    # Without it the original single-page interface is still served, so a checkout with no Node
-    # toolchain still runs.
+    # The bundle is committed, so normal installs do not need Node. A missing login bundle
+    # must not silently fall back to an interface with no account setup flow.
     UI = ROOT/'pka/static/ui/index.html'
     LEGACY = ROOT/'pka/static/index.html'
 
     @app.get('/')
     async def home():
-        return FileResponse(UI if UI.exists() else LEGACY)
+        if not UI.exists():
+            return JSONResponse({'detail':'Login interface is missing. Run npm ci and npm run build in frontend.'}, status_code=503)
+        return FileResponse(UI)
 
     @app.get('/legacy')
     async def legacy():
@@ -356,12 +383,16 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         if demo:
             raise HTTPException(409,'Example mode does not connect to anything.')
         credentials.refresh()   # pick up an edit made in the file since startup
-        url = oauth.begin(platform, str(request.base_url), os.getenv)
+        if request.url.hostname != 'localhost':
+            raise HTTPException(409, 'Slack browser approval requires localhost. Open http://localhost:'
+                                + str(request.url.port or 80) + '/connections and sign in there first.')
+        url = oauth.begin(platform, str(request.base_url), os.getenv,
+                          session_id=digest(auth_web.token(request, auth)))
         applog.event('oauth.begin', platform=platform)
         return {'url':url}
 
     @app.get('/api/slack/callback')
-    async def slack_callback(code: str = '', state: str = '', error: str = ''):
+    async def slack_callback(request: Request, code: str = '', state: str = '', error: str = ''):
         if error:
             applog.warn('oauth.refused', platform='slack_user', reason=error)
             return RedirectResponse('/?connect=refused', status_code=303)
@@ -369,7 +400,10 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             return RedirectResponse('/?connect=incomplete', status_code=303)
         try:
             credentials.refresh()
-            platform, name, token, granted = await oauth.complete(state, code, os.getenv)
+            platform, name, token, granted = await oauth.complete(state, code, os.getenv,
+                session_id=digest(auth_web.token(request, auth)))
+            if not auth.session(auth_web.token(request, auth), auth_web.origin(request)):
+                return RedirectResponse('/login', status_code=303)
             credentials.save({name:token})
         except SourceError as exc:
             applog.failure('oauth.failed', platform='slack_user', msg=exc)

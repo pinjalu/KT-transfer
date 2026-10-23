@@ -8,6 +8,7 @@ Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windo
 
 ## What the first version does
 
+- Protects the local workspace with one owner account, password sign-in and server-side sessions. See [account setup and session limits](docs/TASK_6_6.md).
 - Explicitly selects one repository and branch. It resolves the branch to a commit before collecting files.
 - Reads supported source files and documentation without cloning, importing, installing or executing the project's code.
 - Uses Python syntax boundaries for Python chunks; uses headings and simple declaration boundaries for other text. Oversized sections are split with accurate line ranges.
@@ -168,15 +169,20 @@ npm ci
 npm run build
 ```
 
-That writes `pka/static/ui/`. With it present, `/` serves the new interface; without it, `/`
-serves the original single-page interface unchanged, which is also always reachable at `/legacy`.
+That writes `pka/static/ui/`. The included bundle provides login and account setup without a Node
+installation. If it is missing, rebuild it before using the app. The original interface remains
+available at `/legacy` after signing in.
 
 To work on the interface, run `npm run dev` beside `python -m pka` and open
 <http://localhost:5173>. The dev server proxies `/api` to the Python process and rewrites the
 `Origin` header, because the application refuses a request whose origin is not its own. Nothing
 in `pka/web.py` is relaxed to make that work.
 
-Open <http://127.0.0.1:8000/connections>, click **Refresh repository**, then open **Ask assistant** and ask **How does login work?** Example mode uses built-in data and a simulated explanation. It does not test a real account or Ollama. Its separate database is `data/demo.sqlite3`.
+Open <http://127.0.0.1:8000/connections>. On first use, copy the one-time code from the local
+setup-code file named in the startup terminal and create an owner username and a 15–128-character
+password. Then click **Refresh repository**, open **Ask assistant** and ask **How does login work?**
+Example mode uses built-in data and a simulated explanation. Its account and database are separate
+from live mode; it does not test a live source account or Ollama.
 
 ## Connect your actual repository
 
@@ -189,6 +195,14 @@ Follow [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md) for token permissions and 
 Save the repository and the branch in the browser. Paste the address straight from your browser, such as `https://github.com/acme/shop`, or type `owner/repository`; a `/tree/...` or `/blob/...` tail, a trailing `.git`, a `?tab=` query and the `git@github.com:` form are all accepted and reduced to `owner/repository` before anything is fetched. Only github.com addresses are read; any other host is refused. Use **Save and read files** in Connections, or **Refresh repository** for the saved selection. Inspect coverage, then ask a question. Public repositories can be read without a token, but the unauthenticated allowance is only 60 requests per hour for your whole IP address and the scan spends one request per readable file. Any repository with more than about 55 readable files therefore needs a token, and waiting for the reset will not help because the next attempt hits the same ceiling. A token raises the allowance to 5000 per hour. Before reading any file the scan compares the files it needs against the allowance left and stops with those two numbers if the allowance cannot cover the run, rather than spending it on an index that would be discarded. Private repositories require a fine-grained token restricted to the selected repository with **Contents: Read-only** and the metadata access GitHub supplies. Do not grant write permissions.
 
 ## Limits and current scope
+
+The username in the top bar opens **Account**, with password change and **Sign out all sessions**.
+**Sign out** ends the current session. Sessions expire after 30 minutes without interaction or
+8 hours after login; automatic polling does not extend them. Existing background jobs continue,
+but their results require sign-in. Recover a forgotten password locally with
+`python -m pka --reset-password` (add `--demo` for example mode), using the hidden terminal prompts.
+For Slack browser approval, sign in on `http://localhost:8000` before connecting; Slack's callback
+uses localhost and must return to the session that started it.
 
 | Limit | Default |
 |---|---:|
@@ -306,7 +320,11 @@ The browser calls the FastAPI backend. For each read, the backend launches the f
 
 ## Local data and permissions
 
-The app binds only to `127.0.0.1`. Keep it on your own machine; do not expose it through a tunnel or shared server. This is a single-user prototype without user accounts. Before multi-user use, implement authentication, per-user platform credentials, permission-filtered retrieval and answer generation, revocation checks and isolation tests. Localhost and a shared index are not sufficient for multiple users.
+The app binds only to `127.0.0.1` and has one local owner account. Keep it on your own machine;
+do not expose it through a tunnel or shared server. Per-user source permissions, isolated team
+credentials and audit records remain tasks 6.7–6.8. HTTP cookies are allowed only for loopback use;
+HTTPS uses Secure cookies. Account login does not make the shared index suitable for multiple users.
+Protect the local data directory and backups with your operating-system account permissions.
 
 One continuous debug log is written to `data/logs/pka.log`, covering startup, repository saves, every GitHub request with its status and remaining allowance, scan starts and endings, retrieval for each question including which excerpts were chosen, and every model call with its timing. It rolls at 5 MB and keeps five previous files. `PKA_LOG_LEVEL` changes the level. It never records the token, source excerpt text or answer text, and it withholds question text unless `PKA_LOG_QUESTIONS=1` is set, recording only the length and word count. Alongside it, every scan writes a plain-text report to `data/logs/scan-<id>-<status>-<time>.log` listing the counts, the reason totals and every candidate file with its state. The twenty most recent are kept. Set `PKA_LOG_DIR` to put them elsewhere. The report holds paths, states and counts only, never source text, tokens or your questions. The application writes its own settings, scan metadata, excerpts, answers and feedback under `data/`. It never writes to GitHub. The `.env` file and local database are unencrypted files protected by your operating-system account. Never commit them or share them with the project ZIP. Changing the selection clears previous indexed content and answers. Rescanning clears old answer feedback as well, preventing old source excerpts from being retained as answer history. This is logical removal from application results, not forensic erasure of disk backups.
 

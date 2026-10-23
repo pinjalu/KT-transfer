@@ -90,4 +90,8 @@ Consider incremental refresh, resumable scans, import/call-graph expansion, lang
 
 ## Gate before multiple users
 
-Implement authentication, per-user and per-source permission checks, credential isolation, permission-filtered search, permission rechecks before answers, secure sessions, audit records and adversarial cross-user tests. A shared index must not return another user's restricted snippets or an answer derived from them. Keep the single-user application local until that work is complete.
+Task 6.6 provides password authentication and server-side sessions for one local owner. See
+[task 6.6](TASK_6_6.md). Per-user and per-source permission checks, credential isolation,
+permission-filtered search, audit records and adversarial cross-user tests remain. A shared
+index must not return another user's restricted snippets or an answer derived from them.
+Keep the single-user application local until that work is complete.

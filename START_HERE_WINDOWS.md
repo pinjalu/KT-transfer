@@ -28,7 +28,10 @@ frontend changes: run npm ci and npm run build inside frontend/, then return to 
 .\.venv\Scripts\python.exe -m pka --demo
 ```
 
-Open <http://127.0.0.1:8000/connections> and click **Refresh repository**. Expect three files
+Open <http://127.0.0.1:8000/connections>. On first use, open the setup-code file shown in the
+startup terminal, paste its one-time code into the form, and choose an owner username and
+15–128-character password. The code file disappears after account creation. Live mode and
+example mode have separate accounts. Then click **Refresh repository**. Expect three files
 read and one policy exclusion. Open **Ask assistant** and ask "How does login work?".
 Choose **Developer** to see excerpts. Answer correctness and source sufficiency have separate
 feedback controls. Build **Project overview**, then inspect **Architecture**.
@@ -72,6 +75,11 @@ Do not start another instance when the existing one is healthy.
 ```powershell
 .\.venv\Scripts\python.exe -m pka
 ```
+
+Create the live owner account when prompted, or sign in to the existing account. The username
+in the top bar opens password and session controls. Password recovery is local:
+`.\.venv\Scripts\python.exe -m pka --reset-password` prompts for a new password without echoing it
+and signs out all sessions. Use an interactive terminal; do not put passwords in command arguments.
 
 On Connections, enter owner/repository or a GitHub URL and the branch, then click
 **Save and read files**. On subsequent starts, **Use it again** fills the previous selection;

@@ -34,6 +34,7 @@ class Pending:
     redirect_uri: str
     created: float
     verifier: str = ''
+    session_id: str = ''
 
 
 _pending: dict = {}
@@ -59,7 +60,7 @@ def canonical_redirect(base_url: str, path: str) -> str:
     return base + path
 
 
-def begin(platform_key: str, base_url: str, env) -> str:
+def begin(platform_key: str, base_url: str, env, session_id='') -> str:
     """Return the platform's approval URL for this connect attempt."""
     platform = registry.BY_KEY.get(platform_key)
     oauth = (platform or {}).get('oauth')
@@ -74,7 +75,7 @@ def begin(platform_key: str, base_url: str, env) -> str:
     state = secrets.token_urlsafe(24)
     redirect_uri = canonical_redirect(base_url, oauth['redirect_path'])
     verifier = secrets.token_urlsafe(64)[:96] if oauth.get('pkce') else ''
-    _pending[state] = Pending(platform_key, redirect_uri, time.time(), verifier)
+    _pending[state] = Pending(platform_key, redirect_uri, time.time(), verifier, session_id)
     query = {
         'client_id': env(platform['credentials'][0], ''),
         'user_scope': ','.join(oauth['user_scopes']),
@@ -88,13 +89,15 @@ def begin(platform_key: str, base_url: str, env) -> str:
     return oauth['authorize'] + '?' + urlencode(query)
 
 
-async def complete(state: str, code: str, env, transport=None) -> tuple:
+async def complete(state: str, code: str, env, transport=None, session_id='') -> tuple:
     """Exchange the returned code for a token. Returns the platform key and the token name."""
     _sweep()
     waiting = _pending.pop(state, None)
     if not waiting:
         # Either someone replayed an old link or this redirect was not started here.
         raise SourceError('oauth', 'This connect link has expired or was not started here. Press Connect again.')
+    if not secrets.compare_digest(waiting.session_id, session_id):
+        raise SourceError('oauth', 'This connection belongs to another sign-in session. Press Connect again.')
     platform = registry.BY_KEY[waiting.platform]
     oauth = platform['oauth']
     data = {

@@ -1,3 +1,4 @@
+from auth_helpers import auth_cookies
 """Selected-issue explanations: evidence isolation, access, jobs and persisted results."""
 import asyncio
 from contextlib import asynccontextmanager
@@ -302,7 +303,7 @@ def test_api_selection_boundary_background_lifecycle_and_no_automatic_generation
             await release.wait()
             return answer(sources[0])
         svc.jira_generator = model
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost:8000',
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), cookies=auth_cookies(app), base_url='http://localhost:8000',
                                      headers={'X-PKA-Request':'1'}) as client:
             assert (await client.get('/api/jira/tasks')).json()['issues'] == []
             assert (await client.get('/api/jira/tasks/ENG-1')).status_code == 409

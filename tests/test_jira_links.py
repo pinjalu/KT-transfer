@@ -1,3 +1,4 @@
+from auth_helpers import auth_cookies
 """Relationships require explicit evidence; text similarity must stay visibly uncertain."""
 import asyncio
 from contextlib import asynccontextmanager
@@ -235,7 +236,7 @@ def test_api_validates_kind_page_selection_and_private_response_headers(state):
     svc,_,factory=state
     app=create_app(False,svc.index.path,connector_factory=factory)
     async def scenario():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://localhost:8000',headers={'X-PKA-Request':'1'}) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), cookies=auth_cookies(app),base_url='http://localhost:8000',headers={'X-PKA-Request':'1'}) as client:
             assert (await client.get('/api/jira/tasks/ENG-1/links')).status_code==409
             await client.post('/api/config',json={'repo':'acme/shop','branch':'main'})
             reply=await client.get('/api/jira/tasks/ENG-1/links')

@@ -1,3 +1,4 @@
+from auth_helpers import auth_cookies
 """Job lifecycle checks with controlled connector/model waits, never live accounts."""
 import asyncio
 from contextlib import asynccontextmanager
@@ -212,7 +213,7 @@ def test_api_job_controls_survive_navigation_and_reject_duplicate_stale_requests
     async def scenario():
         source.pause = 'scan'
         source.entered, source.release = asyncio.Event(), asyncio.Event()
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost:8000',
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), cookies=auth_cookies(app), base_url='http://localhost:8000',
                                      headers={'X-PKA-Request':'1'}) as client:
             await client.post('/api/config',json={'repo':'acme/shop','branch':'main'})
             response = await client.post('/api/scan')

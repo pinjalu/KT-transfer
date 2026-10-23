@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -59,6 +60,11 @@ def main():
                     if process.poll() is not None:raise RuntimeError('Application exited before startup.')
                     time.sleep(.1)
                 else:raise RuntimeError('Application startup timed out.')
+                assert client.get('/api/status').status_code == 401
+                setup = client.post('/api/auth/setup', json={
+                    'code':(Path(data)/'demo.auth.setup-code').read_text(),
+                    'username':'smoke-owner', 'password':secrets.token_urlsafe(24)})
+                setup.raise_for_status()
                 assert client.post('/api/scan',json={}).status_code==200
                 state=wait_for_scan(client)
                 response=client.post('/api/ask',json={'question':'How does login work?'})

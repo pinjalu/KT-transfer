@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, Outlet, useLocation } from 'react-router-dom'
+import { useAccount } from './AuthGate'
 import { DESTINATIONS } from '../nav'
 import { Sidebar } from './Sidebar'
 import { Icon } from './Icon'
@@ -9,6 +10,8 @@ import { BackgroundJob } from './BackgroundJob'
 import { JOB_CHANGED } from '../lib/api'
 
 export function Shell() {
+  const account = useAccount()
+  const [logoutError, setLogoutError] = useState('')
   const location = useLocation()
   // Polled rather than read once: a scan changes this while the user is looking at another screen.
   const { data, reload } = useApi<Status>('/api/status', 2000)
@@ -35,6 +38,8 @@ export function Shell() {
             )}
           </nav>
           <div className="topbar-right">
+            <Link to="/account" aria-label="Account settings">{account.user.username}</Link>
+            <button className="btn btn-ghost" onClick={() => void account.logout().catch(e => setLogoutError(e.message))}>Sign out</button>
             {data?.demo && (
               <span className="chip chip-info"><Icon name="database" size={14} /> Sample data</span>
             )}
@@ -42,6 +47,7 @@ export function Shell() {
           </div>
         </header>
         <main className="page">
+          {logoutError && <p role="alert" className="auth-error">{logoutError}</p>}
           <BackgroundJob job={data?.awaiting_project ? null : data?.job ?? null} onChanged={reload} />
           <Outlet />
         </main>
