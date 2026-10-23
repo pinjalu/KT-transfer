@@ -20,3 +20,5 @@
 .account-list { list-style: none; padding: 0; margin: 20px 0 0; }
 .account-list li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .auth-form select { width: 100%; min-height: 42px; padding: 8px; font: inherit; }
+.auth-workspace { height: 100%; }
+.auth-workspace[hidden] { display: none; }

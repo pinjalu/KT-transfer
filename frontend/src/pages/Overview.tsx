@@ -4,8 +4,9 @@ import { Button, Card, Chip, Empty, Failed, Loading, Missing, NoProject, PageHea
 import { Statements } from '../components/Statements'
 import { Icon } from '../components/Icon'
 import { useApi } from '../lib/useApi'
+import { useOverview } from '../lib/useOverview'
 import { ApiError, post } from '../lib/api'
-import type { FactGroup, Overview as Body, OverviewReply, Section } from '../lib/overview'
+import type { FactGroup, Overview as Body, Section } from '../lib/overview'
 import type { Status } from '../lib/types'
 import { factsOf, sectionOf } from '../lib/overview'
 import './overview.css'
@@ -68,8 +69,9 @@ function Facts({ group }: { group: FactGroup }) {
 export function Overview() {
   const [mode, setMode] = useState<Mode>('Beginner')
   const status = useApi<Status>('/api/status', 5000)
-  const reply = useApi<OverviewReply>('/api/overview', 4000, status.data?.knowledge_revision)
-  const features = useApi<FeatureReply>('/api/features', 0, status.data?.knowledge_revision)
+  const reply = useOverview(status)
+  const features = useApi<FeatureReply>('/api/features', 0, status.data?.knowledge_revision,
+    !!status.data && !status.data.awaiting_project)
   const [note, setNote] = useState('')
   const [blocked, setBlocked] = useState(false)
   const busy = status.data?.busy ?? false
@@ -101,7 +103,7 @@ export function Overview() {
     try {
       await post('/api/overview')
       setNote('Building. Sections appear as each one finishes.')
-      reply.reload()
+      status.reload()
     } catch (exc) {
       const why = exc instanceof ApiError ? exc.message : 'Could not start the build.'
       setNote(why)
@@ -112,6 +114,7 @@ export function Overview() {
   if (status.data?.awaiting_project) {
     return <><PageHead title="Project overview" /><NoProject what="the overview" /></>
   }
+  if (status.error) return <Failed message={status.error} onRetry={status.reload} />
   if (reply.loading) return <Loading what="the overview" />
   if (reply.error) return <Failed message={reply.error} onRetry={reply.reload} />
 
@@ -218,6 +221,7 @@ export function Overview() {
                   sub="Grouped from routes, the files they reach and the tickets that named them."
                   aside={<Link className="btn btn-ghost" to="/features">Open feature explorer</Link>}>
               {features.loading && <Loading what="features" />}
+              {features.error && <Failed message={features.error} onRetry={features.reload} />}
               {features.data?.features?.length ? (
                 <ul className="feat-grid">
                   {features.data.features.map((f) => (
@@ -232,11 +236,11 @@ export function Overview() {
                     </li>
                   ))}
                 </ul>
-              ) : (
+              ) : !features.loading && !features.error ? (
                 <Empty title="No features were derived."
                        detail={features.data?.unclustered?.note
                                || 'A feature starts at a route. This project declares none that cluster.'} />
-              )}
+              ) : null}
             </Card>
 
             {deps && (

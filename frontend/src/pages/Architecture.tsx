@@ -14,7 +14,8 @@ import { Card, Chip, Empty, Failed, Loading, NoProject, PageHead, SourceLink, Ta
 import { Diagram } from '../components/Diagram'
 import type { DiagramNode, DiagramPayload } from '../components/Diagram'
 import { useApi } from '../lib/useApi'
-import type { FactGroup, OverviewReply } from '../lib/overview'
+import { useOverview } from '../lib/useOverview'
+import type { FactGroup } from '../lib/overview'
 import type { Status } from '../lib/types'
 import './architecture.css'
 
@@ -135,13 +136,14 @@ function Detail({ card, picked, onClose }:
 
 export function Architecture() {
   const status = useApi<Status>('/api/status', 5000)
-  const reply = useApi<OverviewReply>('/api/overview', 6000, status.data?.knowledge_revision)
+  const reply = useOverview(status)
   const [tab, setTab] = useState('')
   const [picked, setPicked] = useState('')
 
   if (status.data?.awaiting_project) {
     return <><PageHead title="Architecture" /><NoProject what="the system map" /></>
   }
+  if (status.error) return <Failed message={status.error} onRetry={status.reload} />
   if (reply.loading) return <Loading what="the architecture" />
   if (reply.error) return <Failed message={reply.error} onRetry={reply.reload} />
 

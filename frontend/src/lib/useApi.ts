@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, get } from './api'
 
 export type Load<T> = {
@@ -9,21 +9,24 @@ export type Load<T> = {
 }
 
 /** Reads one endpoint. A failure is kept and shown, never swallowed into an empty screen. */
-export function useApi<T>(path: string, poll = 0, revision?: number): Load<T> {
+export function useApi<T>(path: string, poll = 0, revision?: number, enabled = true): Load<T> {
   const key = `${path}:${revision ?? ''}`
   const [result, setResult] = useState<{ key: string; data: T | null; error: string | null } | null>(null)
   const [tick, setTick] = useState(0)
+  const runCurrent = useRef<(() => void) | null>(null)
 
   const reload = useCallback(() => setTick((n) => n + 1), [])
 
   useEffect(() => {
+    if (!enabled) { setResult(null); return }
     let live = true
     let inFlight = false
+    const controller = new AbortController()
     const run = async () => {
       if (inFlight) return
       inFlight = true
       try {
-        const body = await get(path)
+        const body = await get(path, controller.signal)
         if (!live) return
         setResult({ key, data: body as T, error: null })
       } catch (exc) {
@@ -33,13 +36,23 @@ export function useApi<T>(path: string, poll = 0, revision?: number): Load<T> {
         inFlight = false
       }
     }
+    runCurrent.current = run
     void run()
-    if (!poll) return () => { live = false }
-    const timer = setInterval(run, poll)
-    return () => { live = false; clearInterval(timer) }
-  }, [path, poll, tick, key])
+    return () => {
+      live = false
+      controller.abort()
+      runCurrent.current = null
+    }
+  }, [path, tick, key, enabled])
+
+  // Changing the polling rate must not abandon a slow request and start it again.
+  useEffect(() => {
+    if (!enabled || !poll) return
+    const timer = setInterval(() => runCurrent.current?.(), poll)
+    return () => clearInterval(timer)
+  }, [poll, enabled])
 
   // Hide the previous snapshot immediately, including while its replacement is loading.
-  const current = result?.key === key ? result : null
+  const current = enabled && result?.key === key ? result : null
   return { data: current?.data ?? null, error: current?.error ?? null, loading: !current, reload }
 }

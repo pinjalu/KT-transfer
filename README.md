@@ -163,9 +163,12 @@ application under `frontend/`. It is built once and then served by the same Pyth
 running the application still needs nothing but Python and Ollama. Node is needed only to build
 it, and only when the interface itself changes.
 
+For frontend development and tests, use Node 22 LTS (22.12 or newer) or Node 24 LTS.
+
 ```powershell
 cd frontend
 npm ci
+npm test
 npm run build
 ```
 

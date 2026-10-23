@@ -12,16 +12,20 @@ export function useAccount() { return useContext(Account)! }
 export function AuthGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
   const channel = useRef<BroadcastChannel | null>(null)
   const sequence = useRef(0)
   const lastActivity = useRef(0)
   const refresh = useCallback(async () => {
     const request = ++sequence.current
+    setChecking(true)
     try {
       const value = await get('/api/auth/status') as Session
       if (sequence.current === request) { setSession(value); setError('') }
     } catch (e) {
       if (sequence.current === request) { setSession(null); setError((e as Error).message) }
+    } finally {
+      if (sequence.current === request) setChecking(false)
     }
   }, [])
   const changed = useCallback(async () => {
@@ -31,6 +35,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const logout = useCallback(async (all = false) => {
     await post(all ? '/api/auth/logout-all' : '/api/auth/logout')
     ++sequence.current
+    setChecking(false)
     setSession({ authenticated: false, setup_required: false, user: null })
     channel.current?.postMessage('changed')
     // Discard mounted answer/source state, including the back-forward cache of this page.
@@ -41,10 +46,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     void refresh()
     const required = () => {
       ++sequence.current
+      setChecking(false)
       setSession({ authenticated: false, setup_required: false, user: null })
       setError('Your session ended. Sign in again to continue.')
     }
-    const verify = () => { setSession(null); void refresh() }
+    // Keep the mounted workspace while checking the same session. Clearing it here
+    // discarded drafts and restarted every source request each time a tab was shown.
+    // The workspace stays hidden until verified; a logout/account change still wipes it.
+    const verify = () => { void refresh() }
     const visible = () => { if (document.visibilityState === 'visible') verify() }
     const restored = (event: PageTransitionEvent) => { if (event.persisted) verify() }
     if ('BroadcastChannel' in window) {
@@ -68,9 +77,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const activity = () => {
       if (Date.now() - lastActivity.current < 60000 || document.hidden) return
       lastActivity.current = Date.now()
+      const request = sequence.current
+      const userId = session.user!.id
       void post('/api/auth/activity').then(value => {
         const updated = value as { user: User }
-        setSession(current => current?.authenticated ? { ...current, user: updated.user } : current)
+        if (request === sequence.current && updated.user.id === userId) {
+          setSession(current => current?.authenticated && current.user?.id === userId
+            ? { ...current, user: updated.user } : current)
+        }
       }).catch(() => {})
     }
     const timer = window.setInterval(() => {
@@ -86,10 +100,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
       window.removeEventListener('pointerdown', activity)
       window.removeEventListener('keydown', activity)
     }
-  }, [session?.authenticated, session?.user?.expires_at, session?.user?.idle_expires_at, refresh])
+  }, [session?.authenticated, session?.user?.id, session?.user?.expires_at, session?.user?.idle_expires_at, refresh])
 
   if (session?.authenticated && session.user) {
-    return <Account.Provider key={session.user.id} value={{ user: session.user, refresh: changed, logout }}>{children}</Account.Provider>
+    return <Account.Provider key={session.user.id} value={{ user: session.user, refresh: changed, logout }}>
+      <div className="auth-workspace" hidden={checking} inert={checking}>{children}</div>
+      {checking && <div className="auth-page" role="status">Checking sign-in…</div>}
+    </Account.Provider>
   }
   return <div className="auth-page"><div className="auth-card">
     <div className="auth-brand"><span className="auth-mark">K</span> KT Assistant</div>

@@ -1,5 +1,40 @@
 # Implementation and verification record
 
+## Browser tab loading follow-up, 23 October 2026
+
+Returning to a browser tab used to set the authenticated session to null before checking it.
+That unmounted the entire workspace, lost drafts and view selections, and restarted source
+reads. Session checks now hide the mounted workspace until the server confirms the session;
+the same account keeps its state, while logout, verification failure and account changes
+discard it. Late activity responses cannot restore a previous account.
+
+Overview and architecture reads wait for the project revision instead of issuing two initial
+requests. Superseded reads are aborted and ignored. Changing the polling interval does not
+restart an in-flight request. Saved overview permissions are checked every 30 seconds while
+idle and every four seconds during a build, with an immediate refresh on job transitions.
+Navigation still checks current source access; it never starts an overview build automatically.
+Feature read failures now show their actual error instead of claiming that no features exist.
+Cards and page controls adapt to the narrower viewport created by a browser side panel.
+
+The 13 frontend regression checks, 106 authentication/workspace/source-freshness regression
+tests and production build passed. The Python run emitted the existing Starlette test-client
+deprecation warning. The running app was verified to serve the final compiled bundle.
+Vite, React Router and the
+new test runner use patched compatible releases; npm reported zero vulnerabilities after
+installation. Run the frontend checks with `cd frontend`, `npm ci`, and `npm test`.
+
+Live checks used the owner's existing Empricitest Chrome tab. Connections showed 99 files
+read, two skipped and zero failures, with the saved Jira project and Slack channel present.
+Read-only MCP checks passed for GitHub, Jira and Slack. Retrying the failed overview through
+the browser completed all nine topics with zero failed topics in 648.5 seconds; generated
+content still carries the model's evidence/unsupported-claim qualifications.
+
+The Chrome extension detached during the live test and then the Empricitest connection
+disappeared from the browser inventory. Full navigation, question submission and visual
+verification of the final bundle remain unverified in that live session. Feature explorer,
+Troubleshooting and Settings are still placeholder routes, so this is not a whole-product
+end-to-end sign-off. Account settings is implemented separately at `/account`.
+
 ## Task 6.7 private workspaces and source permissions, 23 October 2026
 
 Task 6.7 adds owner-managed member accounts and separate indexes, source credentials,

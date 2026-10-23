@@ -64,7 +64,7 @@ async function send(path: string, init: RequestInit = {}): Promise<unknown> {
   return body
 }
 
-export const get = (path: string) => send(path)
+export const get = (path: string, signal?: AbortSignal) => send(path, { signal })
 export const post = async (path: string, payload?: unknown) => {
   const body = await send(path, { method: 'POST', body: payload === undefined ? '{}' : JSON.stringify(payload) })
   // Refresh the shared controls as soon as a job starts or changes, even on another page.

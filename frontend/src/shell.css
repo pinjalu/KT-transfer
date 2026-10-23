@@ -86,7 +86,7 @@
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s5); align-items: start; }
 .grid-main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--s5); align-items: start; }
-.stack { display: grid; gap: var(--s5); }
+.stack { display: grid; gap: var(--s5); min-width: 0; }
 
 /* Chips, dots */
 .chip {
@@ -176,3 +176,11 @@
 .not-built p { color: var(--ink-soft); margin-bottom: var(--s3); }
 .not-built ul { margin: 0; padding-left: var(--s5); color: var(--ink-soft); }
 .not-built li { margin-bottom: var(--s2); }
+
+/* A browser side panel narrows the page even on a desktop monitor. */
+@media (max-width: 1200px) {
+  .grid-main, .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .page-head { flex-wrap: wrap; }
+  .page-actions, .topbar-right { flex-wrap: wrap; }
+  .card, .card-body { min-width: 0; overflow-wrap: anywhere; }
+}
