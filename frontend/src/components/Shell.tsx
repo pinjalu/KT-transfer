@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { useAccount } from './AuthGate'
 import { DESTINATIONS } from '../nav'
 import { Sidebar } from './Sidebar'
@@ -25,7 +25,7 @@ export function Shell() {
 
   return (
     <div className="shell">
-      <Sidebar project={project} />
+      <Sidebar project={project} username={account.user.username} />
       <div className="main">
         <header className="topbar">
           <nav className="crumbs" aria-label="Breadcrumb">
@@ -38,7 +38,6 @@ export function Shell() {
             )}
           </nav>
           <div className="topbar-right">
-            <Link to="/account" aria-label="Account settings">{account.user.username}</Link>
             <button className="btn btn-ghost" onClick={() => void account.logout().catch(e => setLogoutError(e.message))}>Sign out</button>
             {data?.demo && (
               <span className="chip chip-info"><Icon name="database" size={14} /> Sample data</span>

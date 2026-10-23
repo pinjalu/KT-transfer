@@ -1,8 +1,8 @@
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { DESTINATIONS } from '../nav'
 import { Icon } from './Icon'
 
-export function Sidebar({ project }: { project: string }) {
+export function Sidebar({ project, username }: { project: string; username: string }) {
   return (
     <nav className="sidebar" aria-label="Main">
       <div className="sidebar-brand">
@@ -34,10 +34,10 @@ export function Sidebar({ project }: { project: string }) {
         <a className="sidebar-link" href="/static/ui/help.html">
           <Icon name="search" /><span>Help</span>
         </a>
-        <div className="sidebar-user">
-          <span className="avatar" aria-hidden="true">P</span>
-          <span className="sidebar-user-name">Local</span>
-        </div>
+        <Link className="sidebar-user" to="/account" aria-label={`Account settings for ${username}`}>
+          <span className="avatar" aria-hidden="true">{Array.from(username.trim())[0]?.toUpperCase() || '?'}</span>
+          <span className="sidebar-user-name" title={username}>{username}</span>
+        </Link>
       </div>
     </nav>
   )

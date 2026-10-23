@@ -43,12 +43,14 @@
 .sidebar-link.is-active { background: var(--sidebar-active); color: #fff; font-weight: 600; }
 
 .sidebar-foot { padding: var(--s4) var(--s3) 0; margin-top: var(--s4); border-top: 1px solid #1d4257; }
-.sidebar-user { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); }
+.sidebar-user { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border-radius: var(--r-md); text-decoration: none; }
+.sidebar-user:hover { background: var(--sidebar-hover); text-decoration: none; }
+.sidebar-user .avatar { flex-shrink: 0; }
 .avatar {
   width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
   background: #7c5cd6; color: #fff; font-weight: 700; font-size: 12px;
 }
-.sidebar-user-name { font-weight: 600; color: #fff; }
+.sidebar-user-name { font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Main column */
 .main { display: flex; flex-direction: column; min-width: 0; height: 100%; }
