@@ -1,5 +1,32 @@
 # Implementation and verification record
 
+## Interactive project overview, 23 October 2026
+
+The overview now opens as a dashboard with a project snapshot and shortcuts for topics,
+indexed files, feature groups and items to review. A searchable topic menu replaces the
+long report. Each topic offers expandable prose, its original evidence excerpts and source
+links; citation clicks reveal the matching excerpt. All modes retain access to every saved
+point and fact group. Missing evidence, unsupported claims and failed sections stay visible,
+with a separate coverage view to collect the flags. Counts describe the saved data, not an
+accuracy score.
+
+The reading checklist keeps progress while navigating topics in the mounted overview. It
+resets on a new source revision or page reload and never persists project data in browser
+storage. Exploring topics, modes, facts and evidence does not trigger a model build. Existing
+session checks, source-access revalidation, explicit rebuild and partial-build behavior are
+preserved. Feature summaries are shown in place rather than linking to the unfinished feature
+explorer route.
+
+All 20 frontend checks and the production build passed. Seven dashboard checks cover
+navigation without refetch/build requests, source expansion, search, checklist preservation
+and revision reset, evidence flags, feature errors and partial builds. Live checks in a fresh
+tab in the owner's Empricitest profile verified saved content, expandable points, a matching
+Jira citation, feature cards and reading progress across topic switches. Topic search and
+keyboard activation passed, and 940px and 1440px viewport checks showed the expected layout
+changes without horizontal overflow. The temporary viewport override was reset. No browser
+console errors were observed. This validates the overview change, not a whole-product
+end-to-end run.
+
 ## Browser tab loading follow-up, 23 October 2026
 
 Returning to a browser tab used to set the authenticated session to null before checking it.
