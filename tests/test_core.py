@@ -2420,14 +2420,13 @@ def test_a_feature_names_what_it_could_not_find(index):
 
 
 def test_feature_detail_never_invents_an_outcome_or_a_problem(index):
-    """The mockup shows three outcome cards. Only one is derivable, so only one is returned."""
+    """A table declaration cannot establish a successful request or any runtime outcome."""
     from pka.features import detail
     payload, _ = _feature_scan(index, {
         'app.py': ORDERS_APP, 'services/order.py': ORDERS_SERVICE, 'store/orders.py': ORDERS_STORE,
     })
     body = detail(payload['features'][0])
-    assert [o['kind'] for o in body['flow']['outcomes']] == ['success']
-    assert all(o['evidence'] == 'derived' for o in body['flow']['outcomes'])
+    assert body['flow']['outcomes'] == []
     assert body['known_problems']['items'] == []
     assert 'monitoring' in body['known_problems']['note']
     assert body['overview']['statements'] == [], 'no prose is written by this module'
@@ -2459,6 +2458,44 @@ def test_features_never_link_outside_the_scanned_commit(index):
             url = route['declared_at']['url']
             if url:
                 assert url.startswith('https://github.com/acme/shop/blob/' + COMMIT + '/')
+
+
+def test_feature_detail_links_files_tests_and_both_import_steps(index):
+    from pka.features import detail
+    payload, _ = _feature_scan(index, {
+        'app.py': ORDERS_APP, 'services/order.py': ORDERS_SERVICE,
+        'store/orders.py': ORDERS_STORE + '\nimport beyond\n',
+        'beyond.py': 'VALUE = 1\n',
+        'tests/test_orders.py': 'from services.order import place\n',
+    })
+    body = detail(payload['features'][0])
+    assert {f['path'] for f in body['related']} == {'app.py', 'services/order.py', 'store/orders.py'}
+    imports = [s for s in body['flow']['steps'] if s['component']['kind'] == 'file']
+    assert [s['component']['path'] for s in imports] == ['services/order.py', 'store/orders.py']
+    assert '1 step' in imports[0]['plain'] and '2 steps' in imports[1]['plain']
+    for source in body['related'] + body['tests']['existing'] + [s['component'] for s in body['flow']['steps']]:
+        assert source['line'] > 0
+        assert source['url'] == f"https://github.com/acme/shop/blob/{COMMIT}/{source['path']}#L{source['line']}"
+
+
+def test_feature_bindings_do_not_mix_local_and_github_modules(index):
+    from pka.features import detail
+    prefix = 'local://' + 'a' * 64 + '/'
+    payload, _ = _feature_scan(index, {
+        'app.py': ORDERS_APP, 'services/order.py': ORDERS_SERVICE, 'store/orders.py': ORDERS_STORE,
+        prefix + 'app.py': ORDERS_APP.replace('orders', 'invoices'),
+        prefix + 'services/order.py': ORDERS_SERVICE,
+        prefix + 'store/orders.py': ORDERS_STORE,
+        prefix + 'tests/test_orders.py': 'from services.order import place\n',
+    })
+    features = {f['id']: detail(f) for f in payload['features']}
+    assert all(f['path'].startswith(prefix) for f in features['invoices']['related'])
+    assert all(not f['path'].startswith(prefix) for f in features['orders']['related'])
+    assert features['orders']['tests']['existing'] == []
+    local = features['invoices']
+    for source in local['related'] + local['tests']['existing']:
+        assert source['url'].startswith('/source?snapshot=' + 'a' * 64 + '&path=local%3A')
+    assert len(local['related']) == 3 and len(local['tests']['existing']) == 1
 
 
 def test_feature_listing_hides_the_working_detail(index):

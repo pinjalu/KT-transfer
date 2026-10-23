@@ -216,6 +216,7 @@ export function OverviewDashboard({ body, features, mode, building }: {
                 <span className="ov-feature-icon"><Icon name="grid" size={18} /></span><h3>{feature.name}</h3>
                 <p>{feature.route_count} route{feature.route_count === 1 ? '' : 's'} <span>·</span> {feature.file_count} file{feature.file_count === 1 ? '' : 's'}</p>
                 {feature.gap_count > 0 && <Chip tone="warn">{feature.gap_count} known gap{feature.gap_count === 1 ? '' : 's'}</Chip>}
+                <Link to={`/features?feature=${encodeURIComponent(feature.id)}`}>Explore {feature.name} →</Link>
               </div>)}</div> : <Empty title="No features were derived."
                 detail={features.data?.unclustered?.note || 'No feature groups are available for the current information.'} />}
           </>}

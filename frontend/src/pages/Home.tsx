@@ -9,7 +9,7 @@ const LEARN = [
   { to: '/overview', title: 'Project purpose',
     plain: 'What this project does, who it is for and the main goals.' },
   { to: '/features', title: 'How the main features work',
-    plain: 'Follow a feature from the first click through to what it stores.' },
+    plain: 'Explore routes, related files, data declarations and linked tests.' },
   { to: '/overview', title: 'Your first files to read',
     plain: 'A reading order derived from what was actually scanned.' },
 ]
@@ -68,12 +68,10 @@ export function Home() {
 
           <Card title="Explore key features"
                 sub="Look at how important parts of the project are implemented.">
-            {/* Deliberately empty until step 5 derives features. Inventing three plausible
-                feature names here would be exactly the thing this product is built not to do. */}
             <Empty
-              title="No features have been derived yet."
-              detail="Features are grouped from routes, the files they reach, the tables they touch and the tickets that asked for them. That derivation is step 5 and is not built."
-              action={<Link className="btn btn-secondary" to="/features">See what this will hold</Link>} />
+              title="Find your way through the code"
+              detail="Explore feature groups from the saved scan, with source links, related Jira tickets and evidence gaps. No overview build is needed."
+              action={<Link className="btn btn-secondary" to="/features">Open Feature explorer</Link>} />
           </Card>
         </div>
 

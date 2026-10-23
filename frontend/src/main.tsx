@@ -13,6 +13,7 @@ import { TeamDecisions } from './pages/TeamDecisions'
 import { AuthGate } from './components/AuthGate'
 import { Account } from './pages/Account'
 import { LocalSource } from './pages/LocalSource'
+import { Features } from './pages/Features'
 import './tokens.css'
 import './shell.css'
 
@@ -27,14 +28,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="overview" element={<Overview />} />
           <Route path="source" element={<LocalSource />} />
           <Route path="ask" element={<Ask />} />
-          <Route path="features" element={
-            <Pending step="Step 6" title="Feature explorer"
-              lead="Waiting on step 5, the feature derivation in pka/features.py."
-              items={[
-                'Overview, Flow, APIs and data, Tests and Known problems',
-                'A worked journey per feature, derived from routes and imports',
-                'Related components, each linking to the line behind it',
-              ]} />} />
+          <Route path="features" element={<Features />} />
           <Route path="jira" element={<JiraTasks />} />
           <Route path="decisions" element={<TeamDecisions />} />
           <Route path="architecture" element={<Architecture />} />
@@ -48,7 +42,7 @@ createRoot(document.getElementById('root')!).render(
               ]} />} />
           <Route path="settings" element={
             <Pending step="Step 12" title="Settings"
-              lead="Use your username in the top bar for password and session controls. Model and refresh settings remain environment variables."
+              lead="Use your username at the bottom of the sidebar for password and session controls. Model and refresh settings remain environment variables."
               items={[
                 'General, Model, Refresh and Activity, all backed by what is already stored',
                 'Team and access stays empty until the multi-user gate in ROADMAP.md is passed',

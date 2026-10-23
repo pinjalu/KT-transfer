@@ -315,10 +315,11 @@ def derive(index, scan: dict, facts: list) -> dict:
                     handled.add(target)
         # Expand only from what the handlers named. The declaring file joins as a member at
         # hop zero without being followed, because following it is the whole-file reach again.
-        reached = _reach(handled, edges, REACH_DEPTH)
+        reached = {path: hop + 1 for path, hop in
+                   _reach(handled, edges, REACH_DEPTH - 1).items()}
         for path in seed:
-            reached.setdefault(path, 0)
-        member_paths = set(list(reached)[:MAX_FILES_PER_FEATURE])
+            reached[path] = 0
+        member_paths = set(sorted(reached, key=lambda p: (reached[p], p))[:MAX_FILES_PER_FEATURE])
         words = set(WORD.findall(subject))
 
         tables = [{'name': s['text'], 'plain': s['detail'],
@@ -331,6 +332,9 @@ def derive(index, scan: dict, facts: list) -> dict:
                    for s in services if s['path'] in member_paths]
         tests = _tests_for(member_paths, edges)
         attached = _issues_for(member_paths, files, issues, words)
+        for evidence in tests + attached:
+            evidence['url'] = ('' if evidence['path'].startswith('jira/') else
+                               link(evidence['path'], evidence['line']))
 
         # A ticket somebody linked by key names the feature better than a URL segment does.
         named = next((i['summary'] for i in attached if i['confidence'] == 'confirmed' and i['summary']), '')
@@ -365,7 +369,9 @@ def derive(index, scan: dict, facts: list) -> dict:
             '_detail': {
                 'routes': members, 'files': sorted(member_paths), 'reached': reached,
                 'tables': tables, 'services': outside, 'tests': tests,
-                'issues': attached, 'gaps': gaps, 'link': None,
+                'issues': attached, 'gaps': gaps,
+                'components': {p: _component(p, files[p][0][0] if files[p] else 1,
+                    link(p, files[p][0][0] if files[p] else 1)) for p in member_paths},
             },
         })
 
@@ -381,7 +387,8 @@ def derive(index, scan: dict, facts: list) -> dict:
         'commit': scan.get('commit'),
         'features': built,
         'unclustered': {
-            'routes': unrouted,
+            'routes': unrouted + sum(len(group) for _, group in
+                                    sorted(clusters.items(), key=lambda kv: (-len(kv[1]), kv[0]))[MAX_FEATURES:]),
             'files': max(0, len(code) - len(clustered)),
             'note': 'A feature starts at a route. Files no route reaches are not assigned to one, '
                     'and a project that declares no routes produces no features at all.',
@@ -404,10 +411,9 @@ def _component(path: str, line: int, url: str, kind: str = 'file') -> dict:
 def detail(feature: dict) -> dict:
     """One feature in the shape docs/FEATURE_CONTRACT.md describes.
 
-    The flow is the route's own import chain, in the order the imports were followed, so every
-    step is a line somebody wrote. There is no prose here: `overview` comes back empty with its
-    sources, and filling it is a separate call that a model makes and that is support-checked
-    the way overview statements already are.
+    The flow groups route declarations, files by import distance, and data declarations.
+    It is a static map, not an observed execution trace. Generated prose is not implemented;
+    `overview` comes back empty and the UI explains the available evidence instead.
     """
     d = feature['_detail']
     reached = d['reached']
@@ -421,31 +427,25 @@ def detail(feature: dict) -> dict:
                       'plain': 'The address this feature answers on.',
                       'component': _component(at['path'], at['line'], at['url'], 'route'),
                       'confidence': 'confirmed'})
-    # Then the files the route reaches, nearest hop first, which is the order a request takes.
+    # Static import distance is not runtime execution order.
     for path in sorted((p for p in d['files'] if reached.get(p, 0) > 0),
                        key=lambda p: (reached[p], p)):
         n += 1
         steps.append({'n': n, 'label': path.rsplit('/', 1)[-1],
                       'plain': f'Reached by an import, {reached[path]} step'
                                f'{"s" if reached[path] > 1 else ""} from the route.',
-                      'component': _component(path, 0, ''),
+                      'component': d['components'][path],
                       'confidence': 'confirmed'})
     for table in d['tables']:
         n += 1
         at = table['declared_at']
         steps.append({'n': n, 'label': table['name'],
-                      'plain': 'Where this feature keeps information.',
+                      'plain': 'A data declaration in a related file; runtime use is not verified.',
                       'component': _component(at['path'], at['line'], at['url'], 'table'),
                       'confidence': 'confirmed'})
 
-    # Only an outcome that something in the scan actually establishes. The mockup shows three
-    # cards, two of them scenarios; inventing those here would be the fabrication this whole
-    # application is built to avoid, so they are left to a model and labelled illustrative there.
+    # Declarations do not establish successful requests or writes to a store.
     outcomes = []
-    if d['tables']:
-        outcomes.append({'kind': 'success', 'title': 'The request completes',
-                         'plain': 'The route runs and ' + d['tables'][0]['name'] + ' is where the result lands.',
-                         'evidence': 'derived'})
 
     return {
         'id': feature['id'],
@@ -455,14 +455,14 @@ def detail(feature: dict) -> dict:
         'confidence': feature['confidence'],
         'overview': {'purpose': None, 'statements': [], 'sources': [],
                      'note': 'Prose for a feature is written separately and is not built yet.'},
-        'flow': {'title': f'One request through {feature["name"]}.', 'derived': True,
+        'flow': {'title': f'Static code map for {feature["name"]}.', 'derived': True,
                  'steps': steps, 'outcomes': outcomes},
         'apis_and_data': {'routes': d['routes'], 'tables': d['tables'], 'services': d['services']},
         'tests': {'existing': d['tests'], 'suggested': []},
         'known_problems': {'items': [], 'note':
             'Nothing here observes the feature running. No application logs, no monitoring and '
             'no pull request history are connected, so known problems cannot be derived.'},
-        'related': [_component(p, 0, '') for p in d['files']],
+        'related': [d['components'][p] for p in d['files']],
         'issues': d['issues'],
         'gaps': d['gaps'],
     }

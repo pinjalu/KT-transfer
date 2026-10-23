@@ -1,5 +1,33 @@
 # Implementation and verification record
 
+## Feature explorer integration, 23 October 2026
+
+The `/features` placeholder is now a searchable dashboard backed by the existing feature
+APIs. It supports feature deep links, clickable summary counts, five keyboard-accessible
+detail tabs, source citations, related Jira references and expandable evidence gaps. Home
+and the overview link to the explorer. Empty scans, missing selections and failed access
+checks have separate states. Source revision changes discard old details; background reads
+retain the selected detail tab. Browsing never starts a model or overview build.
+
+Related files, imported components and test references now have links pinned to the scanned
+commit or local snapshot. Handler import bindings stay inside their code source when GitHub
+and local modules have identical names. Import distance is measured from the handler and
+capped at two steps; the first imported module is now included in the flow. Table declarations
+no longer produce an unsupported successful-request outcome. The page explicitly distinguishes
+static relationships, possible Jira matches, test imports, missing evidence and runtime results.
+Generated feature prose and runtime-problem detection remain unimplemented; see
+[FEATURE_CONTRACT.md](FEATURE_CONTRACT.md).
+
+All 33 frontend checks and the production build passed. The backend regression selection
+passed 366 checks across core behavior, local sources and source freshness, including the new
+feature citation and source-isolation regressions. The existing Starlette test-client
+deprecation warning remains. Live checks in the signed-in Empricitest browser verified five
+real project groups, search, detail tabs, keyboard navigation, source URLs and gap expansion.
+The existing overview build finished before the server restart. A verified backup was taken;
+saved chunks, search rows, vectors, imports, answers, overviews and scans matched afterward.
+Reconnecting reused the saved project without a rescan. This is verification of the feature
+explorer change, not a whole-product end-to-end sign-off.
+
 ## Additional local folder and connection dropdown, 23 October 2026
 
 Connections now uses one dropdown for GitHub, Local folder, Jira and Slack. Switching forms

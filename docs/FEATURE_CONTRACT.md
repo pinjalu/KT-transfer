@@ -1,14 +1,45 @@
-# The feature payload, agreed before either side is built
+# Feature explorer and payload
 
-Step 5 (`pka/features.py`) and step 6 (the feature explorer screen) are being built at the same
-time. This file is the shape they both build against, so neither has to guess. Change it here
-first and change both sides together.
+The deterministic backend (`pka/features.py`) and the interactive `/features` page are connected.
+The runtime frontend types are in `frontend/src/lib/features.ts`.
+
+## Implemented behavior (23 October 2026)
+
+The page reads `/api/features` and `/api/features/{id}` after project selection. It supports
+search, feature deep links (`?feature=orders`), summary shortcuts, keyboard-accessible tabs,
+source links and expandable evidence gaps. Home and the overview link into the explorer.
+Opening it or switching tabs never calls an overview build or a model. Background access
+revalidation keeps the selected tab; a changed source revision replaces the saved details.
+Failures hide previously displayed protected data and remain distinct from empty results.
+
+Features start at route declarations, grouped by URL subject, and follow handler imports up
+to two steps. At most 24 groups and 20 files per group are displayed; unmatched files/routes
+are reported. This is not an exhaustive inventory of business capabilities. Route names may
+group code from both GitHub and an additional local folder, but import resolution never jumps
+between those sources just because module names match. Links are pinned to the GitHub commit
+or local snapshot. Source-file links open the first indexed line; route/test links open the
+declaration/import line.
+
+The five views are Overview, Code flow, APIs and data, Tests, and Known problems. The code
+flow is a static map, not a runtime trace. Data declarations do not prove reads or writes.
+Test imports do not establish coverage or passing tests. Jira key references are confirmed
+references; name matches are marked possible. Slack discussions are available through Ask
+assistant, not automatically attached to this feature map.
+
+Generated feature prose, scenarios, suggested tests and runtime-problem analysis are **not
+implemented**. The backend returns empty prose/statements, outcomes, suggested tests and
+known-problem items. The UI explicitly explains these limits and displays evidence gaps.
+
+The JSON examples below preserve the original richer design proposal. Fields such as
+`built`, generated `plain` text, scenarios, inputs/outputs and suggested tests are illustrative,
+not promises of current populated output. Refer to the runtime types and tests for the
+implemented read contract.
 
 ## What a feature is in this project
 
 A feature is a cluster of things already known separately: one or more routes, the files reachable
-from those routes through the import graph in `pka/diagram.py`, the tables those files touch
-according to `pka/facts.py`, the external services they call, the Jira issues whose keys appear in
+from those routes through the import graph in `pka/diagram.py`, the data declarations
+and service references found by `pka/facts.py`, the Jira issues whose keys appear in
 those files or whose text names those routes, and the test files that import any of them.
 
 A feature is derived, never model-written. The name comes from the route path and the ticket
@@ -140,5 +171,4 @@ and empty rather than absent, so the screen can say "nothing found" instead of h
    and two of them are scenarios, not facts. Phase 03 requires illustrative scenarios be labelled
    separately, so the screen labels them.
 4. Empty is reported, never hidden. An empty list plus a `note` saying what was checked.
-5. The list endpoint is cheap and never calls a model. Prose arrives on the detail endpoint and
-   may stream in, like the overview already does.
+5. Neither endpoint calls a model. Generated prose is reserved for a later implementation.

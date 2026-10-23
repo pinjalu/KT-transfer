@@ -206,6 +206,13 @@ def import_bindings(path: str, lines, table: dict) -> list[tuple[str, str, int]]
     `from a.b import c` is tried as the submodule `a/b/c` first and falls back to `a/b`, because
     both are written identically and only the scan can say which one exists.
     """
+    if path.startswith('local://'):
+        parts = path.split('/', 3)
+        prefix, relative = '/'.join(parts[:3]) + '/', parts[3]
+        local_paths = [p[len(prefix):] for p in set(table.values()) if p.startswith(prefix)]
+        return [(name, prefix + target, line) for name, target, line in
+                import_bindings(relative, lines, _lookup(local_paths))]
+    table = {key: value for key, value in table.items() if not value.startswith('local://')}
     if not path.endswith(CODE_SUFFIXES):
         return []
     python = path.endswith('.py')
