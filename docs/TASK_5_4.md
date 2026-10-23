@@ -1,7 +1,7 @@
 # Task 5.4 — Refresh saved information and cached answers
 
 The refresh flow is explicit: refresh repository code in Connections, read the selected Jira
-project and Slack channels there, then build the Project overview. Refresh overview regenerates
+project and Slack channels there, then build the Project overview. Rebuild overview regenerates
 the overview from saved information; it does not fetch remote changes. Questions always run
 against the current saved snapshot.
 

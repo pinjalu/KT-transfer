@@ -102,7 +102,7 @@ export function Overview() {
     setBlocked(false)
     try {
       await post('/api/overview')
-      setNote('Building. Sections appear as each one finishes.')
+      setNote('Overview build requested. Sections appear as each one finishes.')
       status.reload()
     } catch (exc) {
       const why = exc instanceof ApiError ? exc.message : 'Could not start the build.'
@@ -115,7 +115,16 @@ export function Overview() {
     return <><PageHead title="Project overview" /><NoProject what="the overview" /></>
   }
   if (status.error) return <Failed message={status.error} onRetry={status.reload} />
-  if (reply.loading) return <Loading what="the overview" />
+  if (reply.loading) return <>
+    <PageHead title="Project overview" />
+    <Loading what="the overview"
+      message={status.loading ? 'Checking overview status…'
+        : status.data?.overview_building ? 'Loading build progress…' : 'Loading saved overview…'}
+      detail={status.loading ? 'Getting the current project and build status.'
+        : status.data?.overview_building
+        ? 'Your existing build is continuing. Checking source access before showing completed sections.'
+        : 'Checking access to your connected sources. A page refresh loads saved content.'} />
+  </>
   if (reply.error) return <Failed message={reply.error} onRetry={reply.reload} />
 
   const body: Body | null = reply.data?.overview ?? null
@@ -143,14 +152,14 @@ export function Overview() {
             {/* Disabled while anything else is reading, because the request would be
                 refused anyway and a refusal is a worse answer than a button that waits. */}
             <Button icon="refresh" onClick={build} disabled={building || busy}>
-              {building ? 'Building…' : busy ? doing : body ? 'Refresh overview' : 'Build overview'}
+              {building ? 'Building…' : busy ? doing : body ? 'Rebuild overview' : 'Build overview'}
             </Button>
             <Segmented items={[...MODES]} active={mode} onPick={(m) => setMode(m as Mode)} />
           </>
         } />
 
       {note && <p className="ov-note">{note}</p>}
-      <p className="ov-note">Refresh overview rebuilds it from saved information. To get source changes,
+      <p className="ov-note">Rebuild overview generates it again from saved information. To get source changes,
         use <Link to="/connections">Connections</Link> first. Source refreshes clear previous answers and the overview.</p>
 
       {/* A scan running elsewhere is why every button here is disabled, so this screen says

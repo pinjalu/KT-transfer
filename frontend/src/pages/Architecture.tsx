@@ -144,7 +144,15 @@ export function Architecture() {
     return <><PageHead title="Architecture" /><NoProject what="the system map" /></>
   }
   if (status.error) return <Failed message={status.error} onRetry={status.reload} />
-  if (reply.loading) return <Loading what="the architecture" />
+  if (reply.loading) return <>
+    <PageHead title="Architecture" />
+    <Loading what="the architecture"
+      message={status.loading ? 'Checking architecture status…' : 'Loading saved architecture…'}
+      detail={status.loading ? 'Getting the current project and build status.'
+        : status.data?.overview_building
+        ? 'Your overview build is continuing. Checking source access before showing the saved diagrams.'
+        : 'Checking access to your connected sources before showing the saved diagrams.'} />
+  </>
   if (reply.error) return <Failed message={reply.error} onRetry={reply.reload} />
 
   const body = reply.data?.overview ?? null

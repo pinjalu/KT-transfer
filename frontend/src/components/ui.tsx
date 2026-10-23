@@ -127,8 +127,14 @@ export function NoProject({ what }: { what: string }) {
   )
 }
 
-export function Loading({ what }: { what: string }) {
-  return <div className="loading"><span className="spinner" aria-hidden="true" />Reading {what}…</div>
+export function Loading({ what, message, detail }: { what: string; message?: string; detail?: string }) {
+  return <div className="loading" role="status">
+    <span className="spinner" aria-hidden="true" />
+    <div>
+      <p>{message ?? `Reading ${what}…`}</p>
+      {detail && <p className="loading-detail">{detail}</p>}
+    </div>
+  </div>
 }
 
 export function Failed({ message, onRetry }: { message: string; onRetry?: () => void }) {

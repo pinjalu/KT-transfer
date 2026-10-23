@@ -16,6 +16,13 @@ Navigation still checks current source access; it never starts an overview build
 Feature read failures now show their actual error instead of claiming that no features exist.
 Cards and page controls adapt to the narrower viewport created by a browser side panel.
 
+The loading screen now distinguishes checking project status, loading the saved overview and
+loading progress for an existing build. It explains the source-access check instead of saying
+"Reading the overview". The generation action is labelled "Rebuild overview", and the start
+notice uses "build requested" so it does not keep claiming a build is running after completion.
+Architecture uses the same distinction for its saved diagrams. All 13 frontend checks and the
+production build passed again; the running app serves the bundle containing these messages.
+
 The 13 frontend regression checks, 106 authentication/workspace/source-freshness regression
 tests and production build passed. The Python run emitted the existing Starlette test-client
 deprecation warning. The running app was verified to serve the final compiled bundle.

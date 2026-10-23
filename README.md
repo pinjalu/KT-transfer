@@ -386,7 +386,7 @@ See [task 5.3](docs/TASK_5_3.md) for the behavior, tests and limitations.
 In **Connections**, use **Refresh repository** for code, **Read issues** for the selected Jira
 project, and **Read messages** for the saved Slack channels. A repository refresh clears the
 external imports, so read Jira and Slack again afterward. Each source refresh clears previous
-answers and the overview; then choose **Build overview** in Project overview. **Refresh overview**
+answers and the overview; then choose **Build overview** in Project overview. **Rebuild overview**
 only regenerates from saved information and does not fetch source changes. The refresh version
 survives app restarts, and open pages discard old content when their status poll detects it.
 See [task 5.4](docs/TASK_5_4.md) for failure behavior, verification and limits.

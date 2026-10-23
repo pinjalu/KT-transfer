@@ -159,6 +159,7 @@
 .empty-action { margin-top: var(--s4); display: flex; justify-content: center; }
 
 .loading { display: flex; align-items: center; gap: var(--s3); padding: var(--s6); color: var(--ink-dim); }
+.loading-detail { margin-top: var(--s1); font-size: 13px; }
 .spinner {
   width: 15px; height: 15px; border-radius: 50%; flex: none;
   border: 2px solid var(--border-strong); border-top-color: var(--accent);
