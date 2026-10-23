@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, Chip, Dot, Failed, Loading, Missing, PageHead, Tabs } from '../components/ui'
+import { Button, Card, Chip, Failed, Loading, PageHead, Tabs } from '../components/ui'
+import { useAccount } from '../components/AuthGate'
 import { Icon } from '../components/Icon'
 import { JiraPanel } from '../components/JiraPanel'
 import { SlackPanel } from '../components/SlackPanel'
@@ -8,235 +9,136 @@ import { ImportCoverage } from '../components/ImportCoverage'
 import type { CoverageReply } from '../components/ImportCoverage'
 import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
-import type { Platforms, Status } from '../lib/types'
+import type { Status } from '../lib/types'
 import './connections.css'
 
-function pct(scan: { processed?: number; total?: number } | null) {
-  if (!scan?.total) return 0
-  return Math.min(100, Math.round(((scan.processed ?? 0) / scan.total) * 100))
-}
+type Connection = 'github' | 'local' | 'jira' | 'slack'
+const names = { github:'GitHub', local:'Local folder', jira:'Jira', slack:'Slack' }
 
 export function Connections() {
+  const account = useAccount()
+  const canReadLocal = account?.user.role === 'owner'
   const [tab, setTab] = useState('Connections')
+  const [connection, setConnection] = useState<Connection>('github')
   const status = useApi<Status>('/api/status', 2000)
   const coverage = useApi<CoverageReply>('/api/import-coverage', 2000, status.data?.knowledge_revision)
-  const platforms = useApi<Platforms>('/api/platforms')
-
   const settings = status.data?.settings
   const [repo, setRepo] = useState('')
-  const [branch, setBranch] = useState('')
+  const [branch, setBranch] = useState('main')
+  const [localPath, setLocalPath] = useState('')
+  const [seeded, setSeeded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
-
-  // Seed the fields from the selection confirmed in this run, once, so typing is not
-  // overwritten by the poll. Before a project is picked `settings` is null and the fields stay
-  // empty: the project from a previous run is offered just below, as something to click rather
-  // than something already filled in.
   useEffect(() => {
-    if (!settings) return
-    setRepo((v) => v || settings.repo)
-    setBranch((v) => v || settings.branch)
-  }, [settings])
-
-  const stored = status.data?.stored_project ?? null
+    if (!settings || seeded) return
+    setRepo(settings.repo.startsWith('local:') ? '' : settings.repo)
+    setBranch(settings.repo.startsWith('local:') ? 'main' : settings.branch)
+    setLocalPath(settings.local?.path ?? settings.local_path ?? '')
+    setSeeded(true)
+  }, [settings, seeded])
+  const stored = status.data?.stored_project
   const awaiting = status.data?.awaiting_project ?? false
-
-  const scan = status.data?.scan ?? null
   const busy = status.data?.busy ?? false
-  const running = scan?.status === 'running'
-
-  const act = async (what: () => Promise<unknown>, ok: string) => {
+  const scan = status.data?.scan
+  const primaryLocal = settings?.repo.startsWith('local:') ?? false
+  const primaryForm = connection === (primaryLocal ? 'local' : 'github')
+  const refresh = async () => {
     setNote('')
     try {
-      await what()
-      setNote(ok)
-      status.reload()
-      platforms.reload()
-    } catch (exc) {
-      setNote(exc instanceof ApiError ? exc.message : 'Something went wrong.')
-    }
+      await post(connection === 'local' && !primaryLocal ? '/api/local/read' : '/api/scan')
+      setNote(connection === 'local' ? 'Local folder read requested.' : 'Repository scan requested.')
+    } catch (exc) { setNote(exc instanceof ApiError ? exc.message : 'The read could not start.') }
+    status.reload()
   }
-
-  /**
-   * Save the selection and then actually read the files, which is what the button says.
-   *
-   * It only saved. The page then sat on "Not read yet" however many times it was pressed, and
-   * because Jira and Slack store their content against a scan, their read buttons stayed locked
-   * with no way to unlock them from this screen.
-   */
   const save = async () => {
-    setSaving(true)
-    setNote('')
+    setSaving(true); setNote('')
     try {
-      const saved = (await post('/api/config',
-        { repo, branch, platforms: settings?.platforms ?? ['github'] })) as { reconnected?: boolean }
-      // Reading again is the point when the repository is new, and pure waste when it is the
-      // one already stored: the snapshot survived the restart, so reconnecting to it costs
-      // nothing and re-reading it would cost minutes before a single question could be asked.
-      if (saved.reconnected) {
-        setNote('Reconnected to what was already read for this repository. Nothing was read again.')
+      const saved = await post('/api/config', {
+        source_kind:connection, repo:connection === 'github' ? repo : '',
+        branch:connection === 'github' ? branch : 'working-tree',
+        local_path:connection === 'local' ? localPath : '',
+        platforms:settings?.platforms ?? [connection],
+      }) as { reconnected?: boolean; additional_local?: boolean }
+      if (saved.additional_local) {
+        await post('/api/local/read')
+        setNote('Reading the local folder. Your GitHub, Jira and Slack connections are kept.')
+      } else if (saved.reconnected) {
+        setNote('Reconnected to the saved project. Nothing was read again.')
       } else {
         await post('/api/scan')
-        setNote('Repository saved. Reading the files now.')
+        setNote('Project saved. Reading the files now.')
       }
-    } catch (exc) {
-      setNote(exc instanceof ApiError ? exc.message : 'Something went wrong.')
-    } finally {
-      setSaving(false)
-      status.reload()
-      platforms.reload()
-    }
+    } catch (exc) { setNote(exc instanceof ApiError ? exc.message : 'The connection could not be saved.') }
+    finally { setSaving(false); status.reload(); coverage.reload() }
   }
-
   if (status.loading) return <Loading what="connections" />
   if (status.error) return <Failed message={status.error} onRetry={status.reload} />
-
-  return (
-    <>
-      <PageHead
-        title="Connections"
-        lead="Choose the project information your assistant can read."
-        actions={
-          <Button kind="primary" icon="refresh" disabled={busy}
-                  onClick={() => act(() => post('/api/scan'), 'Scan started.')}>
-            {running ? 'Reading…' : 'Refresh repository'}
-          </Button>
-        } />
-
-      <div className="conn-badge-row">
-        <Chip tone="info"><Icon name="lock" size={14} /> Read-only access</Chip>
-        {status.data?.demo && <Chip tone="violet">Example mode, fixture data</Chip>}
-        {!status.data?.token_configured && !status.data?.demo && (
-          <Chip tone="warn">No GitHub token saved. Add one in Account settings.</Chip>
-        )}
-      </div>
-
-      <Tabs items={['Connections', 'Import history']} active={tab} onPick={setTab} />
-
-      {note && <p className="conn-note">{note}</p>}
-      {coverage.error && <Failed message={coverage.error} onRetry={coverage.reload} />}
-      <p className="conn-note">Refresh repository reads the code again and clears saved Jira and Slack content.
-        Then use Read issues and Read messages below to refresh those sources, and build the Project overview again.</p>
-
-      {tab === 'Connections' && (
-        <div className="stack conn-stack">
-          <Card>
-            <div className="conn-row">
-              <div className="conn-id">
-                <span className="conn-logo" aria-hidden="true"><Icon name="doc" size={20} /></span>
-                <div>
-                  <div className="conn-name">
-                    GitHub
-                    <Chip tone={status.data?.token_configured || status.data?.demo ? 'ok' : 'quiet'}>
-                      <Dot tone={status.data?.token_configured || status.data?.demo ? 'ok' : 'quiet'} />
-                      {status.data?.demo ? 'Example' : status.data?.token_configured ? 'Credential saved' : 'No credential'}
-                    </Chip>
-                  </div>
-                  <p className="conn-plain">Source code repository.</p>
-                </div>
-              </div>
-
-              {/* The previous run's project, offered rather than assumed. Everything read for
-                  it is still stored, so this fills the fields and nothing is read again. */}
-              {awaiting && stored && (
-                <div className="conn-resume">
-                  <span className="conn-resume-text">
-                    Last time this read <span className="mono">{stored.repo}</span> on{' '}
-                    <span className="mono">{stored.branch}</span>. What it read is still stored.
-                  </span>
-                  <Button kind="secondary"
-                          onClick={() => { setRepo(stored.repo); setBranch(stored.branch) }}>
-                    Use it again
-                  </Button>
-                </div>
-              )}
-
-              <div className="conn-fields">
-                <label className="field">
-                  <span className="field-label">Repository</span>
-                  <input value={repo} onChange={(e) => setRepo(e.target.value)}
-                         placeholder="owner/repository or URL" maxLength={400}
-                         disabled={status.data?.demo} />
-                </label>
-                <label className="field">
-                  <span className="field-label">Branch</span>
-                  <input value={branch} onChange={(e) => setBranch(e.target.value)}
-                         placeholder="main" maxLength={200} disabled={status.data?.demo} />
-                </label>
-              </div>
-
-              <div className="conn-act">
-                <Button kind="secondary" onClick={save}
-                        disabled={saving || busy || !repo || !branch || status.data?.demo}>
-                  Save and read files
-                </Button>
-                <p className="conn-last">
-                  {scan?.finished ? `Last read: ${new Date(scan.finished).toLocaleString()}` : 'Not read yet'}
-                </p>
-              </div>
-            </div>
-
-            {running && (
-              <div className="conn-progress">
-                <div className="bar"><div className="bar-fill" style={{ width: `${pct(scan)}%` }} /></div>
-                <span className="bar-pct">{pct(scan)}%</span>
-                <span className="bar-phase">{scan?.phase}</span>
-              </div>
-            )}
-
-            {scan && !running && (
-              <div className="conn-counts">
-                <span><b>{scan.read}</b> read</span>
-                <span><b>{scan.skipped}</b> skipped</span>
-                <span><b>{scan.failed}</b> failed</span>
-                {scan.commit && <span className="mono">commit {scan.commit.slice(0, 7)}</span>}
-                <Chip tone={scan.status === 'complete' ? 'ok' : scan.status === 'failed' ? 'bad' : 'warn'}>
-                  {scan.status}
-                </Chip>
-              </div>
-            )}
-
-            {scan?.tree_incomplete && (
-              <div className="conn-warn">
-                <Missing
-                  what="Not every file in the repository was read."
-                  checked="The file tree came back truncated, or the size limits stopped the read." />
-              </div>
-            )}
-            {scan?.error && <div className="conn-warn"><Failed message={scan.error} /></div>}
-            <ImportCoverage coverage={coverage.data?.sources.github} />
-          </Card>
-
-          <JiraPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.jira} />
-          <SlackPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.slack} />
-
-          <Card title="More sources"
-                sub="Connect additional project information. All read-only.">
-            <div className="more-grid">
-              {[
-                ['Documentation', 'Product docs, internal wikis, APIs.', 'Step 13'],
-                ['Database schema', 'Table and column structure, never row contents.', 'Step 13'],
-                ['Logs and monitoring', 'Application logs and error tracking.', 'Step 13'],
-                ['Pull requests', 'Reviews and change history.', 'Step 13'],
-              ].map(([title, plain, step]) => (
-                <div className="more-card" key={title}>
-                  <span className="more-icon" aria-hidden="true"><Icon name="database" size={18} /></span>
-                  <div>
-                    <p className="more-title">{title}</p>
-                    <p className="more-plain">{plain}</p>
-                  </div>
-                  <Chip tone="quiet">{step}</Chip>
-                </div>
-              ))}
-            </div>
-          </Card>
+  const choices: Connection[] = canReadLocal && !status.data?.demo ? ['github','local','jira','slack'] : ['github','jira','slack']
+  return <>
+    <PageHead title="Connections" lead="Connect the code and conversations that explain your project." />
+    <div className="conn-badge-row"><Chip tone="info"><Icon name="lock" size={14} /> Read-only access</Chip>
+      {status.data?.demo && <Chip tone="violet">Example mode, fixture data</Chip>}</div>
+    <Tabs items={['Connections','Import history']} active={tab} onPick={setTab} />
+    {tab === 'Connections' ? <div className="stack conn-stack">
+      <Card>
+        <div className="conn-picker">
+          <div><h2>Your project sources</h2><p>Add each connection to the same project. Answers can use relevant evidence from all saved sources.</p></div>
+          <label className="field"><span className="field-label">Connection</span>
+            <select value={connection} onChange={e => { setConnection(e.target.value as Connection); setNote('') }}>
+              {choices.map(key => <option key={key} value={key}>{names[key]}</option>)}
+            </select></label>
         </div>
-      )}
-
-      {tab === 'Import history' && (
-        <div className="conn-stack"><ImportHistory /></div>
-      )}
-
-    </>
-  )
+        <div className="conn-saved" aria-label="Saved source status">{choices.map(key => {
+          const read = coverage.data?.sources[key]?.available
+          const selected = key === 'github' ? settings && !primaryLocal
+            : key === 'local' ? primaryLocal || settings?.local?.path
+            : key === 'jira' ? settings?.jira?.project : settings?.slack?.channels?.length
+          return <span key={key}><Chip tone={read ? 'ok' : 'quiet'}>{names[key]} · {read ? 'Read' : selected ? 'Not read yet' : 'Not connected'}</Chip></span>
+        })}</div>
+        <p className="conn-picker-help">Switching this dropdown only changes the form below. It does not disconnect other sources.</p>
+      </Card>
+      {note && <p className="conn-note" role="status">{note}</p>}
+      {coverage.error && <Failed message={coverage.error} onRetry={coverage.reload} />}
+      {(connection === 'github' || connection === 'local') && <Card>
+        <div className="conn-row">
+          <div className="conn-id"><span className="conn-logo"><Icon name="doc" size={20} /></span><div>
+            <div className="conn-name">{names[connection]} <Chip tone="info">{connection === 'local' ? 'Read-only · Owner' : 'Read-only'}</Chip></div>
+            <p className="conn-plain">{connection === 'local' ? 'Add files from this computer.' : 'Connect a repository and branch.'}</p>
+          </div></div>
+          {awaiting && stored && <div className="conn-resume">
+            <span className="conn-resume-text">Saved project: <span className="mono">{stored.repo}</span>. Its imported content is still stored.</span>
+            <Button kind="secondary" onClick={() => {
+              const local = stored.source_kind === 'local'
+              setConnection(local ? 'local' : 'github'); setRepo(local ? '' : stored.repo)
+              setBranch(local ? 'main' : stored.branch); setLocalPath(stored.local_path ?? '')
+            }}>Use it again</Button>
+          </div>}
+          <div className={'conn-fields ' + (connection === 'local' ? 'conn-local-fields' : '')}>
+            {connection === 'local' ? <label className="field">
+              <span className="field-label">Local folder path or file link</span>
+              <input value={localPath} onChange={e => setLocalPath(e.target.value)} maxLength={1000} placeholder="D:\Projects\my-app or file:///D:/Projects/my-app" />
+              <span className="conn-plain">Includes current uncommitted files. No GitHub token needed.</span>
+            </label> : <>
+              <label className="field"><span className="field-label">Repository</span><input value={repo} onChange={e => setRepo(e.target.value)} placeholder="owner/repository or URL" maxLength={400} disabled={status.data?.demo} /></label>
+              <label className="field"><span className="field-label">Branch</span><input value={branch} onChange={e => setBranch(e.target.value)} placeholder="main" maxLength={200} disabled={status.data?.demo} /></label>
+            </>}
+          </div>
+          <div className="conn-act">
+            <Button kind="primary" onClick={save} disabled={saving || busy || status.data?.demo || (connection === 'local' ? !localPath || !canReadLocal : !repo || !branch)}>{saving ? 'Saving…' : 'Save and read files'}</Button>
+            <Button kind="secondary" icon="refresh" onClick={() => void refresh()} disabled={busy || awaiting || !settings || (connection === 'local' && !primaryLocal && !settings.local?.path)}>{connection === 'local' ? 'Read local folder again' : 'Refresh repository'}</Button>
+          </div>
+        </div>
+        {connection === 'local' ? <p className="conn-local-note">Choose a folder on the computer running KT Assistant. A Git clone is optional.
+          Local files are added beside your GitHub code, Jira issues and Slack messages. Read this folder again after editing files.
+          Built-in rules exclude secret filenames, dependencies, generated files and linked folders; custom .gitignore rules are not applied.</p>
+          : <><p className="conn-local-note">Refreshing the repository replaces the project scan. Read the local folder, Jira issues and Slack messages again afterward, then rebuild the overview.</p>
+            {!status.data?.token_configured && !status.data?.demo && <p className="conn-local-note">No GitHub token saved. Add one in Account settings for a private repository.</p>}</>}
+        {primaryForm && scan && <div className="conn-counts"><span><b>{scan.read}</b> read</span><span><b>{scan.skipped}</b> skipped</span><span><b>{scan.failed}</b> failed</span><Chip tone={scan.status === 'complete' ? 'ok' : 'quiet'}>{scan.status}</Chip></div>}
+        {primaryForm && scan?.error && <Failed message={scan.error} />}
+        <ImportCoverage coverage={coverage.data?.sources[connection]} />
+      </Card>}
+      <div hidden={connection !== 'jira'}><JiraPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.jira} /></div>
+      <div hidden={connection !== 'slack'}><SlackPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.slack} /></div>
+    </div> : <div className="conn-stack"><ImportHistory /></div>}
+  </>
 }

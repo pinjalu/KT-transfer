@@ -12,6 +12,7 @@ import { JiraTasks } from './pages/JiraTasks'
 import { TeamDecisions } from './pages/TeamDecisions'
 import { AuthGate } from './components/AuthGate'
 import { Account } from './pages/Account'
+import { LocalSource } from './pages/LocalSource'
 import './tokens.css'
 import './shell.css'
 
@@ -24,6 +25,7 @@ createRoot(document.getElementById('root')!).render(
           <Route index element={<Home />} />
           <Route path="connections" element={<Connections />} />
           <Route path="overview" element={<Overview />} />
+          <Route path="source" element={<LocalSource />} />
           <Route path="ask" element={<Ask />} />
           <Route path="features" element={
             <Pending step="Step 6" title="Feature explorer"

@@ -1,6 +1,6 @@
 /** Shapes returned by pka/web.py. Kept here so a screen never guesses at a field name. */
 
-export type Settings = { repo: string; branch: string; platforms: string[] } | null
+export type Settings = { repo: string; branch: string; platforms: string[]; source_kind?: 'github' | 'local'; local_path?: string; local?: { path: string }; jira?: { project?: string }; slack?: { channels?: unknown[] } } | null
 
 export type Scan = {
   id?: number
@@ -48,14 +48,14 @@ export type Status = {
   awaiting_project?: boolean
   /** The project the last run used, offered on Connections as a shortcut rather than
    *  adopted silently. Null when nothing has ever been saved. */
-  stored_project?: { repo: string; branch: string } | null
+  stored_project?: { repo: string; branch: string; source_kind?: 'github' | 'local'; local_path?: string } | null
 }
 
 export type Progress = { phase?: string; read?: number; total?: number; done?: number } | null
 
 export type BackgroundJob = {
   id: number
-  kind: 'scan' | 'overview' | 'jira' | 'slack' | 'jira_task' | 'decisions'
+  kind: 'scan' | 'overview' | 'jira' | 'slack' | 'local' | 'jira_task' | 'decisions'
   target?: string
   state: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | 'interrupted'
   attempt: number

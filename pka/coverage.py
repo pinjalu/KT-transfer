@@ -96,9 +96,21 @@ def describe(service):
     available = index.active_scan() is not None
     sources = {'github':repository(service.progress or index.latest(), available),
                **{name:external(index, name, available) for name in ('jira','slack')}}
+    if (index.settings() or {}).get('local'):
+        saved = index.source_import('local')
+        report = (saved or {}).get('report') or {}
+        detail = {'status':report.get('state', 'not_read'), 'finished':report.get('read_at'),
+                  'processed':report.get('total', 0), **report}
+        sources['local'] = repository(detail, bool(saved) and available)
+        sources['local']['source'] = 'local'
+        sources['local']['notes'].append('Local files supplement the GitHub repository. GitHub, Jira and Slack imports are kept when this folder is read again.')
     job = service.job_status()
-    if job and job['kind'] in {'scan','jira','slack'} and service.job['scope'] == service.job_scope(job['kind']):
+    if job and job['kind'] in {'scan','jira','slack','local'} and service.job['scope'] == service.job_scope(job['kind']):
         name = 'github' if job['kind'] == 'scan' else job['kind']
         if job['state'] in {'queued','running','cancelling','failed','cancelled','interrupted'}:
             sources[name]['attempt'] = {k:job.get(k) for k in ('state','started_at','finished_at','error')}
+    if (index.settings() or {}).get('repo', '').startswith('local:'):
+        sources['local'] = sources.pop('github')
+        sources['local']['source'] = 'local'
+        sources['local']['notes'].append('Reads the current working folder, including uncommitted and untracked files. Uses built-in exclusions; custom .gitignore patterns are not applied. Symlinks, junctions and private tool directories are not followed.')
     return {'sources':sources}

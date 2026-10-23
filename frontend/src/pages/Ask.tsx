@@ -6,7 +6,7 @@ import { ApiError, post } from '../lib/api'
 import type { Status } from '../lib/types'
 import { Said, Statements } from '../components/Statements'
 import type { Answer, Turn } from '../lib/answer'
-import { originOf } from '../lib/answer'
+import { originOf, sourcePath } from '../lib/answer'
 import './ask.css'
 
 const MODES = ['Beginner', 'Developer', 'Architect'] as const
@@ -30,8 +30,8 @@ function Sources({ answer, mode }: { answer: Answer; mode: Mode }) {
         <li className="src" id={`src-${s.source_id}`} key={s.source_id}>
           <div className="src-head">
             <span className="src-n">[{i + 1}]</span>
-            <span className="src-path mono">{s.path}</span>
-            <Chip tone="quiet">{originOf(s.path)}</Chip>
+            <span className="src-path mono">{sourcePath(s.path)}</span>
+            <Chip tone="quiet">{originOf(s.path, s.url)}</Chip>
           </div>
           <p className="src-lines">Lines {s.start} to {s.end}</p>
           {SHOWS[mode].excerpts && <pre className="src-text">{s.text}</pre>}
@@ -256,7 +256,7 @@ export function Ask() {
             {latest && (
               <Card>
                 <p className="src-foot">
-                  Checked against the repository at commit{' '}
+                  Checked against the repository at {latest.repo?.startsWith('local:') ? 'snapshot' : 'commit'}{' '}
                   <span className="mono">{latest.commit?.slice(0, 7)}</span>{' '}
                   at {new Date(latest.access_checked_at).toLocaleTimeString()}.
                 </p>

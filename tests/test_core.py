@@ -561,7 +561,7 @@ def test_selecting_a_platform_never_grants_access(monkeypatch):
     # What a tick cannot do is put a credential or a scope in place, which is what reading needs.
     assert any(n.startswith('jira') for n in TOOL_NAMES)
     assert any(n.startswith('slack') for n in TOOL_NAMES)
-    assert all(n.startswith(('github_','jira_','slack_')) for n in TOOL_NAMES)
+    assert all(n.startswith(('github_','local_','jira_','slack_')) for n in TOOL_NAMES)
 
 def test_unknown_platform_is_refused():
     from pka.connectors import registry
@@ -1326,7 +1326,7 @@ def test_a_source_says_it_needs_an_index_only_after_its_own_setup(tmp_path, monk
     assert 'project' in rows_for(client)['jira']['pending'], 'its own setup comes first'
     from pka.index import Index
     Index(tmp_path/'wiz.sqlite3').configure_source('jira',{'project':'ENG'})
-    assert 'scan a repository' in rows_for(client)['jira']['pending'], 'then the missing index'
+    assert 'repository or local folder' in rows_for(client)['jira']['pending'], 'then the missing index'
 
 
 def test_short_match_is_widened_with_its_neighbours(index):

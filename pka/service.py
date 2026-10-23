@@ -7,8 +7,9 @@ import time
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 import httpx
 from pka import applog, credentials
-from pka.config import KEEP_LOGS, LIMITS, log_dir, now
+from pka.config import KEEP_LOGS, LIMITS, log_dir, now, source_url
 from pka.connectors.base import SourceError
+from pka.connectors.local import is_local
 from pka.index import chunk_file, small_talk
 from pka.connectors.slack import transcript, snapshot as slack_snapshot
 from pka import embed, jira_tasks, jira_links, decisions
@@ -264,6 +265,7 @@ class Service:
         self.overview_progress = None
         self.slack_progress = None
         self.jira_progress = None
+        self.local_progress = None
         self.jira_task_progress = None
         self.jira_generator = jira_tasks.generate
         self.decision_progress = None
@@ -283,7 +285,7 @@ class Service:
     def job_scope(self, kind):
         cfg = self.index.settings() or {}
         scope = {key:cfg.get(key, '') for key in ('repo', 'branch')}
-        for name in ('jira', 'slack'):
+        for name in ('jira', 'slack', 'local'):
             if kind in {name, 'overview'} or kind == 'jira_task' and name == 'jira' or kind == 'decisions' and name == 'slack':
                 scope[name] = self.index.source_scope(name, cfg.get(name) or {})
         if kind in {'jira_task', 'decisions'}:
@@ -291,7 +293,7 @@ class Service:
         return scope
 
     def validate_job(self, kind, target=''):
-        if kind not in {'scan', 'overview', 'jira', 'slack', 'jira_task', 'decisions'}:
+        if kind not in {'scan', 'overview', 'jira', 'slack', 'local', 'jira_task', 'decisions'}:
             raise SourceError('job', 'Unknown background job.')
         cfg = self.index.settings() or {}
         if not cfg.get('repo'):
@@ -300,6 +302,8 @@ class Service:
             raise SourceError('scan', 'Run a successful repository scan first.')
         if kind == 'jira' and not (cfg.get('jira') or {}).get('project'):
             raise SourceError('scope', 'Choose a Jira project first.')
+        if kind == 'local' and not (cfg.get('local') or {}).get('repo'):
+            raise SourceError('scope', 'Choose a local folder first.')
         if kind == 'slack' and not (cfg.get('slack') or {}).get('channels'):
             raise SourceError('scope', 'Choose Slack channels first.')
         if kind == 'jira_task':
@@ -316,7 +320,7 @@ class Service:
         result = {k:v for k,v in self.job.items() if k != 'scope'}
         active = result['state'] in {'queued', 'running', 'cancelling'}
         progress = {'scan':self.progress, 'overview':self.overview_progress,
-                    'jira':self.jira_progress, 'slack':self.slack_progress,
+                    'jira':self.jira_progress, 'slack':self.slack_progress, 'local':self.local_progress,
                     'jira_task':self.jira_task_progress, 'decisions':self.decision_progress}.get(result['kind'])
         result['progress'] = ({k:progress.get(k) for k in ('phase', 'done', 'total', 'processed', 'embed_done', 'embed_total')}
                               if active and progress else None)
@@ -379,6 +383,8 @@ class Service:
             raise SourceError('stale', 'The source selection changed before this job started.')
         if kind == 'scan':
             return self.scan()
+        if kind == 'local':
+            return self.read_local()
         if kind == 'overview':
             return self.build_overview()
         if kind == 'jira_task':
@@ -413,22 +419,40 @@ class Service:
         credentials.refresh()
         cfg = self.index.settings() or {}
         paths = self.index.indexed_paths(scan['id'])
+        # Local code participates in every permission-checked view, including code-only ones.
+        saved_local = self.index.source_import('local')
+        if saved_local:
+            local_cfg = cfg.get('local') or {}
+            try:
+                if saved_local.get('scope') != self.index.source_scope('local', local_cfg):
+                    raise SourceError('stale', 'The local folder selection changed. Read the folder again.')
+                async with self.connector_factory({**cfg, 'repo':local_cfg.get('repo', ''), 'branch':'working-tree'}, False) as source:
+                    access = await source.check_access(saved_local['snapshot'])
+                if access.get('head') != saved_local['snapshot']:
+                    raise SourceError('stale', 'Local files changed. Read the local folder again.')
+            except SourceError as exc:
+                if exc.code in {'stale', 'access_denied', 'scope'}:
+                    self.index.discard_source('local')
+                    self.access_warning = str(exc)
+                raise
         identities = {}
         for name in names:
             if name == 'github':
-                identities[name] = credentials.source_fingerprint(name)
+                if not is_local(cfg.get('repo')):
+                    identities[name] = credentials.source_fingerprint(name)
                 try:
                     async with self.connector_factory(cfg, self.demo) as source:
                         access = await source.check_access(scan['commit'])
                     if access.get('head') != scan['commit']:
                         self.index.invalidate()
-                        raise SourceError('stale', 'The branch changed. Refresh the repository scan.')
+                        raise SourceError('stale', 'Local files changed. Refresh the folder scan.' if is_local(cfg.get('repo'))
+                                          else 'The branch changed. Refresh the repository scan.')
                 except SourceError as exc:
                     if exc.code == 'access_denied':
                         self.index.invalidate()
                     raise
                 except Exception:
-                    raise SourceError('access_unverified', 'GitHub access could not be verified. No saved content was returned.') from None
+                    raise SourceError('access_unverified', 'Repository access could not be verified. No saved content was returned.') from None
                 continue
             selected = [p for p in paths if p.startswith(name+'/')]
             if not selected:
@@ -547,6 +571,64 @@ class Service:
             self.slack_progress = self.jira_progress = self.overview_progress = None
             self.jira_task_progress = None
             self.decision_progress = None
+            self.local_progress = None
+
+    async def read_local(self):
+        """Add a bounded local snapshot without replacing GitHub, Jira or Slack imports."""
+        async with self.lock:
+            self.begin_work()
+            scan = self.index.active_scan()
+            cfg = self.index.settings() or {}
+            local_cfg = cfg.get('local') or {}
+            if not scan or not local_cfg.get('repo'):
+                raise SourceError('scope', 'Select a project and a local folder before reading.')
+            revision = self.index.revision
+            report = {'read_at':now(), 'read':0, 'skipped':0, 'failed':0, 'files':[]}
+            blocks = []
+            try:
+                async with self.connector_factory({**cfg, 'repo':local_cfg['repo'], 'branch':'working-tree'}, False) as source:
+                    snapshot = await source.begin_snapshot()
+                    report.update(snapshot=snapshot['commit'], total=snapshot['entries'], tree_incomplete=snapshot['tree_incomplete'])
+                    cursor = 0
+                    while cursor is not None:
+                        page = await source.list_files(cursor)
+                        for entry in page['files']:
+                            self.check_cancelled()
+                            self.local_progress = {'phase':'Reading '+entry['path'], 'done':len(report['files']), 'total':report['total']}
+                            reason = entry.get('skip', '')
+                            if not reason:
+                                result = await source.read_file(entry['path'])
+                                reason = result.get('skip', '')
+                                if not reason:
+                                    # A double slash cannot occur in a real repository path.
+                                    # The snapshot in this namespace pins every derived citation.
+                                    path = 'local://' + snapshot['commit'] + '/' + entry['path']
+                                    pieces = chunk_file(path, result['text'])
+                                    for piece in pieces:
+                                        piece['url'] = source_url(scan['repo'], scan['commit'], path, piece['start'], piece['end'])
+                                    blocks.extend(pieces)
+                            report['skipped' if reason else 'read'] += 1
+                            report['files'].append({'path':entry['path'], 'state':'skipped' if reason else 'read', 'reason':reason})
+                        cursor = page['next_cursor']
+                    if (await source.check_access())['head'] != snapshot['commit']:
+                        raise SourceError('stale', 'Local files changed during the read. Read the folder again.')
+                self.check_cancelled()
+                self.ensure_current((revision, {}))
+                if not blocks:
+                    raise SourceError('empty', 'No supported local content was read. Check the folder and exclusions.')
+                report['state'] = 'partial' if report['tree_incomplete'] or any(f['reason'] in {'scan_size_limit', 'file_size_limit', 'overlong_line'} for f in report['files']) else 'complete'
+                self.index.replace_source(scan['id'], 'local://', blocks, {
+                    'scope':self.index.source_scope('local', local_cfg), 'snapshot':snapshot['commit'], 'report':report})
+                if embed.enabled():
+                    await self.embed_snapshot(scan['id'])
+                if report['state'] == 'partial':
+                    self.job_error = 'Some local files were omitted. Check local import coverage.'
+                return report
+            except BaseException:
+                self.index.discard_source('local')
+                raise
+            finally:
+                self.local_progress = None
 
     async def scan(self):
         async with self.lock:
@@ -558,7 +640,7 @@ class Service:
             d = {'status':'running','repo':cfg['repo'],'branch':cfg['branch'],'demo':self.demo,
                  'started':now(),'finished':None,'commit':None,'read':0,'skipped':0,'failed':0,
                  'total':0,'processed':0,'bytes':0,'files':[],'tree_incomplete':False,'error':None,
-                 'phase':'Resolving branch and listing files'}
+                 'phase':'Listing local files' if is_local(cfg['repo']) else 'Resolving branch and listing files'}
             scan_id = self.index.new_scan(d)
             applog.event('scan.begin', scan_id=scan_id, repo=cfg['repo'], branch=cfg['branch'], demo=self.demo)
             self.progress = {'id':scan_id,**d}
@@ -601,7 +683,7 @@ class Service:
                                             d['bytes'] += file['bytes']
                                             state = 'read'
                                 except SourceError as exc:
-                                    if exc.code in {'access_denied','rate_limit','network','mcp'}:
+                                    if exc.code in {'access_denied','rate_limit','network','mcp','stale'}:
                                         d['failed'] += 1
                                         d['processed'] += 1
                                         d['files'].append({'path':path,'state':'failed','reason':str(exc)})
@@ -623,6 +705,11 @@ class Service:
                             break
                 if self.cancel.is_set():
                     raise SourceError('cancelled','Scan cancelled. Start a new scan to try again.')
+                if is_local(cfg['repo']):
+                    async with self.connector_factory(cfg, self.demo) as source:
+                        current = await source.check_access(d['commit'])
+                    if current.get('head') != d['commit']:
+                        raise SourceError('stale', 'Local files changed during the scan. Refresh the folder to try again.')
                 if not chunks:
                     raise SourceError('empty','No searchable text was read. Review skipped files and limits.')
                 d.update(status='partial' if incomplete else 'complete',finished=now(),phase='Ready',chunks=len(chunks))
@@ -1090,20 +1177,21 @@ class Service:
         identity = {}
         if kind == 'files':
             credentials.refresh()
-            identity['github'] = credentials.source_fingerprint('github')
+            if not is_local((self.index.settings() or {}).get('repo')):
+                identity['github'] = credentials.source_fingerprint('github')
             try:
                 async with self.connector_factory(self.index.settings(), self.demo) as source:
                     access = await source.check_access(scan['commit'])
                 if access.get('head') != scan['commit']:
                     self.index.invalidate()
-                    self.access_warning = 'The branch changed. Refresh the repository scan before linking its files.'
+                    self.access_warning = 'Project files changed. Refresh the repository scan before linking its files.'
                     raise SourceError('stale', self.access_warning)
             except SourceError as exc:
                 if exc.code == 'access_denied':
                     self.index.invalidate()
                 raise
             except Exception:
-                raise SourceError('access', 'Could not verify GitHub access. No related files were returned.') from None
+                raise SourceError('access', 'Could not verify repository access. No related files were returned.') from None
         checked = await self.check_external_access(scan, names=('jira', 'slack') if kind == 'discussions' else ('jira',))
         checked = revision, {**identity, **checked[1]}
         self.ensure_current(checked)
@@ -1180,14 +1268,14 @@ class Service:
                     access = await source.check_access(scan['commit'])
                 if access['head'] != scan['commit']:
                     self.index.invalidate()
-                    self.access_warning = 'The branch changed. Stored excerpts have been disabled. Refresh the scan before asking again.'
+                    self.access_warning = ('Local files changed.' if is_local(cfg['repo']) else 'The branch changed.') + ' Stored excerpts have been disabled. Refresh the scan before asking again.'
                     raise SourceError('stale',self.access_warning)
             except Exception as exc:
                 if isinstance(exc,SourceError) and exc.code == 'access_denied':
                     self.index.invalidate()
                 if isinstance(exc,SourceError):
                     raise
-                raise SourceError('access','Could not verify GitHub access. No answer was generated.') from None
+                raise SourceError('access','Could not verify repository access. No answer was generated.') from None
             checked = await self.check_external_access(scan)
             applog.event('ask.begin', scan_id=scan['id'], repo=scan['repo'], **applog.question_fields(question))
             search_info = {}

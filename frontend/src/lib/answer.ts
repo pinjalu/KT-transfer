@@ -56,10 +56,15 @@ export type Turn = {
 }
 
 /** Where an excerpt came from. Slack and Jira blocks are stored under their own path prefix. */
-export function originOf(path: string): 'Slack' | 'Jira' | 'GitHub' {
+export function originOf(path: string, url?: string | null): 'Slack' | 'Jira' | 'GitHub' | 'Local folder' {
+  if (path.startsWith('local://') || url?.startsWith('/source?')) return 'Local folder'
   if (path.startsWith('slack/')) return 'Slack'
   if (path.startsWith('jira/')) return 'Jira'
   return 'GitHub'
+}
+
+export function sourcePath(path: string): string {
+  return path.startsWith('local://') ? 'Local folder / ' + path.split('/').slice(3).join('/') : path
 }
 
 export const SUPPORT_TONE: Record<Support, 'ok' | 'warn' | 'bad' | 'quiet'> = {

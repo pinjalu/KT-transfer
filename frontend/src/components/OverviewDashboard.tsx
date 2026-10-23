@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Icon } from './Icon'
 import { Statements } from './Statements'
 import { Button, Chip, Empty, Failed, Loading, Missing, SourceLink } from './ui'
-import { originOf } from '../lib/answer'
+import { originOf, sourcePath } from '../lib/answer'
 import { factsOf } from '../lib/overview'
 import type { FactGroup, Overview, Section } from '../lib/overview'
 import type { Load } from '../lib/useApi'
@@ -88,8 +88,8 @@ function TopicContent({ section, mode, body }: { section: Section; mode: Overvie
         <span className="ov-count">{section.sources.length}</span></div>
       <p className="ov-hint">Open an excerpt to check the original context.</p>
       {section.sources.map((source, i) => <details className="ov-source" id={`src-${source.source_id}`} key={source.source_id}>
-        <summary><span className="ov-source-number">{i + 1}</span><span className="ov-source-path">{source.path}</span>
-          <Chip tone="quiet">{originOf(source.path)}</Chip></summary>
+        <summary><span className="ov-source-number">{i + 1}</span><span className="ov-source-path">{sourcePath(source.path)}</span>
+          <Chip tone="quiet">{originOf(source.path, source.url)}</Chip></summary>
         <div className="ov-disclosure-body">
           <SourceLink path={source.path} line={source.start} url={source.url ?? undefined} />
           <pre>{source.text}</pre>
@@ -229,7 +229,7 @@ export function OverviewDashboard({ body, features, mode, building }: {
           {active.id === '_review' && <>
             <div className="ov-coverage"><h3>What this overview covers</h3><p>{body.scope_note}</p>
               <dl><div><dt>Repository</dt><dd>{body.repo}</dd></div>
-                <div><dt>Commit</dt><dd className="mono">{body.commit?.slice(0, 7)}</dd></div>
+                <div><dt>{body.repo.startsWith('local:') ? 'Snapshot' : 'Commit'}</dt><dd className="mono">{body.commit?.slice(0, 7)}</dd></div>
                 <div><dt>Files</dt><dd>{body.files_indexed} indexed · {body.files_skipped} skipped</dd></div>
                 <div><dt>Topics written</dt><dd>{body.topics_done} of {body.topics_total}</dd></div>
                 {body.scanned_at && <div><dt>Sources read</dt><dd>{new Date(body.scanned_at).toLocaleString()}</dd></div>}

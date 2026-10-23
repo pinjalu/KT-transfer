@@ -19,6 +19,7 @@ from pka.auth import AuthStore, digest
 from pka import auth_web
 from pka.connectors import registry
 from pka.connectors.base import SourceError
+from pka.connectors.local import is_local, local_selection
 from pka import facts, features, coverage
 from pka.index import Index
 from pka.overview import reading_order, topics_for
@@ -26,8 +27,10 @@ from pka.service import Service
 
 class Selection(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    repo: str = Field(max_length=400)  # a pasted repository address is longer than owner/repository
-    branch: str = Field(max_length=200)
+    repo: str = Field(default='', max_length=400)
+    branch: str = Field(default='main', max_length=200)
+    source_kind: Literal['github', 'local'] = 'github'
+    local_path: str = Field(default='', max_length=1000)
     platforms: list[str] = Field(default_factory=list, max_length=20)
 class CredentialUpdate(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -241,7 +244,8 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                     'slack_reading':False,'slack_progress':None,
                     'overview_building':False,'overview_progress':None,
                     'awaiting_project':True,
-                    'stored_project':{'repo':previous.get('repo',''),
+                    'stored_project':{**({'source_kind':'local', 'local_path':previous.get('local_path', '')}
+                                        if is_local(previous.get('repo')) else {}), 'repo':previous.get('repo',''),
                                       'branch':previous.get('branch','')} if previous.get('repo') else None}
         return {'settings':index.settings(),'scan':scan,'last_successful_scan':index.last_successful(),
                 'knowledge_revision':index.revision,
@@ -276,29 +280,84 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         return {'files':files[offset:offset+100],'next_offset':offset+100 if len(files)>offset+100 else None}
 
     @app.post('/api/config')
-    async def config(selection: Selection):
+    async def config(selection: Selection, request: Request):
         idle()
         if demo:
             raise HTTPException(409,'Example mode uses a fixed fixture repository. Restart without --demo for your repository.')
+        if selection.source_kind == 'local' and request.state.owner['role'] != 'owner':
+            raise HTTPException(403, 'Only the app owner can select folders from this computer.')
         try:
-            repo, branch = validate_selection(selection.repo,selection.branch)
+            repo, branch = (await run_in_threadpool(local_selection, selection.local_path)
+                            if selection.source_kind == 'local' else validate_selection(selection.repo,selection.branch))
         except ValueError as exc:
             applog.warn('config.rejected', chars=len(selection.repo), reason=exc)
             raise HTTPException(422,str(exc)) from None
         try:
-            platforms = registry.validate(selection.platforms or ['github'])
+            platforms = registry.validate(selection.platforms or [selection.source_kind])
+            if selection.source_kind == 'local':
+                platforms = [p for p in platforms if p not in {'github', 'local'}] + ['local']
+            elif 'local' in platforms:
+                platforms = [p for p in platforms if p not in {'github', 'local'}] + ['github']
         except ValueError as exc:
             applog.warn('config.rejected', reason=exc)
             raise HTTPException(422,str(exc)) from None
         applog.event('config.saved', repo=repo, branch=branch, platforms=','.join(platforms),
                      typed_chars=len(selection.repo))
         async with service.lock:
-            index.configure({'repo':repo,'branch':branch,'platforms':platforms})
+            previous = index.settings() or {}
+            # A folder is an additional source when a GitHub project is already selected.
+            # Updating it preserves the GitHub scan and all imported Jira/Slack content.
+            if selection.source_kind == 'local' and previous.get('repo') and not is_local(previous['repo']):
+                index.configure_source('local', {'repo':repo, 'path':repo[6:]})
+                index.configure({'platforms':list(dict.fromkeys([*(previous.get('platforms') or []), 'local']))})
+                chosen['this_run'] = True
+                return {'ok':True, 'additional_local':True, 'reconnected':False}
+            if selection.source_kind == 'github' and is_local(previous.get('repo')):
+                index.configure_source('local', {'repo':previous['repo'], 'path':previous['repo'][6:]})
+                if 'local' not in platforms:
+                    platforms.append('local')
+            if selection.source_kind == 'github' and previous.get('local') and 'local' not in platforms:
+                platforms.append('local')
+            index.configure({'repo':repo,'branch':branch,'platforms':platforms,
+                'source_kind':selection.source_kind, 'local_path':repo[6:] if is_local(repo) else ''})
             service.access_warning = ''
             chosen['this_run'] = True
+            if is_local(repo) and index.active_scan():
+                try:
+                    await service.check_external_access(index.active_scan(), names=('github',))
+                except SourceError as exc:
+                    if exc.code != 'stale':
+                        raise
         # Saying whether this reconnected to a stored snapshot or starts empty, because the
         # difference decides whether the next thing to do is ask a question or run a scan.
         return {'ok':True,'reconnected':index.active_scan() is not None}
+
+    @app.get('/api/local-source')
+    async def local_source(request: Request, path: str = Query(max_length=1000), snapshot: str = Query(max_length=64)):
+        if request.state.owner['role'] != 'owner':
+            raise HTTPException(403, 'Local source files are available only to the app owner.')
+        scan = index.active_scan() if chosen['this_run'] else None
+        saved = index.source_import('local')
+        primary = scan and is_local(scan['repo']) and scan['commit'] == snapshot and not path.startswith('local://')
+        additional = scan and saved and saved.get('snapshot') == snapshot and path.startswith('local://'+snapshot+'/')
+        if not (primary or additional):
+            raise HTTPException(409, 'This local snapshot is no longer selected. Open a citation from the current overview or answer.')
+        checked = await service.check_external_access(scan, names=('github',))
+        if path not in index.code_paths(scan['id']):
+            raise HTTPException(404, 'This file was not indexed in the selected folder.')
+        lines = index.file_lines(scan['id'], path)
+        service.ensure_current(checked)
+        return {'path':path.split('/', 3)[-1] if additional else path, 'snapshot':snapshot, 'lines':[{'number':n, 'text':text} for n, text in lines],
+                'note':'Saved indexed lines. Blank lines and content not indexed may be absent.'}
+
+    @app.post('/api/local/read')
+    async def read_local(request: Request):
+        if request.state.owner['role'] != 'owner':
+            raise HTTPException(403, 'Only the app owner can read local folders.')
+        idle()
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose your saved project first.')
+        return {'started':True, 'job_id':service.start_job('local')}
 
     @app.post('/api/scan')
     async def scan():
@@ -328,7 +387,11 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
 
     def _scope(key, cfg, scan):
         """What this platform is actually set to read, in the reader's own words."""
-        if key == 'github':
+        if key == 'local' and (cfg.get('local') or {}).get('repo'):
+            return cfg['local']['path']
+        if key in {'github', 'local'}:
+            if (key == 'local') != is_local(cfg.get('repo')):
+                return ''
             repo = cfg.get('repo')
             if not repo:
                 return ''
@@ -353,7 +416,11 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         key = row['key']
         if row['status'] != registry.AVAILABLE:
             return False, 'Reading is not built for this platform yet.'
-        if key == 'github':
+        if key == 'local' and (cfg.get('local') or {}).get('repo'):
+            return (True, '') if scan and index.source_import('local') else (False, 'Read the local folder.')
+        if key in {'github', 'local'}:
+            if (key == 'local') != is_local(cfg.get('repo')):
+                return False, 'Choose this source in Connections.'
             if not cfg.get('repo'):
                 return False, 'Choose a repository and branch.'
             if not scan:
@@ -367,7 +434,7 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
             if not (cfg.get('jira') or {}).get('project'):
                 return False, 'Choose a project to read.'
             if not scan:
-                return False, 'Add GitHub and scan a repository, so there is an index to add these issues to.'
+                return False, 'Scan a GitHub repository or local folder before adding issues.'
             return True, ''
         if key == 'slack_user':
             if not row.get('connected'):
@@ -375,7 +442,7 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
             if not (cfg.get('slack') or {}).get('channels'):
                 return False, 'Choose the channels to read.'
             if not scan:
-                return False, 'Add GitHub and scan a repository, so there is an index to add these messages to.'
+                return False, 'Scan a GitHub repository or local folder before adding messages.'
             return True, ''
         return bool(row['credentials_present']), 'Add the credentials for this platform.'
 
@@ -392,6 +459,8 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                 row['redirect_uri'] = base + registry.BY_KEY[row['key']]['oauth']['redirect_path']
             row['ready'], row['pending'] = _readiness(row, cfg, scan)
             row['scope'] = _scope(row['key'], cfg, scan)
+        if request.state.owner['role'] != 'owner':
+            rows = [row for row in rows if row['key'] != 'local']
         return {'platforms':rows,
                 'credentials':credentials.status(),
                 'note':'Selecting a platform records that this project uses it. It never grants access. '

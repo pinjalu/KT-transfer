@@ -113,7 +113,7 @@ export function Home() {
                 <li className="change-row">
                   <span className="change-icon"><Icon name="clock" size={16} /></span>
                   <div>
-                    <p className="change-title">Last read at commit <code>{scan.commit.slice(0, 7)}</code></p>
+                    <p className="change-title">Last read at {scan.repo.startsWith('local:') ? 'snapshot' : 'commit'} <code>{scan.commit.slice(0, 7)}</code></p>
                     <p className="change-plain">
                       {scan.read} files read, {scan.skipped} skipped, {scan.failed} failed.
                     </p>

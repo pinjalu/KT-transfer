@@ -1,5 +1,33 @@
 # Implementation and verification record
 
+## Additional local folder and connection dropdown, 23 October 2026
+
+Connections now uses one dropdown for GitHub, Local folder, Jira and Slack. Switching forms
+preserves their saved connections and mounted drafts. Owners can add one local folder to an
+existing GitHub project by absolute path or file link. A local-only project is also supported.
+Local imports use the same retrieval, overview and derived-code paths, with separate snapshot
+citations and an authenticated indexed-source viewer. Adding or rereading the extra folder
+preserves the GitHub scan and Jira/Slack imports; derived answers and overviews are invalidated.
+Local and GitHub import graphs remain separate even when module names match. Details and
+limits are in [LOCAL_REPOSITORIES.md](LOCAL_REPOSITORIES.md).
+
+The 401-test Python regression selection passed (local sources, core, import coverage, source
+freshness and workspace isolation), followed by two checks for import-graph isolation and
+four-source coexistence and 12 existing graph/import checks after the final diagram adjustment. All 24 frontend checks and the
+production build passed. The existing Starlette test-client deprecation warning remains.
+Tests cover unsafe paths, links, excluded files, bounded reads, MCP scope, edit/delete
+invalidation, changes during generation, account isolation, local citations and retained
+GitHub/Jira/Slack imports. They include overview generation from both code sources.
+
+Chrome testing used a disposable workspace: a real local folder and local MCP/Ollama, with a
+GitHub fixture for the coexistence check. The browser showed both code imports available and
+opened the GitHub, local, Jira and Slack forms from the dropdown. A real Ollama answer used
+the added local invoice file; its citation opened the correct indexed lines in the browser.
+The production workspace was backed up before the update. Its chunks, search rows, vectors,
+source imports, answers, overviews, scans and owner/member records matched the backup after
+restart and reconnect. The disposable folder was not selected in MCP-project.
+This is verification of the connection change, not whole-product end-to-end sign-off.
+
 ## Interactive project overview, 23 October 2026
 
 The overview now opens as a dashboard with a project snapshot and shortcuts for topics,

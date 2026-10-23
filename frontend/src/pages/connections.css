@@ -20,6 +20,11 @@
 .conn-plain { color: var(--ink-dim); font-size: 13px; margin-top: 3px; }
 
 .conn-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
+.conn-source-choice { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 0 20px 20px; border-bottom: 1px solid var(--border); }
+.conn-source-choice p, .conn-local-note { font-size: 12px; color: var(--ink-soft); }
+.conn-local-fields { grid-template-columns: minmax(0, 1fr); }
+.conn-local-note { padding: 0 20px 20px; line-height: 1.7; }
+@media (max-width: 1200px) { .conn-row { grid-template-columns: minmax(0, 1fr); } .conn-act { justify-items: start; } }
 .conn-resume { display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
   grid-column: 1 / -1; order: -1;
   flex-wrap: wrap; padding: var(--s3) var(--s4); margin-bottom: var(--s4);
@@ -157,3 +162,8 @@
 @media (max-width: 600px) {
   .conn-fields { grid-template-columns: minmax(0, 1fr); }
 }
+.conn-picker { display:grid; grid-template-columns:minmax(0,1fr) minmax(200px,280px); gap:24px; align-items:center; }
+.conn-picker h2 { font-size:18px; margin-bottom:8px; }
+.conn-picker p,.conn-picker-help { color:var(--ink-soft); font-size:13px; }
+.conn-saved { display:flex; gap:10px; flex-wrap:wrap; margin:20px 0 12px; }
+@media(max-width:800px) { .conn-picker { grid-template-columns:minmax(0,1fr); } }

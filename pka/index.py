@@ -342,6 +342,8 @@ class Index:
             db.execute('UPDATE active SET scan_id=NULL')
     @staticmethod
     def source_scope(name, value):
+        if name == 'local':
+            return {'repo':value.get('repo', '')}
         if name == 'jira':
             return {'project':str(value.get('project', '')).upper()}
         if name == 'slack':
@@ -359,7 +361,7 @@ class Index:
         db.execute('DELETE FROM decision_summaries')
 
     def _drop_source(self, db, name):
-        prefix = name + '/'
+        prefix = 'local://' if name == 'local' else name + '/'
         db.execute('DELETE FROM search WHERE rowid IN (SELECT id FROM chunks WHERE path LIKE ?)', (prefix+'%',))
         db.execute('DELETE FROM vectors WHERE chunk_id IN (SELECT id FROM chunks WHERE path LIKE ?)', (prefix+'%',))
         db.execute('DELETE FROM chunks WHERE path LIKE ?', (prefix+'%',))
@@ -447,9 +449,9 @@ class Index:
         Reading again replaces what was read before rather than adding to it, so a message that
         was deleted or a channel that was removed from the list cannot linger in answers.
         """
-        if prefix not in {'jira/', 'slack/'}:
+        if prefix not in {'jira/', 'slack/', 'local://'}:
             raise ValueError('Unknown source prefix.')
-        name = prefix[:-1]
+        name = 'local' if prefix == 'local://' else prefix[:-1]
         with self.db() as db:
             stale = [r[0] for r in db.execute(
                 'SELECT id FROM chunks WHERE scan_id=? AND path LIKE ?',(scan_id,prefix+'%')).fetchall()]

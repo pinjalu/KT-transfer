@@ -119,6 +119,14 @@ def source_url(repo: str, commit: str, path: str, start: int | None = None, end:
     """
     if not repo or not commit:
         return ''
+    if path.startswith('local://'):
+        parts = path.split('/', 3)
+        commit = parts[2]
+        link = '/source?snapshot=' + quote(commit, safe='') + '&path=' + quote(path, safe='')
+        return link + (f'#L{start}' if start else '')
+    if repo.startswith('local:'):
+        link = '/source?snapshot=' + quote(commit, safe='') + '&path=' + quote(path, safe='')
+        return link + (f'#L{start}' if start else '')
     link = 'https://github.com/' + repo + '/blob/' + commit + '/' + quote(path, safe='/')
     if start:
         link += f'#L{start}' + (f'-L{end}' if end and end != start else '')

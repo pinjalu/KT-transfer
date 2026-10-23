@@ -16,6 +16,14 @@ PLANNED = 'planned'
 
 PLATFORMS = [
     {
+        'key': 'local', 'label': 'Local folder', 'name': 'Local folder', 'status': AVAILABLE,
+        'reads': 'Current source files in one folder on this computer, including uncommitted changes.',
+        'scope_label': 'Folder path', 'scope_hint': 'D:\\Projects\\my-app',
+        'credentials': [], 'credential_optional': True,
+        'permission': 'App owner only. Read-only access to the explicitly selected local folder.',
+        'setup': ['Select Local folder in Connections and paste an absolute folder path or file:/// link.'],
+    },
+    {
         'key': 'github',
         'label': 'GitHub',
         'status': AVAILABLE,

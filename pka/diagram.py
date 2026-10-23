@@ -150,6 +150,13 @@ def _resolve(target: str, importer: str, table: dict, allow: tuple) -> str:
 
 def imports_in(path: str, lines, table: dict) -> list[tuple[str, int]]:
     """The indexed files this file imports, each with the line that imports it."""
+    if path.startswith('local://'):
+        parts = path.split('/', 3)
+        prefix, relative = '/'.join(parts[:3]) + '/', parts[3]
+        local_paths = [p[len(prefix):] for p in set(table.values()) if p.startswith(prefix)]
+        return [(prefix + target, line) for target, line in imports_in(relative, lines, _lookup(local_paths))]
+    # An identical module name in another code source is not an import relationship.
+    table = {key:value for key,value in table.items() if not value.startswith('local://')}
     if not path.endswith(CODE_SUFFIXES):
         return []
     found, seen = [], set()

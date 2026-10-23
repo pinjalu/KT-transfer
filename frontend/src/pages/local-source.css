@@ -1,0 +1,6 @@
+.local-source-note { color: var(--ink-soft); margin: 12px 0 20px; }
+.local-source { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 0; }
+.local-source-line { display: grid; grid-template-columns: 65px minmax(0, 1fr); padding: 2px 16px; gap: 16px; scroll-margin-top: 30px; }
+.local-source-line > a { color: var(--ink-dim); font-family: var(--mono); text-align: right; font-size: 12px; }
+.local-source-line code { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.local-source-line:target { background: var(--accent-wash); outline: 1px solid var(--accent); }

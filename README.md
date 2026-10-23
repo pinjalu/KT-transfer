@@ -1,6 +1,6 @@
 # Project Knowledge Assistant — local prototype
 
-Understand one GitHub project with a local assistant. Configure a repository and branch, scan a specific commit, ask a question in ordinary English, and inspect the code excerpts behind the answer.
+Understand a project with a local assistant. Connect a GitHub repository, add a local project folder, read relevant Jira issues and Slack messages, and inspect the excerpts behind each answer. The Connections dropdown opens one source's form at a time; all saved sources can be used together. See [local folder setup and limits](docs/LOCAL_REPOSITORIES.md).
 
 The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, selected Jira task explanations and related source links, Slack discussion summaries with evidence and status labels, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Requirement implementation checks and other planned screens remain unfinished. See [Jira task explanations](docs/TASK_6_2.md), [related sources](docs/TASK_6_3.md), [Team decisions](docs/TASK_6_4.md), [baseline acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
 
@@ -9,7 +9,7 @@ Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windo
 ## What the first version does
 
 - Protects the local workspace with one owner account, password sign-in and server-side sessions. See [account setup and session limits](docs/TASK_6_6.md).
-- Explicitly selects one repository and branch. It resolves the branch to a commit before collecting files.
+- Selects one GitHub repository and branch, with an optional additional local folder. Local folders also work on their own. GitHub reads pin a commit; local reads pin a content snapshot that includes uncommitted files.
 - Reads supported source files and documentation without cloning, importing, installing or executing the project's code.
 - Uses Python syntax boundaries for Python chunks; uses headings and simple declaration boundaries for other text. Oversized sections are split with accurate line ranges.
 - Searches words, filenames and split code symbols. A small synonym dictionary and the project's own vocabulary help ordinary questions such as “How does login work?” find authentication code. Word matching is the default and the only thing enabled out of the box. Meaning-based retrieval is available beside it and off unless `PKA_EMBED_MODEL` names a local embedding model.

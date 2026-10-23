@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pka.connectors.base import SourceError
 from pka.connectors.github import GitHubSource
+from pka.connectors.local import LocalSource, is_local
 from pka.connectors.fixture import FixtureSource
 from pka.connectors.jira import JiraSource, issue_blocks
 from pka.connectors.slack import SlackSource
@@ -47,6 +48,14 @@ def github():
         _built['github'] = FixtureSource() if DEMO else GitHubSource(
             os.getenv('PKA_REPO',''), os.getenv('PKA_BRANCH',''), os.getenv('GITHUB_TOKEN',''))
     return _built['github']
+
+
+def local():
+    if DEMO or not is_local(os.getenv('PKA_REPO', '')):
+        raise SourceError('scope', 'No local folder was selected for this connector.')
+    if 'local' not in _built:
+        _built['local'] = LocalSource(os.environ['PKA_REPO'])
+    return _built['local']
 
 
 def jira() -> JiraSource:
@@ -102,6 +111,30 @@ async def github_list_files(cursor: int = 0) -> dict:
 async def github_read_file(path: str) -> dict:
     """Read one allowed file from the resolved commit; never execute it."""
     return await guarded_on(github, 'read_file', path=path)
+
+
+@server.tool(annotations=READ_ONLY)
+async def local_check_access(commit: str = '') -> dict:
+    """Check the selected local folder's current bounded snapshot."""
+    return await guarded_on(local, 'check_access', commit=commit)
+
+
+@server.tool(annotations=READ_ONLY)
+async def local_begin_snapshot() -> dict:
+    """Snapshot the local folder pinned at process launch. Never execute project code."""
+    return await guarded_on(local, 'begin_snapshot')
+
+
+@server.tool(annotations=READ_ONLY)
+async def local_list_files(cursor: int = 0) -> dict:
+    """List one page of the selected local snapshot."""
+    return await guarded_on(local, 'list_files', cursor=cursor)
+
+
+@server.tool(annotations=READ_ONLY)
+async def local_read_file(path: str) -> dict:
+    """Read an allowed file whose digest still matches the local snapshot."""
+    return await guarded_on(local, 'read_file', path=path)
 
 @server.tool(annotations=READ_ONLY)
 async def jira_check_access() -> dict:

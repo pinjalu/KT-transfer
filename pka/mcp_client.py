@@ -10,6 +10,7 @@ from pka.connectors.base import SourceError
 from pka.credentials import getenv
 
 TOOL_NAMES = {'github_check_access','github_begin_snapshot','github_list_files','github_read_file',
+              'local_check_access','local_begin_snapshot','local_list_files','local_read_file',
               'jira_check_access','jira_list_projects','jira_begin_read','jira_list_issues',
               'slack_list_channels','slack_read_channel','jira_check_issues_access',
               'slack_check_channel_access'}
@@ -25,8 +26,9 @@ def source_error_in(exc):
     return None
 
 class ConnectorClient:
-    def __init__(self, session):
+    def __init__(self, session, local=False):
         self.session = session
+        self.repository_tool = 'local' if local else 'github'
     async def call(self, tool: str, **kwargs):
         if tool not in TOOL_NAMES:
             raise SourceError('scope', 'Tool is not on the read-only allowlist.')
@@ -40,13 +42,13 @@ class ConnectorClient:
             raise SourceError(data.get('code','mcp'),data.get('error','Connector failed.'))
         return data['data']
     async def check_access(self, commit=''):
-        return await self.call('github_check_access', commit=commit)
+        return await self.call(self.repository_tool + '_check_access', commit=commit)
     async def begin_snapshot(self):
-        return await self.call('github_begin_snapshot')
+        return await self.call(self.repository_tool + '_begin_snapshot')
     async def list_files(self, cursor=0):
-        return await self.call('github_list_files', cursor=cursor)
+        return await self.call(self.repository_tool + '_list_files', cursor=cursor)
     async def read_file(self, path):
-        return await self.call('github_read_file', path=path)
+        return await self.call(self.repository_tool + '_read_file', path=path)
     async def jira_check_access(self):
         return await self.call('jira_check_access')
     async def jira_check_issues_access(self, issue_keys, snapshots=None):
@@ -95,7 +97,7 @@ async def connect(settings: dict, demo: bool = False):
                     actual = {t.name for t in (await session.list_tools()).tools}
                     if actual != TOOL_NAMES:
                         raise SourceError('scope','Unexpected MCP tool set; connection refused.')
-                    yield ConnectorClient(session)
+                    yield ConnectorClient(session, local=settings.get('repo', '').startswith('local:') and not demo)
     except Exception as exc:
         safe = source_error_in(exc)
         if safe:

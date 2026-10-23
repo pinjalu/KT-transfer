@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Icon } from './Icon'
+import { sourcePath } from '../lib/answer'
 
 export function PageHead({ title, lead, actions }:
   { title: string; lead?: string; actions?: ReactNode }) {
@@ -149,7 +150,7 @@ export function Failed({ message, onRetry }: { message: string; onRetry?: () => 
 
 /** A pointer into real code. Everything that claims something links to the line behind it. */
 export function SourceLink({ path, line, url }: { path: string; line?: number; url?: string }) {
-  const label = line ? `${path}:${line}` : path
+  const label = line ? `${sourcePath(path)}:${line}` : sourcePath(path)
   if (!url) return <span className="source-link mono">{label}</span>
   return (
     <a className="source-link mono" href={url} target="_blank" rel="noreferrer">
