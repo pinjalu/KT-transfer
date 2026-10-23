@@ -1,5 +1,31 @@
 # Implementation and verification record
 
+## Task 6.7 private workspaces and source permissions, 23 October 2026
+
+Task 6.7 adds owner-managed member accounts and separate indexes, source credentials,
+retrieval, cached views, feedback, background jobs and import reports for each authenticated
+account. GitHub checks now also protect cached code views and the publication of generated
+answers. Existing Jira issue and Slack message checks remain in place. Disabled accounts lose
+their sessions immediately. See [task 6.7](TASK_6_7.md) for the local Windows trust boundary.
+
+All 707 regression tests passed, followed by 22 focused credential/diagnostic checks after
+adding encrypted-vault support to the local diagnostic CLIs. The production build, real
+HTTP/MCP fixture smoke and six Chrome account checks passed with no browser page errors.
+The suite emitted the existing Starlette test-client deprecation warning. The narrow-screen
+app shell remains outside this desktop account scope.
+
+The live app was backed up and updated. All 20 project table counts and the existing owner's
+password record were preserved. Credentials were moved to a verified current-user Windows
+DPAPI vault and removed from `.env`. A read-only diagnostic confirmed the encrypted GitHub
+credential still reaches the selected branch and that the configured Ollama model is present.
+The earlier network failure was fixed by launching outside the restricted runner: the live
+repository scan completed with 99 files read, two skipped and zero failures. Ollama was started
+and qwen3:1.7b answered a short test prompt successfully.
+
+Task 6.7 is **Done within this local Windows account scope**. The implementation includes the
+credential and audit foundation for 6.8; the separate 6.8 closeout and 6.9 deployment/backup
+work remain queued. Verification artifacts are in `outputs/task-6-7-browser/` beside the repo.
+
 ## Task 6.6 owner login and secure sessions, 23 October 2026
 
 Task 6.6 adds one local owner account, one-time setup, salted password hashes and persistent

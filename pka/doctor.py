@@ -8,8 +8,9 @@ from pka.config import data_dir
 from pka.connectors.base import SourceError
 from pka.index import Index
 from pka.mcp_client import connect
+from pka import credentials
 
-async def main():
+async def checks():
     print('Python:',sys.version.split()[0])
     with sqlite3.connect(':memory:') as db:
         db.execute('CREATE VIRTUAL TABLE fts_check USING fts5(text)')
@@ -24,7 +25,7 @@ async def main():
     except (httpx.HTTPError,ValueError):
         print('Ollama: unavailable. Start the Ollama desktop application or run ollama serve.')
     cfg=Index(data_dir()/'index.sqlite3').settings()
-    print('GitHub token:', 'configured' if os.getenv('GITHUB_TOKEN') else 'not configured (public repositories only)')
+    print('GitHub token:', 'configured' if credentials.getenv('GITHUB_TOKEN') else 'not configured (public repositories only)')
     if not cfg:
         print('GitHub: save a repository and branch in the browser first.')
         return
@@ -34,5 +35,9 @@ async def main():
         print('GitHub read access: OK; branch commit:',status['head'])
     except SourceError as exc:
         print('GitHub:',str(exc))
+
+async def main():
+    with credentials.owner_credentials(data_dir()/'index.sqlite3'):
+        await checks()
 
 if __name__=='__main__':asyncio.run(main())

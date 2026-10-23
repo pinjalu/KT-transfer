@@ -2,7 +2,8 @@
 
 The user presses Connect, approves the scopes on the platform's own page, and the platform
 sends a short lived code back here. This exchanges that code for a token and stores it the same
-way a typed credential is stored: in the local .env file, never shown again, never logged.
+way a typed credential is stored: in the current account's Windows vault in production,
+never shown again and never logged.
 
 The scopes are fixed in the registry rather than chosen at request time, so a connect link can
 only ever ask for the reading permissions this application declares. The browser cannot widen

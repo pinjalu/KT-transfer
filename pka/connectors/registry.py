@@ -128,7 +128,8 @@ def keys() -> list[str]:
 
 def credentials_present(platform: dict) -> bool:
     """True when every credential this platform needs is set. Values are never read out."""
-    return all(os.getenv(name, '') for name in platform['credentials'])
+    from pka.credentials import getenv
+    return all(getenv(name, '') for name in platform['credentials'])
 
 
 def describe(selected=None) -> list[dict]:
@@ -138,6 +139,7 @@ def describe(selected=None) -> list[dict]:
     implemented is reported as such rather than hidden, so the interface can say plainly that
     the work is not done instead of appearing to offer something that does not exist.
     """
+    from pka.credentials import getenv
     chosen = set(selected or [])
     rows = []
     for p in PLATFORMS:
@@ -154,7 +156,7 @@ def describe(selected=None) -> list[dict]:
         else:
             connection = 'credentials needed'
         oauth = p.get('oauth')
-        connected = bool(oauth and os.getenv(oauth['token_name'], ''))
+        connected = bool(oauth and getenv(oauth['token_name'], ''))
         if oauth:
             if connected:
                 connection = 'connected'

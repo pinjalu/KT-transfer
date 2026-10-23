@@ -7,6 +7,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from pka.config import ROOT
 from pka.connectors.base import SourceError
+from pka.credentials import getenv
 
 TOOL_NAMES = {'github_check_access','github_begin_snapshot','github_list_files','github_read_file',
               'jira_check_access','jira_list_projects','jira_begin_read','jira_list_issues',
@@ -76,12 +77,12 @@ async def connect(settings: dict, demo: bool = False):
     # Credentials are handed to the child process and stay there; the request path never
     # touches a token again.
     env = {'PKA_REPO':settings['repo'],'PKA_BRANCH':settings['branch'],
-           'PKA_DEMO':'1' if demo else '0','GITHUB_TOKEN':'' if demo else os.getenv('GITHUB_TOKEN',''),
+           'PKA_DEMO':'1' if demo else '0','GITHUB_TOKEN':'' if demo else getenv('GITHUB_TOKEN',''),
            'PKA_JIRA_PROJECT':project,'PKA_SLACK_CHANNELS':channels,
-           'JIRA_SITE':'' if demo else os.getenv('JIRA_SITE',''),
-           'JIRA_EMAIL':'' if demo else os.getenv('JIRA_EMAIL',''),
-           'JIRA_API_TOKEN':'' if demo else os.getenv('JIRA_API_TOKEN',''),
-           'SLACK_USER_TOKEN':'' if demo else os.getenv('SLACK_USER_TOKEN',''),
+           'JIRA_SITE':'' if demo else getenv('JIRA_SITE',''),
+           'JIRA_EMAIL':'' if demo else getenv('JIRA_EMAIL',''),
+           'JIRA_API_TOKEN':'' if demo else getenv('JIRA_API_TOKEN',''),
+           'SLACK_USER_TOKEN':'' if demo else getenv('SLACK_USER_TOKEN',''),
            'PYTHONPATH':str(ROOT),'PYTHONIOENCODING':'utf-8'}
     if 'SYSTEMROOT' in os.environ:
         env['SYSTEMROOT'] = os.environ['SYSTEMROOT']

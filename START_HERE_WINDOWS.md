@@ -48,13 +48,15 @@ Create .env only if it does not already exist:
 if (-not (Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Destination .env }
 ```
 
-Edit this local file in VS Code. Keep credentials out of chat, source control and screenshots.
+Keep model settings in this local file. On Windows, add source credentials in **Account settings
+→ Your source credentials**. Existing owner credentials in `.env` are migrated into a verified
+Windows-encrypted vault on startup. Keep credentials out of chat, source control and screenshots.
 
 | Source | Credentials | Selection in Connections |
 |---|---|---|
-| GitHub | GITHUB_TOKEN, restricted to the intended repository with Contents read-only | Repository and branch |
-| Jira | **Update Jira credentials**: site URL, Atlassian email and API token; or JIRA_SITE, JIRA_EMAIL and JIRA_API_TOKEN in .env | One project, then **Read issues** |
-| Slack | SLACK_USER_TOKEN; alternatively OAuth with SLACK_CLIENT_ID and SLACK_CLIENT_SECRET through **Connect Slack** | Choose channels, **Save channels**, then **Read messages** |
+| GitHub | Account settings: fine-grained token restricted to the intended repository with Contents read-only | Repository and branch |
+| Jira | Account settings or **Update Jira credentials**: site URL, Atlassian email and API token | One project, then **Read issues** |
+| Slack | Account settings: user token; alternatively Slack client ID/secret followed by **Connect Slack** | Choose channels, **Save channels**, then **Read messages** |
 
 The Slack user-token reader supports selected public/private channels. The bot-token reader
 is not implemented; direct messages are not imported. OAuth needs the exact redirect URL
@@ -81,6 +83,10 @@ in the top bar opens password and session controls. Password recovery is local:
 `.\.venv\Scripts\python.exe -m pka --reset-password` prompts for a new password without echoing it
 and signs out all sessions. Use an interactive terminal; do not put passwords in command arguments.
 
+The owner can create or disable members in Account settings. Each member adds their own source
+credentials and starts with an empty workspace. Password changes and sign-out-all affect only
+that account. Terminal password recovery resets the owner account; it does not reset members.
+
 On Connections, enter owner/repository or a GitHub URL and the branch, then click
 **Save and read files**. On subsequent starts, **Use it again** fills the previous selection;
 **Save and read files** reconnects to its usable snapshot without rereading it.
@@ -105,10 +111,10 @@ After app restart, unfinished jobs are Interrupted and wait for explicit retry.
 
 ## Current screens and limits
 
-Home, Connections, Project overview, Ask assistant and Architecture have working views.
-Feature explorer, Jira tasks, Team decisions, Troubleshooting and Settings are marked as not
-built. Importing Jira/Slack does not implement those dedicated analysis screens. Model settings
-currently live in .env. Multi-user access control is not implemented.
+Home, Connections, Project overview, Ask assistant, Architecture, Feature explorer, Jira tasks
+and Team decisions have working views. Account settings manages credentials and local members.
+Model settings remain in .env. Troubleshooting and the general Settings screen remain limited.
+Separate local member workspaces are described in [task 6.7](docs/TASK_6_7.md).
 
 Inspect citations before accepting claims. Valid links and passing phrase checks do not
 establish accuracy. See [task 5.2](docs/TASK_5_2.md) for the separate human review workflow.
@@ -147,4 +153,4 @@ configured. Do not disable TLS verification.
 
 Press Ctrl+C in the app terminal. Settings and knowledge remain in data/index.sqlite3.
 Start with the same command and reconnect to the saved project. Keep this single-user service
-on localhost; do not publish it or share its unencrypted database and credentials.
+on localhost; protect its databases, logs and encrypted credential vaults with Windows permissions.

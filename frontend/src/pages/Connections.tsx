@@ -107,7 +107,7 @@ export function Connections() {
         <Chip tone="info"><Icon name="lock" size={14} /> Read-only access</Chip>
         {status.data?.demo && <Chip tone="violet">Example mode, fixture data</Chip>}
         {!status.data?.token_configured && !status.data?.demo && (
-          <Chip tone="warn">No GitHub token in .env, unauthenticated rate limits apply</Chip>
+          <Chip tone="warn">No GitHub token saved. Add one in Account settings.</Chip>
         )}
       </div>
 
@@ -129,7 +129,7 @@ export function Connections() {
                     GitHub
                     <Chip tone={status.data?.token_configured || status.data?.demo ? 'ok' : 'quiet'}>
                       <Dot tone={status.data?.token_configured || status.data?.demo ? 'ok' : 'quiet'} />
-                      {status.data?.token_configured || status.data?.demo ? 'Connected' : 'No credential'}
+                      {status.data?.demo ? 'Example' : status.data?.token_configured ? 'Credential saved' : 'No credential'}
                     </Chip>
                   </div>
                   <p className="conn-plain">Source code repository.</p>

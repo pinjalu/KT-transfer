@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { useAccount } from '../components/AuthGate'
 import { Button, Card, PageHead } from '../components/ui'
 import { post } from '../lib/api'
+import { SourceCredentials, TeamAccounts } from '../components/TeamAccounts'
 
 export function Account() {
   const account = useAccount()
@@ -25,7 +26,7 @@ export function Account() {
     finally { setBusy(false) }
   }
   return <div className="account-section">
-    <PageHead title="Account" lead={`Signed in as ${account.user.username}. This account owns the local workspace.`} />
+    <PageHead title="Account" lead={`Signed in as ${account.user.username}. Your sources, answers and connections belong to your private workspace.`} />
     <Card title="Change password" sub="Changing your password signs out all other sessions.">
       <form className="auth-form" onSubmit={change}>
         <input type="text" autoComplete="username" value={account.user.username} readOnly hidden />
@@ -39,5 +40,7 @@ export function Account() {
     </Card>
     <div className="account-actions"><Button onClick={() => void account.logout(true).catch(e => setError(e.message))}>Sign out all sessions</Button></div>
     <p className="auth-footnote">Sessions expire after 30 minutes without interaction or 8 hours after sign-in. Background jobs continue after sign-out; sign in to view their results.</p>
+    <SourceCredentials />
+    {account.user.role === 'owner' && <TeamAccounts />}
   </div>
 }

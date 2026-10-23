@@ -4,6 +4,7 @@ import time
 from dataclasses import asdict
 import os
 import re
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, Request, Query
@@ -52,7 +53,8 @@ class Feedback(BaseModel):
     sufficiency: Literal['sufficient','partly sufficient','insufficient','not assessed']
 
 
-def create_app(demo=False, db_path=None, connector_factory=None):
+def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=None,
+               credential_store=None, _workspace_id=1):
     # A listing is fetched from the platform and then reused for a short while. Without this the
     # browser's status poll asks Slack and Jira for the same list every few seconds, which earns
     # a rate limit and makes the page look broken.
@@ -83,7 +85,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
     index = Index(db_path or data_dir()/('demo.sqlite3' if demo else 'index.sqlite3'))
     index.recover()
     if not index.settings():
-        repo = 'demo/example-shop' if demo else os.getenv('GITHUB_REPOSITORY','')
+        repo = 'demo/example-shop' if demo else os.getenv('GITHUB_REPOSITORY','') if _workspace_id == 1 else ''
         branch = 'main' if demo else os.getenv('GITHUB_BRANCH','main')
         if repo and repo != 'OWNER/REPOSITORY':
             try:
@@ -107,21 +109,27 @@ def create_app(demo=False, db_path=None, connector_factory=None):
     # Example mode is exempt. It exists to be opened and looked at, and it has one fixed
     # fixture repository that it would be perverse to make anybody type.
     chosen = {'this_run': bool(demo)}
+    children = {}
     @asynccontextmanager
     async def lifespan(app):
         yield
-        if service.task and not service.task.done():
-            service.cancel.set()
-            service.task.cancel()
-            try:
-                await service.task
-            except asyncio.CancelledError:
-                pass
+        for running in [service] + [item[0].state.service for item in children.values()]:
+            if running.task and not running.task.done():
+                running.cancel.set()
+                running.task.cancel()
+                try:
+                    await running.task
+                except asyncio.CancelledError:
+                    pass
     app = FastAPI(title='Project Knowledge Assistant',docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
     app.state.service = service
-    auth = AuthStore(index.path)
+    auth = auth_store or AuthStore(index.path)
     app.state.auth = auth
     auth_web.install(app, auth)
+    if credential_store is None and db_path is None and not demo:
+        from pka.vault import Vault
+        credential_store = Vault(Path(index.path).with_suffix('.credentials.dpapi'))
+        credential_store.migrate(credentials.ENV_PATH, credentials.writable())
 
     callbacks = {p['oauth']['redirect_path'] for p in registry.PLATFORMS if p.get('oauth')}
 
@@ -171,6 +179,15 @@ def create_app(demo=False, db_path=None, connector_factory=None):
     @app.middleware('http')
     async def security_headers(request: Request, call_next):
         result = await local_only(request, call_next)
+        if request.url.path.startswith('/api/') and (
+                request.method == 'POST' and request.url.path != '/api/auth/activity'
+                or request.url.path.startswith('/api/connect/')):
+            actor = getattr(request.state, 'audit_actor', None)
+            if actor is None:
+                actor = (getattr(request.state, 'owner', None) or {}).get('id')
+            route = request.scope.get('route')
+            await run_in_threadpool(auth.audit, 'api.' + (getattr(route, 'name', '') or 'denied'),
+                                    actor, result.status_code, getattr(request.state, 'audit_target', None))
         result.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
         result.headers['X-Content-Type-Options'] = 'nosniff'
         result.headers['Referrer-Policy'] = 'no-referrer'
@@ -218,7 +235,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                     'knowledge_revision':index.revision,
                     'busy':False,'demo':demo,'limits':asdict(LIMITS),
                     'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
-                    'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
+                    'token_configured':bool(credentials.getenv('GITHUB_TOKEN','')) and not demo,
                     'warning':'','job_error':'','job_name':'','job':None,
                     'jira_reading':False,'jira_progress':None,
                     'slack_reading':False,'slack_progress':None,
@@ -230,7 +247,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
                 'knowledge_revision':index.revision,
                 'busy':service.busy() or bool(service.task and not service.task.done()),'demo':demo,
                 'limits':asdict(LIMITS),'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
-                'token_configured':bool(os.getenv('GITHUB_TOKEN','')) and not demo,
+                'token_configured':bool(credentials.getenv('GITHUB_TOKEN','')) and not demo,
                 'warning':service.access_warning,'ready':index.active_scan() is not None,
                 'job_error':service.job_error,'job_name':service.job_name,
                 'job':service.job_status(),
@@ -253,6 +270,8 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         if offset < 0:
             raise HTTPException(400,'Offset must be non-negative.')
         scan = service.progress or index.latest() or {}
+        if index.active_scan():
+            await service.check_external_access(index.active_scan(), names=('github',))
         files = scan.get('files',[])
         return {'files':files[offset:offset+100],'next_offset':offset+100 if len(files)>offset+100 else None}
 
@@ -376,7 +395,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         return {'platforms':rows,
                 'credentials':credentials.status(),
                 'note':'Selecting a platform records that this project uses it. It never grants access. '
-                       'Access needs a credential in your local .env file and a scope you name yourself.'}
+                       'Access uses your account’s source credentials and the scope you select.'}
 
     @app.get('/api/connect/{platform}')
     async def connect(platform: str, request: Request):
@@ -386,7 +405,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         if request.url.hostname != 'localhost':
             raise HTTPException(409, 'Slack browser approval requires localhost. Open http://localhost:'
                                 + str(request.url.port or 80) + '/connections and sign in there first.')
-        url = oauth.begin(platform, str(request.base_url), os.getenv,
+        url = oauth.begin(platform, str(request.base_url), credentials.getenv,
                           session_id=digest(auth_web.token(request, auth)))
         applog.event('oauth.begin', platform=platform)
         return {'url':url}
@@ -400,7 +419,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             return RedirectResponse('/?connect=incomplete', status_code=303)
         try:
             credentials.refresh()
-            platform, name, token, granted = await oauth.complete(state, code, os.getenv,
+            platform, name, token, granted = await oauth.complete(state, code, credentials.getenv,
                 session_id=digest(auth_web.token(request, auth)))
             if not auth.session(auth_web.token(request, auth), auth_web.origin(request)):
                 return RedirectResponse('/login', status_code=303)
@@ -414,12 +433,17 @@ def create_app(demo=False, db_path=None, connector_factory=None):
         return RedirectResponse('/?connect=ok', status_code=303)
 
     @app.post('/api/credentials')
-    async def set_credentials(update: CredentialUpdate):
+    async def set_credentials(request: Request):
         idle()
         if demo:
             raise HTTPException(409,'Example mode does not connect to anything.')
+        data = await auth_web.json_body(request)
+        values = data.get('values') if isinstance(data, dict) and set(data) == {'values'} else None
+        if (not isinstance(values, dict) or len(values) > 10 or
+                any(not isinstance(v, str) for v in values.values())):
+            raise HTTPException(422, 'Enter valid credential fields.')
         try:
-            saved = credentials.save(update.values)
+            saved = credentials.save(values)
         except ValueError as exc:
             raise HTTPException(422,str(exc)) from None
         # Names only. A credential value must never reach a log.
@@ -431,7 +455,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
     @app.get('/api/slack/channels')
     async def slack_channels():
         credentials.refresh()
-        token = os.getenv('SLACK_USER_TOKEN','')
+        token = credentials.getenv('SLACK_USER_TOKEN','')
         if not token:
             return {'connected':False,'channels':[],'chosen':[],'workspace':'',
                     'reason':'Connect Slack first.'}
@@ -476,7 +500,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
     async def read_slack():
         idle()
         credentials.refresh()
-        token = os.getenv('SLACK_USER_TOKEN','')
+        token = credentials.getenv('SLACK_USER_TOKEN','')
         if not token:
             raise HTTPException(409,'Connect Slack first.')
         cfg = index.settings() or {}
@@ -505,7 +529,7 @@ def create_app(demo=False, db_path=None, connector_factory=None):
 
     def jira_credentials():
         credentials.refresh()
-        return (os.getenv('JIRA_SITE',''), os.getenv('JIRA_EMAIL',''), os.getenv('JIRA_API_TOKEN',''))
+        return (credentials.getenv('JIRA_SITE',''), credentials.getenv('JIRA_EMAIL',''), credentials.getenv('JIRA_API_TOKEN',''))
 
     @app.get('/api/jira/projects')
     async def jira_projects():
@@ -703,4 +727,12 @@ def create_app(demo=False, db_path=None, connector_factory=None):
             raise HTTPException(404,'Not found.')
         return FileResponse(UI)
 
+    if _workspace_id == 1:
+        from pka.workspaces import WorkspaceDispatch
+        app.state.workspaces = children
+        def member_app(path, vault):
+            return create_app(demo, path, connector_factory, auth_store=auth,
+                              credential_store=vault, _workspace_id=2)
+        app.add_middleware(WorkspaceDispatch, store=auth, root_path=index.path,
+                           owner_vault=credential_store, children=children, factory=member_app)
     return app

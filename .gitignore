@@ -7,3 +7,4 @@ __pycache__/
 node_modules/
 *.auth.sqlite3*
 *.auth.setup-code
+*.dpapi

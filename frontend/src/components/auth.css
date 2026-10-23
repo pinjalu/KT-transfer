@@ -14,5 +14,9 @@
 .auth-card details p { margin-top: 10px; }
 .account-section { max-width: 620px; }
 .account-section .auth-form { max-width: 420px; }
+.account-section > .card { margin-top: 24px; }
 .account-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
 @media(max-width: 540px) { .auth-card { padding: 24px; } .auth-card h1 { font-size: 24px; } }
+.account-list { list-style: none; padding: 0; margin: 20px 0 0; }
+.account-list li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.auth-form select { width: 100%; min-height: 42px; padding: 8px; font: inherit; }

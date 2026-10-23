@@ -13,6 +13,7 @@ from pka.config import LIMITS, ROOT, now
 from pka.connectors.base import SourceError
 from pka.connectors.slack import transcript
 from pka.mcp_client import connect
+from pka import credentials
 
 SOURCES = ('github', 'jira', 'slack')
 ERROR_MESSAGES = {
@@ -49,11 +50,11 @@ def missing_setup(source, settings):
     if source == 'github':
         return [] if settings.get('repo') and settings.get('branch') else ['repository and branch']
     if source == 'jira':
-        missing = [name for name in ('JIRA_SITE', 'JIRA_EMAIL', 'JIRA_API_TOKEN') if not os.getenv(name, '').strip()]
+        missing = [name for name in ('JIRA_SITE', 'JIRA_EMAIL', 'JIRA_API_TOKEN') if not credentials.getenv(name, '').strip()]
         if not (settings.get('jira') or {}).get('project'):
             missing.append('selected Jira project')
         return missing
-    missing = [] if os.getenv('SLACK_USER_TOKEN', '').strip() else ['SLACK_USER_TOKEN']
+    missing = [] if credentials.getenv('SLACK_USER_TOKEN', '').strip() else ['SLACK_USER_TOKEN']
     channels = (settings.get('slack') or {}).get('channels') or []
     if not channels or any(not isinstance(c, dict) or not c.get('id') for c in channels):
         missing.append('selected Slack channels')
@@ -245,7 +246,8 @@ def main(argv=None):
         print('Could not read the saved application settings. Open Connections and save your selection first.')
         return 1
     selected = SOURCES if args.source == 'all' else (args.source,)
-    report = asyncio.run(run_checks(settings, selected, args.timeout))
+    with credentials.owner_credentials(data / 'index.sqlite3'):
+        report = asyncio.run(run_checks(settings, selected, args.timeout))
     output = args.output or data / 'acceptance' / ('connections-' + now().replace(':', '-') + '.json')
     try:
         output.parent.mkdir(parents=True, exist_ok=True)

@@ -5,10 +5,12 @@ import os
 import re
 from urllib.parse import quote, urlsplit
 from dotenv import load_dotenv
+from contextvars import ContextVar
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / '.env', override=False)
 IST = timezone(timedelta(hours=5, minutes=30))
+workspace_directory = ContextVar('pka_workspace_directory', default=None)
 
 
 def now() -> str:
@@ -95,13 +97,13 @@ LIMITS = Limits()
 
 
 def data_dir() -> Path:
-    p = Path(os.getenv('PKA_DATA_DIR', str(ROOT / 'data')))
+    p = Path(workspace_directory.get() or os.getenv('PKA_DATA_DIR', str(ROOT / 'data')))
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def log_dir() -> Path:
-    p = Path(os.getenv('PKA_LOG_DIR', str(data_dir() / 'logs')))
+    p = data_dir() / 'logs' if workspace_directory.get() else Path(os.getenv('PKA_LOG_DIR', str(data_dir() / 'logs')))
     p.mkdir(parents=True, exist_ok=True)
     return p
 

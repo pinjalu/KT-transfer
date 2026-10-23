@@ -1,15 +1,17 @@
-"""Store platform credentials the user types into the browser, in their own local .env file.
+"""Store platform credentials in the authenticated Windows account's local vault.
 
 The rule this follows is that a credential never reaches source code, a model prompt or a log.
-It is written to .env, which is listed in .gitignore, and held in this process's environment so
-the next scan picks it up without a restart. It is never read back out: the interface is told
-only whether a credential is set, never what it is.
+Production uses a per-account DPAPI vault selected by request context. The legacy .env path
+remains for development/test callers without a vault. The interface is told only whether a
+credential is set, never what it is.
 
 Only names a platform actually declares in the registry can be written. Without that allowlist
 a form post could set PATH or PYTHONPATH, and the next scan spawns a subprocess, so an
 arbitrary environment write would be an arbitrary code execution.
 """
 import os
+from contextvars import ContextVar
+from contextlib import contextmanager
 
 from pka.config import ROOT
 from pka.connectors import registry
@@ -18,6 +20,33 @@ MAX_VALUE = 500
 ENV_PATH = ROOT / '.env'
 _file_path = None
 _file_values = {}
+active_vault = ContextVar('pka_credential_vault', default=None)
+
+
+@contextmanager
+def using(vault):
+    token = active_vault.set(vault)
+    try:
+        yield
+    finally:
+        active_vault.reset(token)
+
+
+@contextmanager
+def owner_credentials(index_path):
+    """Explicit local diagnostic CLI context; never select this from an HTTP parameter."""
+    from pathlib import Path
+    from pka.vault import Vault
+    path = Path(index_path).with_suffix('.credentials.dpapi')
+    with using(Vault(path) if path.exists() else None):
+        yield
+
+
+def getenv(name, default=''):
+    vault = active_vault.get()
+    if vault is not None and name in writable():
+        return vault.read().get(name, default)
+    return os.getenv(name, default)
 
 
 def writable() -> set:
@@ -37,6 +66,9 @@ def refresh() -> None:
     setting that happens to live in the same file.
     """
     global _file_path, _file_values
+    if active_vault.get() is not None:
+        active_vault.get().read()  # Fail closed if the current user's vault cannot be unlocked.
+        return
     if _file_path != ENV_PATH:
         _file_path, _file_values = ENV_PATH, {}
     allowed = writable()
@@ -70,17 +102,17 @@ def source_fingerprint(name: str) -> str:
     import json
     names = {'github': ('GITHUB_TOKEN',), 'jira': ('JIRA_SITE', 'JIRA_EMAIL', 'JIRA_API_TOKEN'),
              'slack': ('SLACK_USER_TOKEN',)}[name]
-    return hashlib.sha256(json.dumps([os.getenv(key, '') for key in names]).encode()).hexdigest()
+    return hashlib.sha256(json.dumps([getenv(key, '') for key in names]).encode()).hexdigest()
 
 
 def status() -> dict:
     refresh()
-    return {name: bool(os.getenv(name, '')) for name in sorted(writable())}
+    return {name: bool(getenv(name, '')) for name in sorted(writable())}
 
 
 def _check(name: str, value: str) -> str:
     if name not in writable():
-        raise ValueError('Unknown credential: ' + name + '.')
+        raise ValueError('Unknown credential name.')
     value = value.strip()
     if len(value) > MAX_VALUE:
         raise ValueError(name + ' is too long.')
@@ -103,7 +135,7 @@ def _reject_duplicates(checked: dict) -> None:
         # must not block an unrelated credential from being stored.
         if len(names) < 2 or not any(name in checked for name in names):
             continue
-        effective = {name: checked.get(name, os.getenv(name, '')) for name in names}
+        effective = {name: checked.get(name, getenv(name, '')) for name in names}
         seen = {}
         for name, value in effective.items():
             if not value:
@@ -115,11 +147,14 @@ def _reject_duplicates(checked: dict) -> None:
 
 
 def save(values: dict) -> list:
-    """Write these credentials to .env and this process. Returns the names changed, not values."""
+    """Save in the selected vault (legacy .env outside a vault); return names, never values."""
     checked = {name: _check(name, str(value)) for name, value in values.items()}
     if not checked:
         return []
     _reject_duplicates(checked)
+    if active_vault.get() is not None:
+        active_vault.get().save(checked)
+        return sorted(checked)
     lines = ENV_PATH.read_text(encoding='utf-8').splitlines() if ENV_PATH.exists() else []
     seen = set()
     out = []

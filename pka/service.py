@@ -400,7 +400,7 @@ class Service:
                 self.index.discard_source(name)
                 self.access_warning = f'{name.title()} credentials changed. Read that source again.'
 
-    async def check_external_access(self, scan, names=('jira', 'slack')):
+    async def check_external_access(self, scan, names=('github', 'jira', 'slack')):
         """Fail closed before using any saved external content, including cached views.
 
         Issue-level Jira checks account for issue security. Slack rechecks the imported
@@ -415,6 +415,21 @@ class Service:
         paths = self.index.indexed_paths(scan['id'])
         identities = {}
         for name in names:
+            if name == 'github':
+                identities[name] = credentials.source_fingerprint(name)
+                try:
+                    async with self.connector_factory(cfg, self.demo) as source:
+                        access = await source.check_access(scan['commit'])
+                    if access.get('head') != scan['commit']:
+                        self.index.invalidate()
+                        raise SourceError('stale', 'The branch changed. Refresh the repository scan.')
+                except SourceError as exc:
+                    if exc.code == 'access_denied':
+                        self.index.invalidate()
+                    raise
+                except Exception:
+                    raise SourceError('access_unverified', 'GitHub access could not be verified. No saved content was returned.') from None
+                continue
             selected = [p for p in paths if p.startswith(name+'/')]
             if not selected:
                 continue
@@ -1229,10 +1244,9 @@ class Service:
                 except Exception:
                     response.update(statements=[],missing_information='Inspect the excerpts below.',error='The answer could not be generated.')
             response['elapsed_seconds'] = round(time.perf_counter()-started,2)
-            if any(s['path'].startswith(('jira/', 'slack/')) for s in sources):
-                await self.check_external_access(scan)
-                response['access_checked_at'] = now()
-                response['elapsed_seconds'] = round(time.perf_counter()-started,2)
+            await self.check_external_access(scan)
+            response['access_checked_at'] = now()
+            response['elapsed_seconds'] = round(time.perf_counter()-started,2)
             self.ensure_current(checked)
             response['answer_id'] = self.index.record_answer(scan['id'],question,response,response['elapsed_seconds'])
             applog.event('ask.end', scan_id=scan['id'], answer_id=response['answer_id'],

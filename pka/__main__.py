@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description='Local Project Knowledge Assistant')
     parser.add_argument('--demo',action='store_true',help='Use labelled example data and a simulated response; no external services.')
     parser.add_argument('--port',type=int,default=8000)
-    parser.add_argument('--reset-password', action='store_true', help='Reset the local owner password and revoke every session, using hidden terminal input.')
+    parser.add_argument('--reset-password', action='store_true', help='Reset the local owner password and revoke owner sessions, using hidden terminal input.')
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error('Choose a port between 1024 and 65535.')
@@ -29,7 +29,7 @@ def main():
             store.reset_password(password)
         except AuthError as exc:
             parser.error(str(exc))
-        print('Owner password changed. All sessions have been signed out.')
+        print('Owner password changed. All owner sessions have been signed out.')
         return
     # Never log upstream HTTP requests, credentials, source excerpts or questions.
     for name in ('httpx','httpcore','mcp'):

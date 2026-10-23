@@ -7,7 +7,7 @@ then sets a build order.
 
 Current verification is recorded in [task 5.8](TASK_5_8.md). Phase counts below are the original
 9 October inventory, not current completion percentages. Individual task rows have been updated
-where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.6.
+where later acceptance records exist. The workbook uses separate ticket/task IDs, including 5.1–5.8 and 6.1–6.9.
 
 The backend is already FastAPI (`pka/web.py`, `fastapi==0.142.2`). Nothing needs to be moved onto
 FastAPI. The original missing-functionality counts below describe the 9 October baseline; the current screen coverage is listed below.
@@ -136,12 +136,13 @@ Deployment and operations stop at listing container, pipeline and hosting files 
 walkthrough exists as eighteen ordered steps in `pka/overview.py`, which covers the structure
 title partly, but the per-feature KT section needs the feature concept from Phase 06.
 
-### Phase 10, Team use and further improvements — local owner login implemented
+### Phase 10, Team use and further improvements — local account isolation implemented
 
 Task 6.6 implements a local owner account, password sign-in, server-side sessions, expiry,
-logout and password recovery. See [task 6.6](TASK_6_6.md). The gate before multiple users has
-not passed: per-user source permissions, isolated credentials and audit records remain.
-The application remains single user and local.
+logout and password recovery. See [task 6.6](TASK_6_6.md). [Task 6.7](TASK_6_7.md) adds member
+accounts, separate source workspaces, per-account credentials and upstream permission checks.
+It includes Windows credential encryption and local audit records as the task 6.8 foundation.
+Hosting remains local on this Windows computer; deployment and recovery work is task 6.9.
 
 Semantic search is built and off by default and has never been measured. A larger local model is a
 configuration change (`OLLAMA_MODEL`) rather than work.

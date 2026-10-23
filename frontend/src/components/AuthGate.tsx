@@ -4,7 +4,7 @@ import { AUTH_REQUIRED, get, post } from '../lib/api'
 import { Button } from './ui'
 import './auth.css'
 
-type User = { username: string; expires_at: number; idle_expires_at: number }
+type User = { id: number; role: 'owner' | 'member'; username: string; expires_at: number; idle_expires_at: number }
 type Session = { authenticated: boolean; setup_required: boolean; user: User | null }
 const Account = createContext<{ user: User; refresh: () => Promise<void>; logout: (all?: boolean) => Promise<void> } | null>(null)
 export function useAccount() { return useContext(Account)! }
@@ -89,7 +89,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [session?.authenticated, session?.user?.expires_at, session?.user?.idle_expires_at, refresh])
 
   if (session?.authenticated && session.user) {
-    return <Account.Provider value={{ user: session.user, refresh: changed, logout }}>{children}</Account.Provider>
+    return <Account.Provider key={session.user.id} value={{ user: session.user, refresh: changed, logout }}>{children}</Account.Provider>
   }
   return <div className="auth-page"><div className="auth-card">
     <div className="auth-brand"><span className="auth-mark">K</span> KT Assistant</div>
@@ -133,7 +133,7 @@ function Login({ setup, onSuccess, notice }: { setup: boolean; onSuccess: () => 
       {error && <p className="auth-error" role="alert">{error}</p>}
       <Button kind="primary" type="submit" disabled={busy}>{busy ? 'Please wait…' : setup ? 'Create account' : 'Sign in'}</Button>
     </form>
-    <p className="auth-footnote">One owner account on this computer. Sessions end after 30 minutes of inactivity or 8 hours.</p>
-    {!setup && <details><summary>Forgot your password?</summary><p>In the app’s terminal, run <code>python -m pka --reset-password</code> and enter a new password. This signs out every session. For example mode, add <code>--demo</code>.</p></details>}
+    <p className="auth-footnote">Your account has its own private workspace. Sessions end after 30 minutes of inactivity or 8 hours. Ask the installation owner to create a member account.</p>
+    {!setup && <details><summary>Forgot your password?</summary><p>The installation owner can run <code>python -m pka --reset-password</code> in the app’s terminal to reset the owner password and end the owner’s sessions. For example mode, add <code>--demo</code>. Members should contact the installation owner.</p></details>}
   </>
 }

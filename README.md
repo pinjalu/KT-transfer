@@ -320,11 +320,18 @@ The browser calls the FastAPI backend. For each read, the backend launches the f
 
 ## Local data and permissions
 
-The app binds only to `127.0.0.1` and has one local owner account. Keep it on your own machine;
-do not expose it through a tunnel or shared server. Per-user source permissions, isolated team
-credentials and audit records remain tasks 6.7–6.8. HTTP cookies are allowed only for loopback use;
-HTTPS uses Secure cookies. Account login does not make the shared index suitable for multiple users.
-Protect the local data directory and backups with your operating-system account permissions.
+The app binds only to `127.0.0.1`. On Windows, the owner can create up to 25 member accounts
+from Account settings. Each account has its own source credentials, index, answers and jobs;
+members never inherit the owner's sources. Source access is checked before using saved content
+and again before publishing generated answers. See [task 6.7](docs/TASK_6_7.md).
+Keep hosting local; this does not add LAN hosting or SSO. HTTP cookies are allowed only on
+loopback; HTTPS uses Secure cookies. The Windows account running the app remains trusted.
+Protect local data and backups with operating-system permissions.
+
+Production source credentials use separate Windows current-user DPAPI vaults. Existing owner
+credentials are migrated out of `.env` after encryption is verified; `.env` retains model and
+other local settings. Account settings accepts new credentials without displaying saved values.
+Owner-only audit records contain action metadata, not credential values or source content.
 
 One continuous debug log is written to `data/logs/pka.log`, covering startup, repository saves, every GitHub request with its status and remaining allowance, scan starts and endings, retrieval for each question including which excerpts were chosen, and every model call with its timing. It rolls at 5 MB and keeps five previous files. `PKA_LOG_LEVEL` changes the level. It never records the token, source excerpt text or answer text, and it withholds question text unless `PKA_LOG_QUESTIONS=1` is set, recording only the length and word count. Alongside it, every scan writes a plain-text report to `data/logs/scan-<id>-<status>-<time>.log` listing the counts, the reason totals and every candidate file with its state. The twenty most recent are kept. Set `PKA_LOG_DIR` to put them elsewhere. The report holds paths, states and counts only, never source text, tokens or your questions. The application writes its own settings, scan metadata, excerpts, answers and feedback under `data/`. It never writes to GitHub. The `.env` file and local database are unencrypted files protected by your operating-system account. Never commit them or share them with the project ZIP. Changing the selection clears previous indexed content and answers. Rescanning clears old answer feedback as well, preventing old source excerpts from being retained as answer history. This is logical removal from application results, not forensic erasure of disk backups.
 
