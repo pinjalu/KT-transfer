@@ -25,7 +25,8 @@ export function Shell() {
 
   return (
     <div className="shell">
-      <Sidebar project={project} username={account.user.username} />
+      <Sidebar project={project} username={account.user.username}
+               onSignOut={() => void account.logout().catch(e => setLogoutError(e.message))} />
       <div className="main">
         <header className="topbar">
           <nav className="crumbs" aria-label="Breadcrumb">
@@ -38,7 +39,6 @@ export function Shell() {
             )}
           </nav>
           <div className="topbar-right">
-            <button className="btn btn-ghost" onClick={() => void account.logout().catch(e => setLogoutError(e.message))}>Sign out</button>
             {data?.demo && (
               <span className="chip chip-info"><Icon name="database" size={14} /> Sample data</span>
             )}

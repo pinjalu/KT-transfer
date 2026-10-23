@@ -2,7 +2,7 @@ import { Link, NavLink } from 'react-router-dom'
 import { DESTINATIONS } from '../nav'
 import { Icon } from './Icon'
 
-export function Sidebar({ project, username }: { project: string; username: string }) {
+export function Sidebar({ project, username, onSignOut }: { project: string; username: string; onSignOut: () => void }) {
   return (
     <nav className="sidebar" aria-label="Main">
       <div className="sidebar-brand">
@@ -38,6 +38,9 @@ export function Sidebar({ project, username }: { project: string; username: stri
           <span className="avatar" aria-hidden="true">{Array.from(username.trim())[0]?.toUpperCase() || '?'}</span>
           <span className="sidebar-user-name" title={username}>{username}</span>
         </Link>
+        <button className="sidebar-link sidebar-signout" type="button" onClick={onSignOut}>
+          Sign out
+        </button>
       </div>
     </nav>
   )

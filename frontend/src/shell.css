@@ -51,6 +51,7 @@
   background: #7c5cd6; color: #fff; font-weight: 700; font-size: 12px;
 }
 .sidebar-user-name { font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-signout { width: 100%; margin-top: var(--s1); border: 1px solid #315367; background: transparent; font: inherit; justify-content: center; cursor: pointer; }
 
 /* Main column */
 .main { display: flex; flex-direction: column; min-width: 0; height: 100%; }
