@@ -86,7 +86,9 @@ def test_a_refusal_must_explain_the_gap():
 
 
 @pytest.mark.parametrize('question', ['Which model do we use?', 'What is the server port?',
-                                    'How many retries are configured?', 'Where is the timeout set?'])
+                                    'How many retries are configured?', 'Where is the timeout set?',
+                                    'Can a public image prove private signing works?',
+                                    'Does retry create a new job ID?'])
 def test_focused_schema_cannot_combine_an_answer_with_a_missing_message(question):
     schema = answer_schema(question)
     complete, missing = schema['anyOf']

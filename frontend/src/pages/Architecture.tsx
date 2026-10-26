@@ -10,13 +10,13 @@
  * four tables is not, and pretending otherwise would be decoration.
  */
 import { useState } from 'react'
-import { Card, Chip, Empty, Failed, Loading, NoProject, PageHead, SourceLink, Tabs } from '../components/ui'
+import { Link } from 'react-router-dom'
+import { Button, Card, Chip, Empty, Failed, Loading, NoProject, PageHead, SourceLink, Tabs } from '../components/ui'
 import { Diagram } from '../components/Diagram'
 import type { DiagramNode, DiagramPayload } from '../components/Diagram'
-import { useApi } from '../lib/useApi'
+import { useStatus } from '../lib/useStatus'
 import { useOverview } from '../lib/useOverview'
 import type { FactGroup } from '../lib/overview'
-import type { Status } from '../lib/types'
 import './architecture.css'
 
 type RoleLink = { path: string; name: string; line: number; url: string }
@@ -135,7 +135,7 @@ function Detail({ card, picked, onClose }:
 }
 
 export function Architecture() {
-  const status = useApi<Status>('/api/status', 5000)
+  const status = useStatus()
   const reply = useOverview(status)
   const [tab, setTab] = useState('')
   const [picked, setPicked] = useState('')
@@ -163,7 +163,7 @@ export function Architecture() {
         <Card>
           <Empty title="The diagrams are built with the overview."
                  detail="Every box and arrow here is derived from the files that were read, and that derivation runs as part of building the overview. Build one and this screen fills in."
-                 action={<a className="btn btn-primary" href="/overview">Go to Project overview</a>} />
+                 action={<Link className="btn btn-primary" to="/overview">Go to Project overview</Link>} />
         </Card>
       </>
     )
@@ -186,6 +186,7 @@ export function Architecture() {
   return (
     <>
       <PageHead title="Architecture"
+                actions={<Button icon="refresh" onClick={reply.reload}>Refresh architecture</Button>}
                 lead={`Drawn from ${body.repo} at commit ${body.commit?.slice(0, 7)}. No model decided any of it.`} />
 
       {!tabs.length ? (

@@ -15,16 +15,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [checking, setChecking] = useState(false)
   const channel = useRef<BroadcastChannel | null>(null)
   const sequence = useRef(0)
+  const pending = useRef<number | null>(null)
+  const currentSession = useRef(session)
+  currentSession.current = session
   const lastActivity = useRef(0)
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (background = false) => {
+    if (background && pending.current !== null) return
     const request = ++sequence.current
-    setChecking(true)
+    pending.current = request
+    const current = currentSession.current
+    const valid = current?.authenticated && current.user
+      && Date.now() / 1000 < Math.min(current.user.expires_at, current.user.idle_expires_at)
+    setChecking(!(background && valid))
     try {
       const value = await get('/api/auth/status') as Session
       if (sequence.current === request) { setSession(value); setError('') }
     } catch (e) {
       if (sequence.current === request) { setSession(null); setError((e as Error).message) }
     } finally {
+      if (pending.current === request) pending.current = null
       if (sequence.current === request) setChecking(false)
     }
   }, [])
@@ -50,11 +59,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setSession({ authenticated: false, setup_required: false, user: null })
       setError('Your session ended. Sign in again to continue.')
     }
-    // Keep the mounted workspace while checking the same session. Clearing it here
-    // discarded drafts and restarted every source request each time a tab was shown.
-    // The workspace stays hidden until verified; a logout/account change still wipes it.
+    // Routine tab returns revalidate quietly while the known session is still valid.
+    // Account broadcasts and back-forward cache restores require blocking verification.
+    // A failed check, expiry, or account change still discards private workspace state.
     const verify = () => { void refresh() }
-    const visible = () => { if (document.visibilityState === 'visible') verify() }
+    const visible = () => { if (document.visibilityState === 'visible') void refresh(true) }
     const restored = (event: PageTransitionEvent) => { if (event.persisted) verify() }
     if ('BroadcastChannel' in window) {
       channel.current = new BroadcastChannel('pka-account')

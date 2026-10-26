@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Empty, Failed, Loading, NoProject, PageHead } from '../components/ui'
 import { Said } from '../components/Statements'
 import { JiraRelated } from '../components/JiraRelated'
 import { ApiError, post } from '../lib/api'
 import { useApi } from '../lib/useApi'
+import { useStatus } from '../lib/useStatus'
+import { useRememberedParam } from '../lib/pageState'
 import type { Source, Statement } from '../lib/answer'
 import type { Status } from '../lib/types'
 import './jira-tasks.css'
@@ -47,12 +49,6 @@ function Task({ issueKey, status }: { issueKey: string; status: Status }) {
     previousJob.current = job?.state
     if (job) setStarted(false)
   }, [job?.id, job?.state, running, reload])
-  // Recheck access when returning to a tab, without repeatedly fetching whole Jira issues.
-  useEffect(() => {
-    const visible = () => { if (document.visibilityState === 'visible') reload() }
-    document.addEventListener('visibilitychange', visible)
-    return () => document.removeEventListener('visibilitychange', visible)
-  }, [reload])
 
   const explain = async () => {
     setPending(true); setError('')
@@ -107,14 +103,16 @@ function Task({ issueKey, status }: { issueKey: string; status: Status }) {
 }
 
 export function JiraTasks() {
-  const status = useApi<Status>('/api/status', 2000)
-  const list = useApi<{ issues: Issue[]; reason: string; awaiting_project?: boolean }>('/api/jira/tasks', 0, status.data?.knowledge_revision)
-  const [params, setParams] = useSearchParams()
+  const status = useStatus(2000)
+  const list = useApi<{ issues: Issue[]; reason: string; awaiting_project?: boolean }>('/api/jira/tasks', 0, status.data?.knowledge_revision,
+    !!status.data && !status.data.awaiting_project)
+  const [chosen, setParams] = useRememberedParam('issue')
   const [filter, setFilter] = useState('')
   const issues = list.data?.issues ?? []
-  const selected = params.get('issue') || (status.data?.job?.kind === 'jira_task' ? status.data.job.target : '') || issues[0]?.key || ''
+  const selected = chosen || (status.data?.job?.kind === 'jira_task' ? status.data.job.target : '') || issues[0]?.key || ''
   const shown = issues.filter(issue => `${issue.key} ${issue.title}`.toLowerCase().includes(filter.toLowerCase()))
-  const head = <PageHead title="Jira tasks" lead="Choose an imported task to understand its purpose, requested work and completion checks." />
+  const head = <PageHead title="Jira tasks" lead="Choose an imported task to understand its purpose, requested work and completion checks."
+    actions={<Button icon="refresh" onClick={list.reload}>Refresh tasks</Button>} />
   if (status.data?.awaiting_project || list.data?.awaiting_project) return <>{head}<NoProject what="Jira tasks" /></>
   if (status.error) return <>{head}<Failed message={status.error} onRetry={status.reload} /></>
   if (list.loading || !status.data) return <>{head}<Loading what="Jira tasks" /></>

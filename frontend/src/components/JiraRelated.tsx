@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Failed, Loading } from './ui'
 import { useApi } from '../lib/useApi'
@@ -19,11 +19,6 @@ function RelatedGroup({ issueKey, revision, kind }: {
   const [offset, setOffset] = useState(0)
   const reply = useApi<Reply>(`/api/jira/tasks/${encodeURIComponent(issueKey)}/links?kind=${kind}&offset=${offset}`, 0, revision)
   const reload = reply.reload
-  useEffect(() => {
-    const visible = () => { if (document.visibilityState === 'visible') reload() }
-    document.addEventListener('visibilitychange', visible)
-    return () => document.removeEventListener('visibilitychange', visible)
-  }, [reload])
   const files = kind === 'files'
   const data = reply.data
   return <Card title={files ? 'Related project files' : 'Related Slack discussions'}

@@ -13,12 +13,14 @@ from pka.connectors.local import is_local
 from pka.index import chunk_file, small_talk
 from pka.connectors.slack import transcript, snapshot as slack_snapshot
 from pka import embed, jira_tasks, jira_links, decisions
+from pka.answer_checks import checked_answer, generation_sources
 from pka.facts import derive as derive_facts
 from pka.diagram import build as build_diagrams
 from pka.roles import describe as describe_roles
 from pka.overview import (TOPICS, reading_order, section_from, tidy, topics_for,
                           walkthrough)
 from pka.mcp_client import connect
+from pka.parallel import concurrency, process_parallel
 
 GREETING = (
     'Hello. I answer questions about the project that has been scanned, using the files, '
@@ -87,13 +89,23 @@ Keep named components separate even within one file: settings and commands under
 component's heading belong to that component, not to the component the user asked about.
 4. Copy exact names, values, formats, versions and commands from the evidence. Put these
 technical values in backticks. Explain their meaning in plain words, not a list of filenames.
-An environment default is a default, not proof of a production runtime value. If sources
-conflict, describe the conflict and cite both rather than silently choosing one.
+An environment default is a default, not proof of a production runtime value. Never describe
+an example, proposed change or pending test as deployed, verified, reproduced or fixed.
+If sources conflict, distinguish a proposal from a correction that explicitly replaces it.
+Cite the final correction and state what it superseded. If no explicit resolution is shown,
+describe the conflict and cite both rather than silently choosing one.
 5. If the requested fact is absent, return statements: [] and explain the specific gap in
 missing_information. Do not fill the answer with related code or guess a plausible value.
 If part of a multi-part question is supported, answer that part and identify only the missing part.
 6. Use missing_information: "" when the question is answered. Do not say a value is missing
 after stating it, and do not list unrelated unknowns such as credentials or deployment details.
+7. For yes/no or boundary questions, answer the condition asked about first. Preserve exact
+operators: < and > exclude equality, <= and >= include it. Substitute the supplied number
+before explaining the result. Read the complete Boolean expression: a separate OR condition
+may still trigger the outcome, and an AND NOT guard may prevent it. Never infer the whole
+outcome from one comparison alone. State any assumed default or missing runtime value.
+8. Successful fallback behavior does not prove the primary path worked. A public resource
+loading cannot demonstrate that private-resource authentication or signing succeeded.
 
 Return JSON matching the schema. No HTML, tools, or external links.'''
 
@@ -116,7 +128,8 @@ class GroundedAnswer(BaseModel):
 
 def focused_question(question):
     """Fact lookups need one direct answer; explicit explanations may need a sequence."""
-    lookup = re.search(r'\b(?:what|which|where|who|when|name)\b|\bhow\s+(?:many|much)\b', question, re.I)
+    lookup = re.search(r'\b(?:what|which|where|who|when|name)\b|\bhow\s+(?:many|much)\b|'
+                       r'^\s*(?:can|could|does|do|is|are|will|would)\b', question, re.I)
     broad = re.search(r'\b(?:explain|describe|why|compare|differences?|walkthrough|overview|'
                       r'architecture|steps|summari[sz]e)\b|\bhow\s+(?!many\b|much\b)', question, re.I)
     return bool(lookup) and not broad
@@ -199,6 +212,7 @@ def _why_http(reply, model: str) -> str:
 
 
 async def ollama_answer(question, sources):
+    sources = generation_sources(question, sources)
     instruction = SYSTEM
     if focused_question(question):
         if fact_budget(question) == 1:
@@ -573,6 +587,43 @@ class Service:
             self.decision_progress = None
             self.local_progress = None
 
+    async def read_files(self, source, entries, totals=None):
+        """Read a small window concurrently, then consume it in manifest order.
+
+        Reserve the remaining scan allowance before issuing calls. A skipped read
+        releases its reservation for the next window; database/report updates stay
+        in the caller so totals and coverage cannot race.
+        """
+        width = concurrency('PKA_READ_CONCURRENCY', 4, 8)
+        position = 0
+        while position < len(entries):
+            self.check_cancelled()
+            batch, reserved_files, reserved_bytes = [], 0, 0
+            while position < len(entries) and len(batch) < width:
+                item = entries[position]
+                reason = item.get('skip', '')
+                if not reason and totals is not None:
+                    if totals['read'] >= LIMITS.max_files or totals['bytes'] + item['size'] > LIMITS.max_total_bytes:
+                        reason = 'scan_size_limit'
+                    elif (totals['read'] + reserved_files >= LIMITS.max_files or
+                          totals['bytes'] + reserved_bytes + item['size'] > LIMITS.max_total_bytes):
+                        break
+                batch.append((item, reason))
+                if not reason:
+                    reserved_files += 1
+                    reserved_bytes += item.get('size', 0)
+                position += 1
+
+            async def read(item, reason):
+                self.check_cancelled()
+                return {'skip':reason} if reason else await source.read_file(item['path'])
+
+            results = await asyncio.gather(*(read(item, reason) for item, reason in batch),
+                                           return_exceptions=True)
+            for (item, _), result in zip(batch, results):
+                self.check_cancelled()
+                yield item, result
+
     async def read_local(self):
         """Add a bounded local snapshot without replacing GitHub, Jira or Slack imports."""
         async with self.lock:
@@ -592,24 +643,27 @@ class Service:
                     cursor = 0
                     while cursor is not None:
                         page = await source.list_files(cursor)
-                        for entry in page['files']:
+                        async for entry, result in self.read_files(source, page['files']):
                             self.check_cancelled()
                             self.local_progress = {'phase':'Reading '+entry['path'], 'done':len(report['files']), 'total':report['total']}
-                            reason = entry.get('skip', '')
+                            if isinstance(result, BaseException):
+                                raise result
+                            reason = result.get('skip', '')
                             if not reason:
-                                result = await source.read_file(entry['path'])
-                                reason = result.get('skip', '')
-                                if not reason:
-                                    # A double slash cannot occur in a real repository path.
-                                    # The snapshot in this namespace pins every derived citation.
-                                    path = 'local://' + snapshot['commit'] + '/' + entry['path']
-                                    pieces = chunk_file(path, result['text'])
-                                    for piece in pieces:
-                                        piece['url'] = source_url(scan['repo'], scan['commit'], path, piece['start'], piece['end'])
-                                    blocks.extend(pieces)
+                                # A double slash cannot occur in a real repository path.
+                                # The snapshot in this namespace pins every derived citation.
+                                path = 'local://' + snapshot['commit'] + '/' + entry['path']
+                                pieces = chunk_file(path, result['text'])
+                                for piece in pieces:
+                                    piece['url'] = source_url(scan['repo'], scan['commit'], path, piece['start'], piece['end'])
+                                blocks.extend(pieces)
                             report['skipped' if reason else 'read'] += 1
                             report['files'].append({'path':entry['path'], 'state':'skipped' if reason else 'read', 'reason':reason})
+                            self.local_progress = {'phase':'Reading local files',
+                                                   'done':len(report['files']), 'total':report['total']}
                         cursor = page['next_cursor']
+                    self.local_progress = {'phase':'Verifying local files',
+                                           'done':len(report['files']), 'total':report['total']}
                     if (await source.check_access())['head'] != snapshot['commit']:
                         raise SourceError('stale', 'Local files changed during the read. Read the folder again.')
                 self.check_cancelled()
@@ -617,10 +671,13 @@ class Service:
                 if not blocks:
                     raise SourceError('empty', 'No supported local content was read. Check the folder and exclusions.')
                 report['state'] = 'partial' if report['tree_incomplete'] or any(f['reason'] in {'scan_size_limit', 'file_size_limit', 'overlong_line'} for f in report['files']) else 'complete'
+                self.local_progress = {'phase':'Saving local files',
+                                       'done':len(report['files']), 'total':report['total']}
                 self.index.replace_source(scan['id'], 'local://', blocks, {
                     'scope':self.index.source_scope('local', local_cfg), 'snapshot':snapshot['commit'], 'report':report})
                 if embed.enabled():
                     await self.embed_snapshot(scan['id'])
+                self.check_cancelled()
                 if report['state'] == 'partial':
                     self.job_error = 'Some local files were omitted. Check local import coverage.'
                 return report
@@ -660,18 +717,17 @@ class Service:
                         if self.cancel.is_set():
                             raise SourceError('cancelled','Scan cancelled. Start a new scan to try again.')
                         page = await source.list_files(cursor)
-                        for item in page['files']:
+                        async for item, file in self.read_files(source, page['files'], d):
                             if self.cancel.is_set():
                                 raise SourceError('cancelled','Scan cancelled. Start a new scan to try again.')
                             path = item['path']
                             d['phase'] = 'Reading '+path
-                            reason = item['skip']
+                            reason = file.get('skip', '') if isinstance(file, dict) else ''
                             state = 'skipped'
-                            if not reason and (d['read'] >= LIMITS.max_files or d['bytes']+item['size'] > LIMITS.max_total_bytes):
-                                reason = 'scan_size_limit'
                             if not reason:
                                 try:
-                                    file = await source.read_file(path)
+                                    if isinstance(file, BaseException):
+                                        raise file
                                     reason = file.get('skip','')
                                     if not reason:
                                         if d['bytes']+file['bytes'] > LIMITS.max_total_bytes:
@@ -755,29 +811,47 @@ class Service:
         pending = self.index.unembedded(scan_id)
         if not pending:
             return self.index.embedded(scan_id)
-        stored = 0
-        for position in range(0, len(pending), embed.BATCH):
-            if self.cancel.is_set():
-                break
-            # Said out loud, batch by batch. A thousand chunks is minutes of work on a machine
-            # with no GPU, and a page that only says "reading" for five minutes while every
-            # button is disabled is indistinguishable from one that has hung.
-            if self.progress is not None:
-                self.progress = {**self.progress, 'phase': 'Reading the text for meaning',
-                                 'embed_done': stored, 'embed_total': len(pending)}
-            batch = pending[position:position + embed.BATCH]
+        revision = self.index.revision
+        # Additional folders have their own job. Never put their embedding progress in the
+        # repository scan (or leave their banner showing the last filename for minutes).
+        progress_field = 'local_progress' if self.local_progress is not None else 'progress'
+
+        def report_embedding(phase, done):
+            progress = getattr(self, progress_field)
+            if progress is not None:
+                setattr(self, progress_field, {**progress, 'phase':phase,
+                        'embed_done':done, 'embed_total':len(pending)})
+
+        stored, failed = 0, False
+
+        async def embed_batch(batch):
             # The path goes in with the text: a chunk from connectors/github.py means
             # something different from the same lines sitting in a test file.
-            found = await embed.vectors([b['path'] + '\n' + b['text'] for b in batch])
+            return await embed.vectors([b['path'] + '\n' + b['text'] for b in batch])
+
+        async def save_batch(batch, found):
+            nonlocal stored, failed
+            if self.cancel.is_set():
+                return
+            self.ensure_current((revision, {}))
             if not found:
+                failed = True
                 applog.warn('embed.stopped', scan_id=scan_id, stored=stored,
                             pending=len(pending) - stored)
-                break
+                return
             stored += self.index.save_vectors(
                 scan_id, [(b['id'], v) for b, v in zip(batch, found)])
+            report_embedding('Preparing search index', stored)
+
+        report_embedding('Preparing search index', stored)
+        await process_parallel(
+            (pending[n:n + embed.BATCH] for n in range(0, len(pending), embed.BATCH)),
+            embed_batch, save_batch, concurrency('PKA_EMBED_CONCURRENCY', 2, 4),
+            stopped=lambda: failed or self.cancel.is_set())
         applog.event('embed.snapshot', scan_id=scan_id, model=embed.model(),
                      stored=stored, chunks=len(pending))
-        if stored:
+        if stored and not self.cancel.is_set():
+            report_embedding('Checking search quality', stored)
             await self.calibrate(scan_id)
         return stored
 
@@ -788,7 +862,10 @@ class Service:
         is what makes a cut-off derived on one repository safe to ship: the number is not
         carried over, it is measured again against whatever was actually scanned.
         """
+        revision = self.index.revision
         probes = await embed.vectors(list(embed.PROBES))
+        self.ensure_current((revision, {}))
+        self.check_cancelled()
         if not probes:
             applog.warn('embed.calibration_skipped', scan_id=scan_id, model=embed.model(),
                         reason='the embedding model did not answer')
@@ -828,16 +905,21 @@ class Service:
             topics = topics_for(present)
             applog.event('overview.begin', scan_id=scan['id'], commit=scan['commit'][:12],
                          topics=len(topics), extra_sources=','.join(sorted(present)) or 'none')
+            self.overview_progress = {'phase':'Reading project structure','done':0,'total':len(topics)}
             try:
-                facts = derive_facts(self.index, scan)
+                # These read-only passes can take seconds on a large index. Keep
+                # authentication, status polling and cancellation off that wait.
+                facts = await asyncio.to_thread(derive_facts, self.index, scan)
                 applog.event('overview.facts', groups=len(facts),
                              items=sum(len(g['items']) for g in facts))
             except Exception:
                 # A pattern that trips over an unusual file must not cost the whole overview.
                 applog.failure('overview.facts_failed', scan_id=scan['id'])
                 facts = []
+            self.ensure_current(checked)
+            self.check_cancelled()
             try:
-                diagrams = build_diagrams(self.index, scan, facts)
+                diagrams = await asyncio.to_thread(build_diagrams, self.index, scan, facts)
                 applog.event('overview.diagrams', count=len(diagrams),
                              kinds=','.join(d['key'] for d in diagrams) or 'none',
                              boxes=sum(len(d['nodes']) for d in diagrams),
@@ -846,12 +928,16 @@ class Service:
                 # A drawing is worth less than the rest of the page, so it never takes it down.
                 applog.failure('overview.diagrams_failed', scan_id=scan['id'])
                 diagrams = []
+            self.ensure_current(checked)
+            self.check_cancelled()
             try:
-                roles = describe_roles(self.index, scan, facts)
+                roles = await asyncio.to_thread(describe_roles, self.index, scan, facts)
                 applog.event('overview.roles', cards=len(roles.get('cards', [])))
             except Exception:
                 applog.failure('overview.roles_failed', scan_id=scan['id'])
                 roles = {}
+            self.ensure_current(checked)
+            self.check_cancelled()
             paths = self.index.code_paths(scan['id'])
 
             def payload_now(sections, done):
@@ -885,24 +971,37 @@ class Service:
             sections, done = [], 0
             # Saved before the first topic so the facts and the reading order are readable at once.
             self.index.save_overview(scan['id'], scan['commit'], payload_now(sections, done))
+            # Prepare all retrieval vectors together before generation. Alternating the
+            # embedding and answer models for every topic can repeatedly reload models
+            # on a machine with limited memory.
+            self.overview_progress = {'phase':'Finding topic sources','done':0,'total':len(topics)}
+            queries = [query for topic in topics for query in topic['queries']]
+            query_vectors = await embed.vectors(queries) if self.index.embedded(scan['id']) else None
+            self.ensure_current(checked)
+            self.check_cancelled()
+            vectors_by_topic, offset = [], 0
             for topic in topics:
-                if self.cancel.is_set():
-                    raise SourceError('cancelled','Overview cancelled.')
-                self.overview_progress = {'phase':topic['title'],'done':done,'total':len(topics)}
-                found = (await embed.vectors(topic['queries'])
-                         if self.index.embedded(scan['id']) else None)
+                count = len(topic['queries'])
+                vectors_by_topic.append(query_vectors[offset:offset + count] if query_vectors else None)
+                offset += count
+
+            async def build_topic(item):
+                position, topic = item
                 self.ensure_current(checked)
                 self.check_cancelled()
+                self.overview_progress = {'phase':'Writing project overview','done':done,'total':len(topics)}
                 sources = self.index.search_many(topic['queries'], scan,
                                                  test_cap=topic.get('test_cap'),
                                                  vendor_cap=topic.get('vendor_cap', 0),
-                                                 query_vectors=found)
+                                                 query_vectors=vectors_by_topic[position])
                 if any(s['path'].startswith(('jira/', 'slack/')) for s in sources):
                     await self.check_external_access(scan)
+                self.ensure_current(checked)
+                self.check_cancelled()
                 if not sources:
-                    sections.append(section_from(topic, [], None,
+                    section = section_from(topic, [], None,
                         'No indexed excerpt matched this topic, so nothing is claimed about it.',
-                        measure=not self.demo, facts=facts, paths=paths))
+                        measure=not self.demo, facts=facts, paths=paths)
                     applog.warn('overview.topic_empty', topic=topic['key'])
                 else:
                     try:
@@ -914,7 +1013,6 @@ class Service:
                             answer = await self.generator(topic['ask'], sources)
                         section = section_from(topic, sources, answer,
                                                measure=not self.demo, facts=facts, paths=paths)
-                        sections.append(section)
                         applog.event('overview.topic', topic=topic['key'], sources=len(sources),
                                      statements=len(section['statements']),
                                      dropped=section['checks']['dropped_repeats'],
@@ -922,14 +1020,33 @@ class Service:
                                      unsupported=section['checks']['unsupported'],
                                      generic=section['checks']['generic'])
                     except SourceError as exc:
-                        sections.append(section_from(topic, sources, None, str(exc),
-                                                     measure=not self.demo, facts=facts, paths=paths))
+                        section = section_from(topic, sources, None, str(exc),
+                                               measure=not self.demo, facts=facts, paths=paths)
                         applog.failure('overview.topic_failed', topic=topic['key'], code=exc.code, msg=exc)
-                done += 1
+                return section, sources
+
+            completed_sections = {}
+
+            async def save_topic(item, result):
+                nonlocal done
+                position, topic = item
+                section, sources = result
+                self.ensure_current(checked)
+                self.check_cancelled()
                 if any(s['path'].startswith(('jira/', 'slack/')) for s in sources):
                     await self.check_external_access(scan)
+                self.ensure_current(checked)
+                self.check_cancelled()
+                completed_sections[position] = section
+                # Completion order may vary; the displayed topic order never does.
+                sections[:] = [completed_sections[n] for n in sorted(completed_sections)]
+                done = len(sections)
                 self.overview_progress = {'phase':topic['title'],'done':done,'total':len(topics)}
                 self.index.save_overview(scan['id'], scan['commit'], payload_now(sections, done))
+
+            await process_parallel(enumerate(topics), build_topic, save_topic,
+                                   concurrency('PKA_OVERVIEW_CONCURRENCY', 2, 4),
+                                   stopped=self.cancel.is_set)
             payload = payload_now(sections, done)
             self.index.save_overview(scan['id'], scan['commit'], payload)
             self.overview_progress = None
@@ -1315,7 +1432,9 @@ class Service:
                         answer = {'statements':[{'text':'Example mode found the excerpts below. Read them to check whether they answer your question. Live mode asks your local Ollama model to explain these excerpts.','source_ids':[sources[0]['source_id']]}],
                                   'missing_information':'This is a deterministic demonstration response, not a model-generated explanation.'}
                     else:
-                        answer = await self.generator(question,sources)
+                        answer = checked_answer(question, sources)
+                        if answer is None:
+                            answer = await self.generator(question,sources)
                     # The same checks the overview applies. A restated point, a citation of
                     # every excerpt at once and a sentence that is not in any excerpt it names
                     # are all just as unhelpful in an answer as they are in a section.

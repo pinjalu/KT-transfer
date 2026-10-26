@@ -2,7 +2,9 @@ import { Link } from 'react-router-dom'
 import { Card, Chip, Dot, Empty, Failed, Loading, NoProject, PageHead } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { useApi } from '../lib/useApi'
-import type { Platforms, Status } from '../lib/types'
+import { useStatus } from '../lib/useStatus'
+import { projectName } from '../lib/project'
+import type { Platforms } from '../lib/types'
 import './home.css'
 
 const LEARN = [
@@ -21,7 +23,7 @@ function sourceState(ready: boolean, pending: string) {
 }
 
 export function Home() {
-  const status = useApi<Status>('/api/status', 4000)
+  const status = useStatus(4000)
   const platforms = useApi<Platforms>('/api/platforms')
 
   if (status.loading) return <Loading what="the project" />
@@ -30,8 +32,7 @@ export function Home() {
     return <><PageHead title="KT Assistant" /><NoProject what="everything this project knows" /></>
   }
 
-  const repo = status.data?.settings?.repo ?? ''
-  const project = repo ? repo.split('/').pop()! : ''
+  const project = projectName(status.data?.settings)
   const scan = status.data?.last_successful_scan ?? status.data?.scan ?? null
   const rows = platforms.data?.platforms ?? []
 

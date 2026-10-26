@@ -320,3 +320,80 @@ def test_import_diagrams_keep_github_and_local_modules_separate():
     assert imports_in(prefix+'app.py', [(1, 'import helper')], table) == [(prefix+'helper.py', 1)]
     assert imports_in('app.py', [(1, 'import helper')], table) == [('helper.py', 1)]
     assert imports_in('app.py', [(1, 'import local_only')], table) == []
+
+
+def test_project_name_follows_new_selections_and_survives_reconnect(folder, tmp_path):
+    db_path = tmp_path / 'project-names.sqlite3'
+    app = create_app(db_path=db_path, connector_factory=factory)
+    headers = {'x-pka-request':'1'}
+    with OwnerClient(app, base_url='http://localhost:8000', headers=headers) as owner:
+        github = {'repo':'acme/shop', 'branch':'main'}
+        assert owner.post('/api/config', json=github).status_code == 200
+        assert owner.get('/api/status').json()['settings']['project_name'] == 'shop'
+        assert owner.post('/api/config', json={'source_kind':'local', 'local_path':str(folder)}).status_code == 200
+        current = owner.get('/api/status').json()['settings']
+        assert current['project_name'] == folder.name and current['repo'] == 'acme/shop'
+        added = tmp_path / 'new-local-project'
+        added.mkdir()
+        assert owner.post('/api/config', json={'source_kind':'local', 'local_path':str(added)}).status_code == 200
+        assert owner.get('/api/status').json()['settings']['project_name'] == added.name
+        assert owner.post('/api/config', json={'source_kind':'local', 'local_path':str(added / 'missing')}).status_code == 422
+        assert owner.get('/api/status').json()['settings']['project_name'] == added.name
+
+    restarted = create_app(db_path=db_path, connector_factory=factory)
+    with OwnerClient(restarted, base_url='http://localhost:8000', headers=headers) as owner:
+        assert owner.get('/api/status').json()['stored_project']['project_name'] == added.name
+        assert owner.post('/api/config', json=github).status_code == 200
+        assert owner.get('/api/status').json()['settings']['project_name'] == added.name
+        assert owner.post('/api/config', json={'repo':'acme/new-repository', 'branch':'main'}).status_code == 200
+        current = owner.get('/api/status').json()['settings']
+        assert current['project_name'] == 'new-repository'
+        assert current['local']['path'].replace('\\', '/') == str(added).replace('\\', '/')
+
+
+def test_older_mixed_source_workspace_gets_local_project_name(folder, tmp_path):
+    app = create_app(db_path=tmp_path / 'legacy-name.sqlite3', connector_factory=factory)
+    index = app.state.service.index
+    index.configure({'repo':'acme/shop', 'branch':'main', 'local':{'path':str(folder)}})
+    with OwnerClient(app, base_url='http://localhost:8000', headers={'x-pka-request':'1'}) as owner:
+        stored = owner.get('/api/status').json()['stored_project']
+        assert stored['project_name'] == folder.name
+        assert stored['source_kind'] == 'local'
+        assert Path(stored['local_path']) == folder
+        assert owner.post('/api/config', json={'repo':'acme/shop', 'branch':'main'}).status_code == 200
+        assert owner.get('/api/status').json()['settings']['project_name'] == folder.name
+
+
+def test_local_connection_survives_restart_with_a_github_repository(folder, tmp_path):
+    db_path = tmp_path / 'saved-connection.sqlite3'
+    headers = {'x-pka-request':'1'}
+    github = {'repo':'acme/shop', 'branch':'main'}
+    local = {'source_kind':'local', 'local_path':folder.as_uri()}
+    app = create_app(db_path=db_path, connector_factory=factory)
+    with OwnerClient(app, base_url='http://localhost:8000', headers=headers) as owner:
+        assert owner.post('/api/config', json=github).status_code == 200
+        assert owner.post('/api/config', json=local).status_code == 200
+        current = owner.get('/api/status').json()['settings']
+        assert current['selected_source'] == 'local'
+        assert current['repo'] == 'acme/shop'
+
+    restarted = create_app(db_path=db_path, connector_factory=factory)
+    with OwnerClient(restarted, base_url='http://localhost:8000', headers=headers) as owner:
+        stored = owner.get('/api/status').json()['stored_project']
+        assert stored['source_kind'] == 'local'
+        assert Path(stored['local_path']) == folder
+        # Reconnect with the form fields; project_name is read-only display metadata.
+        reconnect = {'source_kind':stored['source_kind'], 'local_path':stored['local_path'],
+                     'repo':'', 'branch':'working-tree'}
+        assert owner.post('/api/config', json=reconnect).status_code == 200
+        assert owner.get('/api/status').json()['settings']['selected_source'] == 'local'
+        # Explicitly choosing GitHub must also survive navigation/restart, even when
+        # the workspace retains the local folder and its display name.
+        assert owner.post('/api/config', json=github).status_code == 200
+        assert owner.get('/api/status').json()['settings']['selected_source'] == 'github'
+
+    restarted = create_app(db_path=db_path, connector_factory=factory)
+    with OwnerClient(restarted, base_url='http://localhost:8000', headers=headers) as owner:
+        stored = owner.get('/api/status').json()['stored_project']
+        assert stored['source_kind'] == 'github'
+        assert stored['repo'] == 'acme/shop'

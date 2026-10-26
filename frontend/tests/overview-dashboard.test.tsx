@@ -71,6 +71,17 @@ afterEach(async () => {
 })
 
 describe('interactive overview', () => {
+  it('uses the current project title while retaining the actual repository in source metadata', async () => {
+    status.settings = { repo: body.repo, branch: 'main', platforms: ['github', 'local'], project_name: 'functionalAI' }
+    await render()
+    expect(container.querySelector('.ov-hero h2')?.textContent).toBe('functionalAI')
+    expect(container.querySelector('.ov-hero-meta')?.textContent).toContain('example/project')
+    status = { ...status, settings: { ...status.settings!, project_name: 'new-local-project' } }
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(container.querySelector('.ov-hero h2')?.textContent).toBe('new-local-project')
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it('navigates topics and exposes all points without requesting a build or fetching again', async () => {
     await render()
     expect(panel().textContent).toContain('Project purpose point 3')

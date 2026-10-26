@@ -51,6 +51,8 @@ export type Turn = {
   asked_at: string
   answer: Answer | null
   failed: string | null
+  /** The source version used when asking; older replies remain part of the conversation. */
+  knowledge_revision?: number
   rating?: string
   sufficiency?: string
 }

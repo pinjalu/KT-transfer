@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 import re
 import sqlite3
 from pka import embed
+from pka.answer_checks import comparison_references
 from pka.config import LIMITS, now, source_url
 
 STOP = set('how does do did the a an is are was were it in on of to for and or can i we my this that work works please explain what where when why with from'.split())
@@ -861,6 +862,7 @@ class Index:
             for row in rows:
                 d = dict(row)
                 direct_value = d.pop('_direct_value', False)
+                required_context = d.pop('_required_context', False)
                 # A test is real evidence and sometimes the clearest specification, but a question
                 # about how something works should be answered mostly from the code that does it.
                 is_test = bool(TEST_PATH.search(d['path']))
@@ -871,7 +873,7 @@ class Index:
                 is_vendor = bool(VENDOR_PATH.search(d['path']))
                 if is_vendor and vendored >= vendor_cap:
                     continue
-                if counts.get(d['path'],0) >= per_file:
+                if counts.get(d['path'],0) >= per_file and not required_context:
                     continue
                 d['text'], d['start'], d['end'] = widen(d, neighbours.get(d['path'], ()))
                 key = (d['path'], d['start'], d['end'])
@@ -917,8 +919,33 @@ class Index:
         retrieval_question = model_role_query(question)
         if info is not None and retrieval_question != question:
             info['interpretation'] = 'chat model configuration'
-        return self.search_many([retrieval_question], scan, info, max_sources, context_chars,
-                                test_cap, vendor_cap, query_vectors, path_filter=named)
+        found = self.search_many([retrieval_question], scan, info, max_sources, context_chars,
+                                 test_cap, vendor_cap, query_vectors, path_filter=named)
+        references = comparison_references(question, found)
+        if not references:
+            return found
+        # A discussion can quote a condition without its definition. Retrieve both
+        # from indexed code so boundary arithmetic uses the actual operator/value.
+        with self.db() as db:
+            related = []
+            for left, right in references:
+                rows = db.execute("SELECT * FROM chunks WHERE scan_id=? AND path LIKE '%.py' AND text LIKE ?",
+                                  (scan['id'], '%' + right + '%')).fetchall()
+                code = [dict(row) for row in rows if not is_source_path(row['path'])
+                        and (not named or row['path'] in named)]
+                conditions = [row for row in code if re.search(
+                    r'\b' + re.escape(left) + r'\s*(?:<=|>=|==|!=|<|>)\s*' + re.escape(right) + r'\b', row['text'])]
+                paths = {row['path'] for row in conditions}
+                definitions = [row for row in code if row['path'] in paths and re.search(
+                    r'^' + re.escape(right) + r'\s*=', row['text'], re.M)]
+                related.extend([{**row, '_direct_value': True, '_required_context': True}
+                                for row in definitions + conditions])
+            if related:
+                found = self._assemble(db, related + found, scan, max_sources or LIMITS.max_sources,
+                                       context_chars or LIMITS.context_chars,
+                                       MAX_TEST_SOURCES if test_cap is None else test_cap,
+                                       MAX_VENDOR_SOURCES if vendor_cap is None else vendor_cap)
+        return found
 
     def search_many(self, questions: list[str], scan: dict, info: dict | None = None,
                     max_sources: int | None = None, context_chars: int | None = None,

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 from pka import applog
-from pka.config import ROOT, KEEP_LOGS, LIMITS, data_dir, log_dir, validate_selection
+from pka.config import ROOT, KEEP_LOGS, LIMITS, data_dir, log_dir, validate_selection, project_name, selected_source
 from pka import credentials, oauth
 from pka.auth import AuthStore, digest
 from pka import auth_web
@@ -244,10 +244,13 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                     'slack_reading':False,'slack_progress':None,
                     'overview_building':False,'overview_progress':None,
                     'awaiting_project':True,
-                    'stored_project':{**({'source_kind':'local', 'local_path':previous.get('local_path', '')}
-                                        if is_local(previous.get('repo')) else {}), 'repo':previous.get('repo',''),
+                    'stored_project':{'project_name':project_name(previous), 'source_kind':selected_source(previous),
+                                      **({'local_path':(previous.get('local') or {}).get('path') or previous.get('local_path') or previous.get('repo','')[6:]}
+                                        if selected_source(previous) == 'local' else {}), 'repo':previous.get('repo',''),
                                       'branch':previous.get('branch','')} if previous.get('repo') else None}
-        return {'settings':index.settings(),'scan':scan,'last_successful_scan':index.last_successful(),
+        settings = index.settings()
+        return {'settings':{**settings, 'project_name':project_name(settings), 'selected_source':selected_source(settings)} if settings else None,
+                'scan':scan,'last_successful_scan':index.last_successful(),
                 'knowledge_revision':index.revision,
                 'busy':service.busy() or bool(service.task and not service.task.done()),'demo':demo,
                 'limits':asdict(LIMITS),'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
@@ -309,7 +312,8 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
             # Updating it preserves the GitHub scan and all imported Jira/Slack content.
             if selection.source_kind == 'local' and previous.get('repo') and not is_local(previous['repo']):
                 index.configure_source('local', {'repo':repo, 'path':repo[6:]})
-                index.configure({'platforms':list(dict.fromkeys([*(previous.get('platforms') or []), 'local']))})
+                index.configure({'platforms':list(dict.fromkeys([*(previous.get('platforms') or []), 'local'])),
+                                 'project_name':project_name({'repo':repo}), 'selected_source':'local'})
                 chosen['this_run'] = True
                 return {'ok':True, 'additional_local':True, 'reconnected':False}
             if selection.source_kind == 'github' and is_local(previous.get('repo')):
@@ -318,8 +322,12 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                     platforms.append('local')
             if selection.source_kind == 'github' and previous.get('local') and 'local' not in platforms:
                 platforms.append('local')
-            index.configure({'repo':repo,'branch':branch,'platforms':platforms,
-                'source_kind':selection.source_kind, 'local_path':repo[6:] if is_local(repo) else ''})
+            # Reconnecting the same anchor keeps a mixed-source workspace's name.
+            # Selecting a different project replaces the previous display name.
+            label = project_name(previous) if previous.get('repo') == repo else project_name({'repo':repo})
+            index.configure({'repo':repo,'branch':branch,'platforms':platforms,'project_name':label,
+                'source_kind':selection.source_kind, 'selected_source':selection.source_kind,
+                'local_path':repo[6:] if is_local(repo) else ''})
             service.access_warning = ''
             chosen['this_run'] = True
             if is_local(repo) and index.active_scan():

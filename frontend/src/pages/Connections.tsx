@@ -8,8 +8,9 @@ import { ImportHistory } from '../components/ImportHistory'
 import { ImportCoverage } from '../components/ImportCoverage'
 import type { CoverageReply } from '../components/ImportCoverage'
 import { useApi } from '../lib/useApi'
+import { projectName } from '../lib/project'
 import { ApiError, post } from '../lib/api'
-import type { Status } from '../lib/types'
+import { useStatus } from '../lib/useStatus'
 import './connections.css'
 
 type Connection = 'github' | 'local' | 'jira' | 'slack'
@@ -20,7 +21,7 @@ export function Connections() {
   const canReadLocal = account?.user.role === 'owner'
   const [tab, setTab] = useState('Connections')
   const [connection, setConnection] = useState<Connection>('github')
-  const status = useApi<Status>('/api/status', 2000)
+  const status = useStatus(2000)
   const coverage = useApi<CoverageReply>('/api/import-coverage', 2000, status.data?.knowledge_revision)
   const settings = status.data?.settings
   const [repo, setRepo] = useState('')
@@ -34,8 +35,10 @@ export function Connections() {
     setRepo(settings.repo.startsWith('local:') ? '' : settings.repo)
     setBranch(settings.repo.startsWith('local:') ? 'main' : settings.branch)
     setLocalPath(settings.local?.path ?? settings.local_path ?? '')
+    if (canReadLocal && (settings.repo.startsWith('local:') || settings.source_kind === 'local'
+      || settings.selected_source === 'local')) setConnection('local')
     setSeeded(true)
-  }, [settings, seeded])
+  }, [settings, seeded, canReadLocal])
   const stored = status.data?.stored_project
   const awaiting = status.data?.awaiting_project ?? false
   const busy = status.data?.busy ?? false
@@ -106,7 +109,7 @@ export function Connections() {
             <p className="conn-plain">{connection === 'local' ? 'Add files from this computer.' : 'Connect a repository and branch.'}</p>
           </div></div>
           {awaiting && stored && <div className="conn-resume">
-            <span className="conn-resume-text">Saved project: <span className="mono">{stored.repo}</span>. Its imported content is still stored.</span>
+            <span className="conn-resume-text">Saved project: <span className="mono">{stored.project_name || projectName(null, stored.repo)}</span>. Its imported content is still stored.</span>
             <Button kind="secondary" onClick={() => {
               const local = stored.source_kind === 'local'
               setConnection(local ? 'local' : 'github'); setRepo(local ? '' : stored.repo)

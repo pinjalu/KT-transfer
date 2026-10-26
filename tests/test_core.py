@@ -3145,7 +3145,7 @@ def test_a_fresh_run_does_not_adopt_the_last_run_s_project(tmp_path):
         body = client.get('/api/status', headers=head).json()
         assert body['awaiting_project'] is True
         assert body['settings'] is None and body['scan'] is None and body['ready'] is False,             'no screen is told about a project this run never chose'
-        assert body['stored_project'] == {'repo':'acme/shop','branch':'main'},             'but the page may offer the previous one as a shortcut'
+        assert body['stored_project'] == {'repo':'acme/shop','branch':'main','project_name':'shop','source_kind':'github'},             'but the page may offer the previous one as a named shortcut'
 
         # Nothing was deleted: choosing the same repository picks the snapshot straight back up.
         saved = client.post('/api/config', json={'repo':'acme/shop','branch':'main'}, headers=head)

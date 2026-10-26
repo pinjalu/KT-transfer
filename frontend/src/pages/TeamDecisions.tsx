@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Empty, Failed, Loading, NoProject, PageHead } from '../components/ui'
 import { ApiError, post } from '../lib/api'
 import { useApi } from '../lib/useApi'
+import { useStatus } from '../lib/useStatus'
+import { useRememberedParam } from '../lib/pageState'
 import type { Status } from '../lib/types'
 import './jira-tasks.css'
 import './team-decisions.css'
@@ -38,11 +40,6 @@ function ChannelSummary({ channelId, status }: { channelId: string; status: Stat
     previous.current = jobVersion
     if (job) setStarted(false)
   }, [jobVersion, running, reload])
-  useEffect(() => {
-    const visible = () => { if (document.visibilityState === 'visible') reload() }
-    document.addEventListener('visibilitychange', visible)
-    return () => document.removeEventListener('visibilitychange', visible)
-  }, [reload])
   const summarize = async () => {
     setPending(true); setError('')
     try { await post(`/api/decisions/channels/${encodeURIComponent(channelId)}/summarize`); setStarted(true) }
@@ -102,12 +99,14 @@ function ChannelSummary({ channelId, status }: { channelId: string; status: Stat
 }
 
 export function TeamDecisions() {
-  const status = useApi<Status>('/api/status', 2000)
-  const list = useApi<{ channels: Channel[]; reason: string; awaiting_project?: boolean }>('/api/decisions/channels', 0, status.data?.knowledge_revision)
-  const [params, setParams] = useSearchParams()
+  const status = useStatus(2000)
+  const list = useApi<{ channels: Channel[]; reason: string; awaiting_project?: boolean }>('/api/decisions/channels', 0, status.data?.knowledge_revision,
+    !!status.data && !status.data.awaiting_project)
+  const [chosen, setParams] = useRememberedParam('channel')
   const channels = list.data?.channels ?? []
-  const selected = params.get('channel') || (status.data?.job?.kind === 'decisions' ? status.data.job.target : '') || channels[0]?.id || ''
-  const head = <PageHead title="Team decisions" lead="Understand what was discussed in your imported Slack channels, with sources for every summary point." />
+  const selected = chosen || (status.data?.job?.kind === 'decisions' ? status.data.job.target : '') || channels[0]?.id || ''
+  const head = <PageHead title="Team decisions" lead="Understand what was discussed in your imported Slack channels, with sources for every summary point."
+    actions={<Button icon="refresh" onClick={list.reload}>Refresh channels</Button>} />
   if (status.data?.awaiting_project || list.data?.awaiting_project) return <>{head}<NoProject what="Team decisions" /></>
   if (status.error) return <>{head}<Failed message={status.error} onRetry={status.reload} /></>
   if (list.error) return <>{head}<Failed message={list.error} onRetry={list.reload} /></>

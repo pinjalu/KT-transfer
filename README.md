@@ -342,6 +342,35 @@ To read that log without opening the file, use `python -m pka.logs`. It shows th
 
 Only a fixed Python MCP module is launched. Downloaded project code is never executed. Source text goes into a labelled data section in the prompt. The model has no tools, secrets or unrestricted network actions. Prompt instructions reduce injection risk but do not make model explanations infallible. Output is displayed as text, not HTML.
 
+## Parallel processing
+
+Independent work inside a job runs with bounded concurrency. File reads default to four
+at a time (`PKA_READ_CONCURRENCY`, maximum eight); embedding batches and overview topics
+default to two (`PKA_EMBED_CONCURRENCY` and `PKA_OVERVIEW_CONCURRENCY`, maximum four each).
+Set any limit to `1` in `.env` to use sequential processing for that stage. Restart the app
+after changing these settings. The single-job guard still coordinates source changes and
+database publication, and scan file/byte limits still apply.
+
+Completed overview topics appear as they finish, in their original topic order. Read-only
+analysis of facts, diagrams and file roles runs off the web server's event loop so sign-in
+and status requests remain responsive during those passes. All topic
+query embeddings are prepared before the explanations, avoiding repeated switches between
+the embedding and answer models. Cancellation stops new requests, drains the bounded set
+already in flight, and prevents cancelled results from being published. Source revocation
+also prevents late vector and overview writes.
+
+Ollama controls actual model concurrency separately. Its `OLLAMA_NUM_PARALLEL` setting must
+be supplied to the **Ollama process**, not this app's `.env`; changing the app limit alone
+cannot increase that server limit. Parallel model requests need additional memory and may
+not improve throughput on a fully occupied CPU. Measure before increasing the server setting;
+use an app limit of `1` if simultaneous requests are slower. See the
+[Ollama concurrency documentation](https://docs.ollama.com/faq#how-does-ollama-handle-concurrent-requests).
+
+`python scripts/benchmark_parallel.py` compares sequential and concurrent file reads using
+a disposable fixture with simulated I/O latency. Add `--ollama` only when the local model is
+idle to also compare embedding throughput on synthetic text. Neither mode reads a live
+repository, changes the application index, or modifies Ollama settings.
+
 ## Checks
 
 ```powershell

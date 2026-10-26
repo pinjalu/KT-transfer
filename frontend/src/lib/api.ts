@@ -2,6 +2,7 @@
 // does not carry this header, which is what stops another page in the browser from driving it.
 const HEADER = { 'x-pka-request': '1' }
 export const JOB_CHANGED = 'pka:job-changed'
+export const PROJECT_CHANGED = 'pka:project-changed'
 export const AUTH_REQUIRED = 'pka:auth-required'
 
 export class ApiError extends Error {
@@ -67,6 +68,7 @@ async function send(path: string, init: RequestInit = {}): Promise<unknown> {
 export const get = (path: string, signal?: AbortSignal) => send(path, { signal })
 export const post = async (path: string, payload?: unknown) => {
   const body = await send(path, { method: 'POST', body: payload === undefined ? '{}' : JSON.stringify(payload) })
+  if (path === '/api/config') window.dispatchEvent(new Event(PROJECT_CHANGED))
   // Refresh the shared controls as soon as a job starts or changes, even on another page.
   if (body && typeof body === 'object' && 'job_id' in body) {
     window.dispatchEvent(new Event(JOB_CHANGED))

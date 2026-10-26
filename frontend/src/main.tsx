@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route } from 'react-router-dom'
 import { Shell } from './components/Shell'
 import { Pending } from './pages/Pending'
 import { Home } from './pages/Home'
@@ -20,8 +20,7 @@ import './shell.css'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthGate><BrowserRouter>
-      <Routes>
-        <Route element={<Shell />}>
+      <Shell>
           <Route path="account" element={<Account />} />
           <Route index element={<Home />} />
           <Route path="connections" element={<Connections />} />
@@ -48,9 +47,8 @@ createRoot(document.getElementById('root')!).render(
                 'Team and access stays empty until the multi-user gate in ROADMAP.md is passed',
                 'Source permissions reflecting the allowlists already enforced',
               ]} />} />
-        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      </Shell>
     </BrowserRouter></AuthGate>
   </StrictMode>,
 )

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, get } from './api'
+import { usePageActive } from './pageState'
 
 export type Load<T> = {
   data: T | null
@@ -10,6 +11,7 @@ export type Load<T> = {
 
 /** Reads one endpoint. A failure is kept and shown, never swallowed into an empty screen. */
 export function useApi<T>(path: string, poll = 0, revision?: number, enabled = true): Load<T> {
+  const active = usePageActive()
   const key = `${path}:${revision ?? ''}`
   const [result, setResult] = useState<{ key: string; data: T | null; error: string | null } | null>(null)
   const [tick, setTick] = useState(0)
@@ -47,10 +49,10 @@ export function useApi<T>(path: string, poll = 0, revision?: number, enabled = t
 
   // Changing the polling rate must not abandon a slow request and start it again.
   useEffect(() => {
-    if (!enabled || !poll) return
+    if (!enabled || !poll || !active) return
     const timer = setInterval(() => runCurrent.current?.(), poll)
     return () => clearInterval(timer)
-  }, [poll, enabled])
+  }, [poll, enabled, active])
 
   // Hide the previous snapshot immediately, including while its replacement is loading.
   const current = enabled && result?.key === key ? result : null

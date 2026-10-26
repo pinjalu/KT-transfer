@@ -1,35 +1,28 @@
-import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Confidence, Empty, Failed, Loading, NoProject, PageHead, SourceLink } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { sourcePath } from '../lib/answer'
 import { useApi } from '../lib/useApi'
-import type { Status } from '../lib/types'
+import { useStatus } from '../lib/useStatus'
+import { useRememberedParam } from '../lib/pageState'
 import type { FeatureDetail, FeatureList, FeatureSummary } from '../lib/features'
 import './features.css'
 
 const VIEWS = ['Overview', 'Code flow', 'APIs and data', 'Tests', 'Known problems'] as const
 type View = typeof VIEWS[number]
 
-function useVisibleRead(reload: () => void) {
-  useEffect(() => {
-    const visible = () => { if (document.visibilityState === 'visible') reload() }
-    document.addEventListener('visibilitychange', visible)
-    return () => document.removeEventListener('visibilitychange', visible)
-  }, [reload])
-}
-
 function Feature({ summary, revision }: { summary: FeatureSummary; revision: number }) {
-  const detail = useApi<FeatureDetail>(`/api/features/${encodeURIComponent(summary.id)}`, 30000, revision)
+  const detail = useApi<FeatureDetail>(`/api/features/${encodeURIComponent(summary.id)}`, 0, revision)
   const [view, setView] = useState<View>('Overview')
-  useVisibleRead(detail.reload)
   if (detail.error) return <Failed message={detail.error} onRetry={detail.reload} />
   if (!detail.data) return <Loading what="feature details" detail="Checking source access and reading the saved scan. No overview build is started." />
   const body = detail.data
   const data = body.apis_and_data
   return <section className="feature-detail" aria-label="Selected feature">
     <div className="feature-hero">
-      <div className="feature-eyebrow"><Icon name="grid" size={16} /> FEATURE EXPLORER <Chip tone="accent">From saved code</Chip></div>
+      <div className="feature-eyebrow"><Icon name="grid" size={16} /> FEATURE EXPLORER <Chip tone="accent">From saved code</Chip>
+        <Button kind="ghost" icon="refresh" onClick={detail.reload}>Refresh feature</Button></div>
       <h2>{body.name}</h2>
       <p>Explore {data.routes.length} route{data.routes.length === 1 ? '' : 's'} and {body.related.length} related file{body.related.length === 1 ? '' : 's'} found in the imported code.</p>
       <div className="feature-metrics">
@@ -124,15 +117,14 @@ function Feature({ summary, revision }: { summary: FeatureSummary; revision: num
 }
 
 export function Features() {
-  const status = useApi<Status>('/api/status', 5000)
-  const list = useApi<FeatureList>('/api/features', 30000, status.data?.knowledge_revision,
+  const status = useStatus()
+  const list = useApi<FeatureList>('/api/features', 0, status.data?.knowledge_revision,
     !!status.data && !status.data.awaiting_project)
-  const [params, setParams] = useSearchParams()
+  const [selection, setParams] = useRememberedParam('feature')
   const [filter, setFilter] = useState('')
-  useVisibleRead(status.reload)
-  useVisibleRead(list.reload)
   const head = <PageHead title="Feature explorer" lead="Follow a feature through its code, data, tests and related tickets."
-    actions={<Link className="btn btn-secondary" to="/connections">Manage sources</Link>} />
+    actions={<><Button icon="refresh" onClick={list.reload}>Refresh features</Button>
+      <Link className="btn btn-secondary" to="/connections">Manage sources</Link></>} />
   if (status.error) return <>{head}<Failed message={status.error} onRetry={status.reload} /></>
   if (status.data?.awaiting_project) return <>{head}<NoProject what="features from the saved code" /></>
   if (!status.data) return <>{head}<Loading what="the project" /></>
@@ -143,7 +135,7 @@ export function Features() {
     title={body.available ? 'No route-based features were found' : 'Read your code to explore features'}
     detail={body.reason || body.unclustered?.note || 'Read a GitHub repository or local folder from Connections. Features become available after a successful scan.'}
     action={<Link className="btn btn-primary" to="/connections">Go to Connections</Link>} /></Card></>
-  const chosen = params.get('feature') || body.features[0].id
+  const chosen = selection || body.features[0].id
   const selected = body.features.find(feature => feature.id === chosen)
   const shown = body.features.filter(feature => `${feature.id} ${feature.name} ${feature.ticket_name || ''}`.toLowerCase().includes(filter.trim().toLowerCase()))
   return <>{head}

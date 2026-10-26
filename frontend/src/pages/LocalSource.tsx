@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { Failed, Loading, PageHead } from '../components/ui'
+import { Button, Failed, Loading, PageHead } from '../components/ui'
 import { useApi } from '../lib/useApi'
 import './local-source.css'
 
@@ -11,7 +11,7 @@ export function LocalSource() {
   const { hash } = useLocation()
   const path = params.get('path') ?? ''
   const snapshot = params.get('snapshot') ?? ''
-  const source = useApi<SourceFile>(`/api/local-source?path=${encodeURIComponent(path)}&snapshot=${encodeURIComponent(snapshot)}`, 30000)
+  const source = useApi<SourceFile>(`/api/local-source?path=${encodeURIComponent(path)}&snapshot=${encodeURIComponent(snapshot)}`)
   useEffect(() => {
     if (source.data && /^#L\d+$/.test(hash)) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'center' })
   }, [source.data, hash])
@@ -20,7 +20,8 @@ export function LocalSource() {
   if (!source.data) return null
   return <>
     <PageHead title={source.data.path} lead={`Local folder · snapshot ${source.data.snapshot.slice(0, 7)}`}
-      actions={<Link className="btn btn-secondary" to="/overview">Project overview</Link>} />
+      actions={<><Button icon="refresh" onClick={source.reload}>Refresh source</Button>
+        <Link className="btn btn-secondary" to="/overview">Project overview</Link></>} />
     <p className="local-source-note">{source.data.note}</p>
     <div className="local-source" aria-label="Saved source lines">
       {source.data.lines.map(line => <div id={`L${line.number}`} key={line.number} className="local-source-line">

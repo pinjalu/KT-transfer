@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Empty, Failed, Missing, NoProject, PageHead, Segmented } from '../components/ui'
 import { Icon } from '../components/Icon'
-import { useApi } from '../lib/useApi'
+import { useStatus } from '../lib/useStatus'
+import { usePageActive } from '../lib/pageState'
 import { ApiError, post } from '../lib/api'
-import type { Status } from '../lib/types'
 import { Said, Statements } from '../components/Statements'
 import type { Answer, Turn } from '../lib/answer'
 import { originOf, sourcePath } from '../lib/answer'
@@ -79,19 +80,15 @@ function Feedback({ turn, onSaved }: { turn: Turn; onSaved: (r: string, s: strin
 }
 
 export function Ask() {
-  const status = useApi<Status>('/api/status', 5000)
+  const status = useStatus()
   const [mode, setMode] = useState<Mode>('Beginner')
   const [turns, setTurns] = useState<Turn[]>([])
   const [question, setQuestion] = useState('')
   const [asking, setAsking] = useState(false)
   const foot = useRef<HTMLDivElement>(null)
-  const revision = useRef<number | undefined>(undefined)
-  useEffect(() => {
-    const current = status.data?.knowledge_revision
-    if (current === undefined) return
-    if (revision.current !== undefined && revision.current !== current) setTurns([])
-    revision.current = current
-  }, [status.data?.knowledge_revision])
+  const active = usePageActive()
+  const activePage = useRef(active)
+  activePage.current = active
 
   const ready = status.data?.ready ?? false
   const busy = status.data?.busy ?? false
@@ -99,10 +96,11 @@ export function Ask() {
 
   const ask = async () => {
     const text = question.trim()
-    if (!text || asking || busy) return
+    if (!text || asking || busy || !ready || awaiting) return
     setAsking(true)
     setQuestion('')
-    const turn: Turn = { question: text, asked_at: new Date().toISOString(), answer: null, failed: null }
+    const turn: Turn = { question: text, asked_at: new Date().toISOString(), answer: null, failed: null,
+      knowledge_revision: status.data?.knowledge_revision }
     setTurns((t) => [...t, turn])
     try {
       const body = (await post('/api/ask', { question: text })) as Answer
@@ -114,7 +112,7 @@ export function Ask() {
         : denied ? { ...x, answer: null, failed: 'Source access could not be verified. Retry after checking the connection.' } : x))
     } finally {
       setAsking(false)
-      requestAnimationFrame(() => foot.current?.scrollIntoView({ block: 'end' }))
+      requestAnimationFrame(() => { if (activePage.current) foot.current?.scrollIntoView({ block: 'end' }) })
     }
   }
 
@@ -124,6 +122,7 @@ export function Ask() {
     <>
       <PageHead title="Ask your project"
                 lead="Answers come only from what was read, and every one shows the excerpt behind it." />
+      <p className="ask-mode-note">Your conversation stays here when you switch pages or tabs. Refreshing this browser page clears it.</p>
 
       <div className="ask-modes">
         <Segmented items={[...MODES]} active={mode} onPick={(m) => setMode(m as Mode)} />
@@ -138,11 +137,11 @@ export function Ask() {
         <Card>
           <Empty title="Nothing has been read yet."
                  detail="A question is answered from the scanned files, so there is nothing to answer from until a scan finishes."
-                 action={<a className="btn btn-primary" href="/connections">Go to Connections</a>} />
+                 action={<Link className="btn btn-primary" to="/connections">Go to Connections</Link>} />
         </Card>
       )}
 
-      {ready && (
+      {(ready || turns.length > 0) && (
         <div className="grid-main ask-grid">
           <div className="stack">
             <Card pad={false}>
@@ -154,6 +153,9 @@ export function Ask() {
                 {turns.map((turn, i) => (
                   <div className="turn" key={i}>
                     <div className="mine"><p>{turn.question}</p></div>
+                    {turn.answer && turn.knowledge_revision !== undefined && status.data
+                      && turn.knowledge_revision !== status.data.knowledge_revision &&
+                      <p className="ask-mode-note">Earlier answer: the project sources have been updated since this reply.</p>}
 
                     {!turn.answer && !turn.failed && (
                       <div className="theirs">
@@ -238,7 +240,7 @@ export function Ask() {
                             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask() }
                           }} />
                 <Button kind="primary" icon="send" type="submit"
-                        disabled={asking || busy || !question.trim()}>
+                        disabled={!ready || awaiting || asking || busy || !question.trim()}>
                   {asking ? 'Asking…' : 'Send'}
                 </Button>
               </form>

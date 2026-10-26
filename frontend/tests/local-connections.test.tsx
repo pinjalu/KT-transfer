@@ -90,6 +90,84 @@ it('offers local folders only to the owner', async () => {
   expect(container.querySelector('option[value="local"]')).toBeNull()
 })
 
+it('offers the saved workspace name while reconnecting its actual repository', async () => {
+  status = { settings:null, awaiting_project:true, stored_project:{repo:'acme/shop', branch:'main', project_name:'functionalAI'} }
+  await render()
+  expect(container.querySelector('.conn-resume-text')?.textContent).toContain('Saved project: functionalAI')
+  await click('Use it again')
+  expect(container.querySelector('input')!.value).toBe('acme/shop')
+})
+
+it.each([
+  { repo:'local:D:/Projects/functionalAI', branch:'working-tree', local_path:'D:/Projects/functionalAI' },
+  { repo:'acme/shop', branch:'main', local:{path:'D:/Projects/functionalAI'}, selected_source:'local' },
+])('restores the saved local form on navigation without overwriting a later form choice', async saved => {
+  status = { settings:{ ...saved, platforms:['local'] }, knowledge_revision:1 }
+  await render()
+  expect(container.querySelector('select')!.value).toBe('local')
+  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  await select('github')
+  await act(async () => vi.advanceTimersByTimeAsync(2000))
+  expect(container.querySelector('select')!.value).toBe('github')
+  await act(async () => root.unmount())
+  root = createRoot(container)
+  await render()
+  expect(container.querySelector('select')!.value).toBe('local')
+  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+})
+
+it('restores and submits the saved folder when the workspace also has a GitHub repository', async () => {
+  status = { settings:null, awaiting_project:true, stored_project:{
+    repo:'acme/shop', branch:'main', project_name:'functionalAI',
+    source_kind:'local', local_path:'D:/Projects/functionalAI',
+  } }
+  await render()
+  await click('Use it again')
+  expect(container.querySelector('select')!.value).toBe('local')
+  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  await click('Save and read files')
+  expect(post).toHaveBeenCalledWith('/api/config', expect.objectContaining({
+    source_kind:'local', repo:'', local_path:'D:/Projects/functionalAI',
+  }))
+  expect(post).toHaveBeenCalledWith('/api/local/read')
+  expect(post).not.toHaveBeenCalledWith('/api/scan')
+})
+
+it.each([
+  { repo:'local:D:/Projects/functionalAI', branch:'working-tree', local_path:'D:/Projects/functionalAI' },
+  { repo:'acme/shop', branch:'main', local:{path:'D:/Projects/functionalAI'}, selected_source:'local' },
+])('restores the saved local form on navigation without overwriting a later form choice', async saved => {
+  status = { settings:{ ...saved, platforms:['local'] }, knowledge_revision:1 }
+  await render()
+  expect(container.querySelector('select')!.value).toBe('local')
+  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  await select('github')
+  await act(async () => vi.advanceTimersByTimeAsync(2000))
+  expect(container.querySelector('select')!.value).toBe('github')
+  await act(async () => root.unmount())
+  root = createRoot(container)
+  await render()
+  expect(container.querySelector('select')!.value).toBe('local')
+  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+})
+
+it('restores and submits the saved folder when the workspace also has a GitHub repository', async () => {
+  status = { settings:null, awaiting_project:true, stored_project:{
+    repo:'acme/shop', branch:'main', project_name:'functionalAI',
+    source_kind:'local', local_path:'D:/Projects/functionalAI',
+  } }
+  await render()
+  await click('Use it again')
+  expect(container.querySelector('select')!.value).toBe('local')
+  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  await click('Save and read files')
+  expect(post).toHaveBeenCalledWith('/api/config', expect.objectContaining({
+    source_kind:'local', repo:'', local_path:'D:/Projects/functionalAI',
+  }))
+  expect(post).toHaveBeenCalledWith('/api/local/read')
+  expect(post).not.toHaveBeenCalledWith('/api/scan')
+})
+
 it('renders local source text safely and labels local citations correctly', async () => {
   vi.mocked(get).mockResolvedValue({path:'README.md', snapshot:'abc', note:'Saved lines',
     lines:[{number:3, text:'<script>alert("no")</script>'}]})

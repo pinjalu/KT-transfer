@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "repo": "pinjalu/BSA_chatbot",
+  "commit": "0cc9ce981956e6e3c352836e8112a06700360947",
+  "label_provenance": "Regression questions reported by the user on 26 October 2026. References checked against repository code and the imported synthetic SCRUM-23/SCRUM-24 discussions. Phrase checks alone do not establish correctness; review negation, comparison operators, deployment scope and caveats.",
+  "cases": [
+    {
+      "id": "final_threshold_decision",
+      "question": "What is the final decision on the BSA handoff threshold: 0.45 or 0.60?",
+      "behavior": "answer",
+      "review_note": "The final demo correction retains 0.45 and rejects 0.60. It is not evidence of a live production override.",
+      "facts": [{"id": "retain_default", "phrases": [["0.45"], ["retain", "retained", "keep", "keeps"]], "references": [{"path": "jira/SCRUM-23", "start": 23, "end": 26}, {"path": "slack/casper", "start": 19, "end": 21}]}]
+    },
+    {
+      "id": "exact_threshold_boundary",
+      "question": "A response scores exactly 0.45. Will it automatically suggest handoff?",
+      "behavior": "answer",
+      "review_note": "At the repository default, 0.45 < 0.45 is false. Do not change < to <=. No-answer detection is an independent OR condition, and an open handoff suppresses the suggestion. Do not claim these other inputs were supplied.",
+      "facts": [{"id": "strict_comparison_false", "phrases": [["0.45"], ["false", "not from the score", "does not trigger"]], "references": [{"path": "admin-panel/main.py", "start": 382, "end": 398}, {"path": "jira/SCRUM-23", "start": 1, "end": 26}, {"path": "slack/casper", "start": 19, "end": 21}]}]
+    },
+    {
+      "id": "production_threshold_unknown",
+      "question": "What handoff threshold is currently configured in production?",
+      "behavior": "abstain",
+      "review_note": "No production readback was supplied. Neither the code default nor the synthetic decisions prove the deployed value. Require a specific missing-evidence explanation."
+    },
+    {
+      "id": "public_image_not_signing_proof",
+      "question": "Can a successfully loaded public image prove that private S3 image signing works?",
+      "behavior": "answer",
+      "review_note": "No. Public access can succeed through the unsigned fallback. Private signing requires separate private-object validation; the demo ticket is a pending test plan.",
+      "facts": [{"id": "insufficient_public_test", "phrases": [["not", "cannot", "no"]], "references": [{"path": "api.py", "start": 278, "end": 305}, {"path": "jira/SCRUM-24", "start": 1, "end": 25}, {"path": "slack/casper", "start": 12, "end": 14}]}]
+    }
+  ]
+}

@@ -5,14 +5,16 @@ import { OverviewDashboard } from '../components/OverviewDashboard'
 import type { FeatureReply, OverviewMode } from '../components/OverviewDashboard'
 import { useApi } from '../lib/useApi'
 import { useOverview } from '../lib/useOverview'
+import { projectName } from '../lib/project'
 import { ApiError, post } from '../lib/api'
+import { JOB_NAMES, jobActive, progressText, useJobProgress } from '../lib/jobProgress'
 import type { Overview as Body } from '../lib/overview'
-import type { Status } from '../lib/types'
+import { useStatus } from '../lib/useStatus'
 import './overview.css'
 const MODES = ['Beginner', 'Developer', 'Architect'] as const
 export function Overview() {
   const [mode, setMode] = useState<OverviewMode>('Beginner')
-  const status = useApi<Status>('/api/status', 5000)
+  const status = useStatus()
   const reply = useOverview(status)
   const features = useApi<FeatureReply>('/api/features', 0, status.data?.knowledge_revision,
     !!status.data && !status.data.awaiting_project)
@@ -20,15 +22,10 @@ export function Overview() {
   const [blocked, setBlocked] = useState(false)
   const busy = status.data?.busy ?? false
 
-  // What the application is actually doing, in its own words. "Reading the files" was printed
-  // for the whole of a scan, including the minutes after every file had been read while the
-  // text was being turned into vectors, which on a machine with no GPU is most of the wait.
-  const scan = status.data?.scan ?? null
-  const phase = scan?.phase && scan.status === 'running' ? scan.phase : ''
-  const embedded = scan?.embed_total
-    ? ` ${scan.embed_done ?? 0} of ${scan.embed_total}`
-    : ''
-  const doing = phase ? phase + embedded + '…' : 'Reading…'
+  // The last repository scan is historical. Only the active job describes today's wait.
+  const job = jobActive(status.data?.job) ? status.data?.job : null
+  const jobProgress = useJobProgress(job)
+  const waiting = job?.kind === 'local' ? 'Waiting for local import…' : 'Waiting for current job…'
 
   // A refusal because something else was running described the moment it was clicked, not a
   // state of the project, and it stayed on screen long after the scan it referred to had
@@ -83,7 +80,7 @@ export function Overview() {
             {/* Disabled while anything else is reading, because the request would be
                 refused anyway and a refusal is a worse answer than a button that waits. */}
             <Button icon="refresh" onClick={build} disabled={building || busy}>
-              {building ? 'Building…' : busy ? doing : body ? 'Rebuild overview' : 'Build overview'}
+              {building ? 'Building…' : busy ? waiting : body ? 'Rebuild overview' : 'Build overview'}
             </Button>
           </>
         } />
@@ -94,15 +91,11 @@ export function Overview() {
           so rather than leaving a reader to guess at an inert page. */}
       {busy && !building && (
         <Card>
-          <div className="loading">
+          <div className="loading" role="status">
             <span className="spinner" aria-hidden="true" />
-            {phase || 'Reading'}
-            {scan?.embed_total
-              ? `. ${scan.embed_done ?? 0} of ${scan.embed_total} pieces of text done.`
-              : scan?.total
-              ? `. ${scan.processed ?? 0} of ${scan.total} files done.`
-              : '.'}
-            {' '}The overview is built from this, so it can start once this finishes.
+            <div><p>{job?.state === 'cancelling' ? 'Cancellation requested. Waiting for the current operation to stop.'
+              : job ? `${JOB_NAMES[job.kind]}: ${progressText(jobProgress)}.` : 'Another operation is running.'}</p>
+              <p className="loading-detail">The overview is not building. When this job finishes, select Build overview to generate it from the saved sources.</p></div>
           </div>
         </Card>
       )}
@@ -118,7 +111,7 @@ export function Overview() {
         </Card>
       )}
 
-      {!body && !building && (
+      {!body && !building && !busy && (
         <Card>
           {/* The backend's reason for having no overview is the same sentence as the title,
               so printing both said it twice. Only a reason that adds something is shown. */}
@@ -127,7 +120,7 @@ export function Overview() {
                    ? reply.data.reason
                    : 'Build one to read a handover of this project, in the order it is worth reading.'}
                  action={<Button kind="primary" icon="refresh" onClick={build} disabled={busy}>
-                           {busy ? doing : 'Build overview'}
+                           Build overview
                          </Button>} />
         </Card>
       )}
@@ -139,13 +132,14 @@ export function Overview() {
           <Segmented items={[...MODES]} active={mode} onPick={m => setMode(m as OverviewMode)} />
         </div>
         <OverviewDashboard key={`${body.repo}:${body.scan_id}:${status.data?.knowledge_revision}`}
-          body={body} features={features} mode={mode} building={building} />
+          body={body} features={features} mode={mode} building={building}
+          project={projectName(status.data?.settings, body.repo)} />
       </>}
       <details className="ov-refresh-help">
         <summary>How refreshing works</summary>
-        <p>A page refresh loads the saved overview. Rebuild overview generates it again from saved information.
+        <p>Switching pages keeps your overview and reading position. Rebuild overview generates it again from saved information.
           To get source changes, use <Link to="/connections">Connections</Link> first.
-          Source refreshes clear previous answers and the overview.</p>
+          Source refreshes clear the saved overview. Earlier chat replies remain visible and are marked as older.</p>
       </details>
     </div>
   )

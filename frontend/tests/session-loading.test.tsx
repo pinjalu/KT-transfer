@@ -63,7 +63,7 @@ afterEach(async () => {
 })
 
 describe('session checks when returning to a browser tab', () => {
-  it('hides the workspace during verification and preserves the same account draft', async () => {
+  it('keeps the workspace visible during tab verification and preserves the same account draft', async () => {
     vi.mocked(get).mockResolvedValue(session())
     await render(<AuthGate><Draft /></AuthGate>)
     const input = container.querySelector('input')!
@@ -71,12 +71,89 @@ describe('session checks when returning to a browser tab', () => {
     const pending = deferred()
     vi.mocked(get).mockReturnValueOnce(pending.promise)
     await visible()
-    expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(true)
+    expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(false)
+    expect(container.querySelector('.auth-workspace')?.hasAttribute('inert')).toBe(false)
+    expect(container.textContent).not.toContain('Checking sign-in')
     expect(mounts).toBe(1)
     await act(async () => pending.resolve(session()))
     expect(container.querySelector('input')).toBe(input)
     expect(input.value).toBe('keep this question')
     expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('shares an in-flight check across rapid tab returns without reloading page data', async () => {
+    vi.mocked(get).mockResolvedValueOnce(session()).mockResolvedValueOnce({ overview: 'saved' })
+    await render(<AuthGate><Reader revision={4} /></AuthGate>)
+    const pending = deferred()
+    vi.mocked(get).mockReturnValueOnce(pending.promise)
+    await visible()
+    await visible()
+    await visible()
+    expect(vi.mocked(get).mock.calls.filter(([path]) => path === '/api/auth/status')).toHaveLength(2)
+    expect(vi.mocked(get).mock.calls.filter(([path]) => path === '/api/overview')).toHaveLength(1)
+    expect(container.textContent).toContain('saved')
+    await act(async () => pending.resolve(session()))
+    expect(vi.mocked(get).mock.calls.filter(([path]) => path === '/api/overview')).toHaveLength(1)
+  })
+
+  it('blocks a potentially changed account even while a quiet tab check is pending', async () => {
+    vi.mocked(get).mockResolvedValueOnce(session())
+    await render(<AuthGate><Draft /></AuthGate>)
+    const quiet = deferred()
+    const changed = deferred()
+    vi.mocked(get).mockReturnValueOnce(quiet.promise).mockReturnValueOnce(changed.promise)
+    await visible()
+    await act(async () => Channel.current.onmessage?.())
+    expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(true)
+    await act(async () => quiet.resolve(session()))
+    expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(true)
+    await act(async () => changed.resolve({ authenticated: false, setup_required: false, user: null }))
+    expect(container.querySelector('[aria-label="draft"]')).toBeNull()
+    expect(container.textContent).toContain('Welcome back')
+  })
+
+  it('blocks verification after restoring a page from the back-forward cache', async () => {
+    vi.mocked(get).mockResolvedValueOnce(session())
+    await render(<AuthGate><Draft /></AuthGate>)
+    const pending = deferred()
+    vi.mocked(get).mockReturnValueOnce(pending.promise)
+    const event = new Event('pageshow')
+    Object.defineProperty(event, 'persisted', { value: true })
+    await act(async () => window.dispatchEvent(event))
+    expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(true)
+    await act(async () => pending.resolve(session()))
+    expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('does not leave expired content visible or accept a check started before expiry', async () => {
+    const expiring = session()
+    expiring.user.idle_expires_at = Date.now() / 1000 + 1
+    vi.mocked(get).mockResolvedValueOnce(expiring)
+    await render(<AuthGate><Draft /></AuthGate>)
+    const quiet = deferred()
+    const expired = deferred()
+    vi.mocked(get).mockReturnValueOnce(quiet.promise).mockReturnValueOnce(expired.promise)
+    await visible()
+    await act(async () => vi.advanceTimersByTime(1000))
+    expect(container.querySelector('[aria-label="draft"]')).toBeNull()
+    await act(async () => quiet.resolve(session()))
+    expect(container.querySelector('[aria-label="draft"]')).toBeNull()
+    await act(async () => expired.resolve({ authenticated: false, setup_required: false, user: null }))
+    expect(container.textContent).toContain('Welcome back')
+  })
+
+  it('requires blocking verification if expiry passed while the tab was suspended', async () => {
+    const expiring = session()
+    expiring.user.idle_expires_at = Date.now() / 1000 + 1
+    vi.mocked(get).mockResolvedValueOnce(expiring)
+    await render(<AuthGate><Draft /></AuthGate>)
+    vi.setSystemTime(Date.now() + 2000)
+    const pending = deferred()
+    vi.mocked(get).mockReturnValueOnce(pending.promise)
+    await visible()
+    expect(container.querySelector('.auth-workspace')?.hasAttribute('hidden')).toBe(true)
+    await act(async () => pending.resolve({ authenticated: false, setup_required: false, user: null }))
+    expect(container.querySelector('[aria-label="draft"]')).toBeNull()
   })
 
   it('discards private state when a different account becomes active', async () => {
@@ -204,12 +281,12 @@ function OverviewReader({ state = 'succeeded' }: { state?: 'running' | 'succeede
   return <div>{JSON.stringify(load.data)}</div>
 }
 describe('overview updates', () => {
-  it('checks idle content less often without automatically starting a model build', async () => {
+  it('keeps idle content until explicitly refreshed without starting a model build', async () => {
     vi.mocked(get).mockResolvedValue({ available: true })
     await render(<OverviewReader />)
-    await act(async () => vi.advanceTimersByTime(29000))
+    await act(async () => vi.advanceTimersByTime(60000))
     expect(get).toHaveBeenCalledTimes(1)
-    await act(async () => vi.advanceTimersByTime(1000))
+    await act(async () => load.reload())
     expect(get).toHaveBeenCalledTimes(2)
     expect(post).not.toHaveBeenCalled()
   })

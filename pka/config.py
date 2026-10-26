@@ -70,6 +70,29 @@ def validate_selection(repo: str, branch: str) -> tuple[str, str]:
     return repo, branch
 
 
+def project_name(settings: dict | None) -> str:
+    """The workspace label is separate from the repository used to anchor its index."""
+    settings = settings or {}
+    if settings.get('project_name'):
+        return settings['project_name']
+    # Older mixed-source workspaces have no explicit label. Their added folder
+    # is the selected local project, even though the GitHub scan remains the anchor.
+    source = ((settings.get('local') or {}).get('path') or settings.get('local_path')
+              or settings.get('repo') or '')
+    return source.removeprefix('local:').replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
+
+
+def selected_source(settings: dict | None) -> str:
+    settings = settings or {}
+    if settings.get('selected_source') in {'github', 'local'}:
+        return settings['selected_source']
+    # Old mixed workspaces only recorded the added folder, not the chosen form.
+    if ((settings.get('local') or {}).get('path') or settings.get('local_path')
+            or settings.get('repo', '').startswith('local:')):
+        return 'local'
+    return 'github'
+
+
 @dataclass(frozen=True)
 class Limits:
     max_file_bytes: int = 256 * 1024

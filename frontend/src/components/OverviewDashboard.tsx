@@ -5,6 +5,7 @@ import { Statements } from './Statements'
 import { Button, Chip, Empty, Failed, Loading, Missing, SourceLink } from './ui'
 import { originOf, sourcePath } from '../lib/answer'
 import { factsOf } from '../lib/overview'
+import { projectName } from '../lib/project'
 import type { FactGroup, Overview, Section } from '../lib/overview'
 import type { Load } from '../lib/useApi'
 
@@ -119,8 +120,8 @@ function ReadingList({ body }: { body: Overview }) {
   </>
 }
 
-export function OverviewDashboard({ body, features, mode, building }: {
-  body: Overview; features: Load<FeatureReply>; mode: OverviewMode; building: boolean
+export function OverviewDashboard({ body, features, mode, building, project }: {
+  body: Overview; features: Load<FeatureReply>; mode: OverviewMode; building: boolean; project?: string
 }) {
   const [picked, setPicked] = useState('purpose')
   const [query, setQuery] = useState('')
@@ -153,7 +154,7 @@ export function OverviewDashboard({ body, features, mode, building }: {
     <section className="ov-hero" aria-label="Project snapshot">
       <div className="ov-hero-main">
         <span className="ov-eyebrow">Your project at a glance</span>
-        <h2>{body.repo.split('/').pop() || body.repo}</h2>
+        <h2>{project || projectName(null, body.repo)}</h2>
         <p>Start with the big picture. Follow a topic, inspect its evidence, or work through the reading list.</p>
         <div className="ov-hero-meta"><span><Icon name="nodes" size={14} />{body.branch}</span>
           <span className="mono">{body.commit?.slice(0, 7)}</span><span>{body.repo}</span></div>

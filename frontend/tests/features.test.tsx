@@ -101,7 +101,7 @@ it('supports keyboard tabs and preserves the view across background reads', asyn
   await act(async () => button('Overview').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
   expect(document.activeElement).toBe(button('Code flow'))
   expect(button('Code flow').getAttribute('aria-selected')).toBe('true')
-  await act(async () => vi.advanceTimersByTimeAsync(30000))
+  await click('Refresh feature')
   expect(button('Code flow').getAttribute('aria-selected')).toBe('true')
   expect(post).not.toHaveBeenCalled()
 })
@@ -119,11 +119,11 @@ it('distinguishes possible Jira matches and preserves local source links', async
 it('shows source failures and discards protected details after access is revoked', async () => {
   await render()
   failDetail = true
-  await act(async () => vi.advanceTimersByTimeAsync(30000))
+  await click('Refresh feature')
   expect(container.textContent).toContain('Feature access was revoked.')
   expect(container.querySelector('.feature-hero')).toBeNull()
   failList = true
-  await act(async () => vi.advanceTimersByTimeAsync(30000))
+  await click('Refresh features')
   expect(container.textContent).toContain('Source access was revoked.')
   expect(container.querySelector('.feature-list')).toBeNull()
   expect(container.textContent).not.toContain('No route-based features')
