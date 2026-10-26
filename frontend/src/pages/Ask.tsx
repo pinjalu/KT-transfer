@@ -6,6 +6,7 @@ import { useStatus } from '../lib/useStatus'
 import { usePageActive } from '../lib/pageState'
 import { ApiError, post } from '../lib/api'
 import { Said, Statements } from '../components/Statements'
+import { TestSuggestions } from '../components/TestSuggestions'
 import type { Answer, Turn } from '../lib/answer'
 import { originOf, sourcePath, conversationContext } from '../lib/answer'
 import './ask.css'
@@ -175,7 +176,7 @@ export function Ask() {
                           <div className="ans-warn"><Chip tone="warn">{turn.answer.warning}</Chip></div>
                         )}
 
-                        {turn.answer.statements.length > 0 ? (
+                        {turn.answer.test_suggestions?.length ? <TestSuggestions tests={turn.answer.test_suggestions} sources={turn.answer.sources} /> : turn.answer.statements.length > 0 ? (
                           <>
                             <div className="answer-lead">
                               <p className="answer-label">Answer</p>

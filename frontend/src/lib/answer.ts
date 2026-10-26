@@ -39,10 +39,23 @@ export type Search = {
   corrections?: Record<string, string>
 }
 
+export type TestSuggestion = {
+  title: string
+  reason: string
+  setup: string[]
+  steps: string[]
+  expected_result: string
+  verification: string[]
+  assumptions: string[]
+  evidence: { source_id: string; quote: string; kind: string }[]
+  status: 'suggested_not_run'
+}
+
 export type Answer = {
   knowledge_revision?: number
   answer_id: number
   statements: Statement[]
+  test_suggestions?: TestSuggestion[]
   sources: Source[]
   missing_information: string
   error: string | null
@@ -78,7 +91,9 @@ export function conversationContext(turns: Turn[], repo: string | undefined, rev
   const recent = eligible.filter(t => t.answer!.commit === latest.commit).slice(-4)
   return { repo: latest.repo, commit: latest.commit, knowledge_revision: revision,
     turns: recent.map(t => ({ question: t.question,
-      answer: [...t.answer!.statements.map(s => s.text), t.answer!.missing_information].filter(Boolean).join('\n').slice(0, 1800) })) }
+      answer: [...t.answer!.statements.map(s => s.text),
+        ...(t.answer!.test_suggestions ?? []).map(s => `Suggested test, not run: ${s.title}. Steps: ${s.steps.join(' ')} Verification: ${s.verification.join(' ')}`),
+        t.answer!.missing_information].filter(Boolean).join('\n').slice(0, 1800) })) }
 }
 
 /** Where an excerpt came from. Slack and Jira blocks are stored under their own path prefix. */

@@ -39,6 +39,9 @@ that omission still cannot promote model prose to **Verified from code**.
 Implementation: `pka/statement_evidence.py`, shared `overview.tidy`, the deterministic answer
 check integration in `service.py`, and `frontend/src/components/Statements.tsx`.
 
+[Task 16.5](TASK_16_5.md) subsequently adds a dedicated structured test-suggestion path in Ask,
+addressing the source-summary-only failure observed during the validation below.
+
 ## Validation (2026-10-26)
 
 - Backend suite: 884 passed. Frontend suite: 74 passed. Production UI build passed.

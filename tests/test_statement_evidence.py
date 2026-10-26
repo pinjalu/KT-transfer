@@ -111,6 +111,6 @@ def test_real_answer_pipeline_only_marks_the_deterministic_numeric_result(tmp_pa
     numeric = asyncio.run(svc.ask('A response scores exactly 0.45. Will it automatically suggest handoff?'))
     assert numeric['statements'][0]['evidence']['kind'] == 'verified_code'
     assert '_verification' not in numeric
-    proposed = asyncio.run(svc.ask('Suggest tests for the confidence threshold'))
+    proposed = asyncio.run(svc.ask('Suggest an improvement to the confidence threshold'))
     assert proposed['statements'][0]['evidence']['kind'] == 'suggestion'
     assert '_verification' not in proposed

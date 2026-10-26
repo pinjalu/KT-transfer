@@ -13,7 +13,7 @@ from pka.connectors.local import is_local
 from pka.index import chunk_file, small_talk
 from pka.import_cache import FileCheckpoints
 from pka.connectors.slack import transcript, snapshot as slack_snapshot
-from pka import embed, jira_tasks, jira_links, decisions
+from pka import embed, jira_tasks, jira_links, decisions, test_plans
 from pka.answer_checks import checked_answer, generation_sources
 from pka.conversation import followup_query
 from pka.facts import derive as derive_facts
@@ -150,6 +150,8 @@ class GroundedAnswer(BaseModel):
 
 def focused_question(question):
     """Fact lookups need one direct answer; explicit explanations may need a sequence."""
+    if test_plans.requested(question):
+        return False
     lookup = re.search(r'\b(?:what|which|where|who|when|name)\b|\bhow\s+(?:many|much)\b|'
                        r'^\s*(?:can|could|does|do|is|are|will|would)\b', question, re.I)
     broad = re.search(r'\b(?:explain|describe|why|compare|differences?|walkthrough|overview|'
@@ -235,6 +237,8 @@ def _why_http(reply, model: str) -> str:
 
 
 async def ollama_answer(question, sources, history=()):
+    if test_plans.requested(question):
+        return await test_plans.generate(question, sources, history)
     sources = generation_sources(question, sources)
     instruction = SYSTEM
     if focused_question(question):
@@ -1482,6 +1486,10 @@ class Service:
             self.ensure_current(checked)
             detailed = not focused_question(question)
             source_limit, char_limit = (8, 14000) if detailed else (LIMITS.max_sources, LIMITS.context_chars)
+            if test_plans.requested(question):
+                # The structured plan and quote schema also occupy model context. Keep
+                # room for actionable steps instead of crowding them out with excerpts.
+                source_limit, char_limit = 5, 6000
             sources = self.index.search(question,scan,search_info,query_vectors=found,
                 context_question=contextual, max_sources=source_limit, context_chars=char_limit)
             search_info['conversation_turns'] = len(history)
@@ -1520,12 +1528,15 @@ class Service:
                         answer = {'statements':[{'text':'Example mode found the excerpts below. Read them to check whether they answer your question. Live mode asks your local Ollama model to explain these excerpts.','source_ids':[sources[0]['source_id']]}],
                                   'missing_information':'This is a deterministic demonstration response, not a model-generated explanation.'}
                     else:
-                        answer = checked_answer(question, sources)
+                        planning = test_plans.requested(question)
+                        answer = None if planning else checked_answer(question, sources)
                         if answer is not None:
                             verified_code = answer.pop('_verification', '') == 'numeric_code_rule'
                         if answer is None:
                             answer = (await self.generator(question, sources, history=history) if history
                                       else await self.generator(question, sources))
+                        if planning:
+                            answer = test_plans.prepare(answer, question, sources)
                     # Internal verification metadata must never be echoed from a generator.
                     answer.pop('_verification', None)
                     # The same checks the overview applies. A restated point, a citation of

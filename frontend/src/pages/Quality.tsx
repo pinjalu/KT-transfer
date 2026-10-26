@@ -4,6 +4,7 @@ import { useStatus } from '../lib/useStatus'
 import { useApi } from '../lib/useApi'
 import { post } from '../lib/api'
 import { Statements } from '../components/Statements'
+import { TestSuggestions } from '../components/TestSuggestions'
 import type { Answer } from '../lib/answer'
 import './ask.css'
 import './quality.css'
@@ -48,11 +49,12 @@ function CaseReview({ run, caseId, onSaved }: { run: Run; caseId: string; onSave
   const prefix = `quality-${run.id}-${caseId}-`
   const sources = answer.sources.map(source => ({ ...source, source_id: prefix + source.source_id }))
   const statements = answer.statements.map(statement => ({ ...statement, source_ids: statement.source_ids.map(id => prefix + id) }))
+  const tests = answer.test_suggestions?.map(test => ({ ...test, evidence: test.evidence.map(item => ({ ...item, source_id: prefix + item.source_id })) }))
   return <Card title={data.case.question} sub={`Expected behaviour: ${data.case.behavior.replaceAll('_', ' ')}`}>
     {data.case.review_note && <Missing what={data.case.review_note} checked="Reference guidance for the reviewer" />}
     <h3>Exact generated answer</h3>
     {answer.error && <Failed message={answer.error} />}
-    <Statements statements={statements} sources={sources} />
+    {tests?.length ? <TestSuggestions tests={tests} sources={sources} /> : <Statements statements={statements} sources={sources} />}
     {answer.missing_information && <Missing what={answer.missing_information} />}
     {answer.warning && <Missing what={answer.warning} />}
     <details className="quality-checks"><summary>Automatic check details</summary>

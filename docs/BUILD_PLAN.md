@@ -204,6 +204,8 @@ This is the keystone. Nothing in the second half of the chart moves without it.
    and stronger distinction between alternatives and conflicting agreements; see [task 15.3](TASK_15_3.md).
 10. **Troubleshooting and test explanation, mockup 09.** Symptom to cause ranking from the feature
     graph, where to check, suggested checks, and relevant tests marked as existing or suggested.
+    Task 16.5 adds structured, cited test suggestions in Ask with reasons and observable
+    verification steps. The troubleshooting screen remains separate work; see [task 16.5](TASK_16_5.md).
 
 ### Milestone D, freshness, home, settings, more sources
 
