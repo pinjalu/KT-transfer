@@ -164,7 +164,7 @@ def numeric_answer(question, sources):
                          f'`{guard.operand.id}` must be false in either case.')
                 break
     return {'statements': [{'text': text, 'source_ids': list(dict.fromkeys([comparison_source['source_id'], definition_id]))}],
-            'missing_information': ''}
+            'missing_information': '', '_verification': 'numeric_code_rule'}
 
 
 def runtime_lookup(question):

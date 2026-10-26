@@ -1,14 +1,13 @@
 import { Chip } from './ui'
 import type { Source, Statement } from '../lib/answer'
-import { SUPPORT_SAYS, SUPPORT_TONE } from '../lib/answer'
+import { EVIDENCE_LABELS, SUPPORT_LABELS, SUPPORT_SAYS, SUPPORT_TONE } from '../lib/answer'
 
 /**
  * How a model-written sentence is shown anywhere in this interface.
  *
- * pka/overview.py already decides two things about every statement: whether the excerpt it
- * cites actually carries it, and whether it names anything belonging to this project. Both were
- * being computed and shown nowhere. A reader who cannot see which sentence to distrust is worse
- * off than one shown fewer sentences, so the marks are part of the sentence, not a footnote.
+ * Provenance, word overlap and project specificity are separate signals. None of the
+ * model-written prose is verified merely because its citation has matching words.
+ * Keep the evidence label visible in every reader mode, including saved legacy answers.
  */
 export function Cites({ ids, sources }: { ids: string[]; sources: Source[] }) {
   const order = new Map(sources.map((s, i) => [s.source_id, i + 1]))
@@ -33,6 +32,8 @@ export function Said({ statement, sources, citations = true, showContextMark = t
   // read: "install using requirements.txt" matched an excerpt about installing, in a project
   // with no requirements.txt. Only the scan knows which files exist, so it marks them.
   const unread = statement.files_not_read ?? []
+  const evidence = statement.evidence ?? { kind: 'unverified' as const,
+    reason: 'This saved answer predates behaviour labels. Inspect its sources or generate a fresh answer.' }
   return (
     <li className={'said' + (tone === 'bad' || unread.length ? ' said-bad' : '')}>
       <p className="said-text">
@@ -41,9 +42,15 @@ export function Said({ statement, sources, citations = true, showContextMark = t
             ? <code key={i}>{part.slice(1, -1)}</code> : part)}
         {citations && <Cites ids={statement.source_ids} sources={sources} />}
       </p>
+      <div className="said-evidence">
+        <Chip tone={evidence.kind === 'verified_code' ? 'ok' : ['suggestion', 'mixed', 'unverified'].includes(evidence.kind) ? 'warn' : 'info'}>
+          {EVIDENCE_LABELS[evidence.kind] ?? EVIDENCE_LABELS.unverified}
+        </Chip>
+        <span className="said-says">{evidence.reason}</span>
+      </div>
       {(tone === 'bad' || tone === 'warn' || generic || unread.length > 0) && (
         <p className="said-mark">
-          {tone !== 'ok' && tone !== 'quiet' && <Chip tone={tone}>{statement.support}</Chip>}
+          {tone !== 'ok' && tone !== 'quiet' && <Chip tone={tone}>{SUPPORT_LABELS[statement.support]}</Chip>}
           {generic && <Chip tone="warn">Names nothing from this project</Chip>}
           {unread.length > 0 && (
             <Chip tone="bad">

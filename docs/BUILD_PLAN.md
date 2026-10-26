@@ -437,3 +437,11 @@ What is still open. Paraphrase hit@1 is 0.375 and 0.167, meaning the right file 
 not first, which points at chunking next rather than at anything to do with the model. The
 answer itself is still unscored, only the evidence it is built from. And both question sets
 are small, twenty-six and eighteen, so a sweep should be re-run whenever one grows.
+
+## Task 16.6 — behaviour evidence labels
+
+Implemented: new answers distinguish suggested behaviour, code explanations, test definitions,
+documentation/configuration and recorded discussions. Only deterministic numeric code checks
+receive **Verified from code**; this never claims that the project or its tests were executed.
+The shared renderer also covers overview, Jira explanations and answer evaluation. Old saved
+answers remain unverified until regenerated. See [TASK_16_6.md](TASK_16_6.md).

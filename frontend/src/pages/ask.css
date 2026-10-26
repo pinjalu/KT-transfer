@@ -93,3 +93,5 @@
 }
 .src-foot { font-size: 12.5px; color: var(--ink-soft); }
 .src-foot-dim { color: var(--ink-dim); margin-top: var(--s2); }
+.said-evidence { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 8px 0 10px; }
+.said-evidence .said-says { flex: 1 1 260px; }

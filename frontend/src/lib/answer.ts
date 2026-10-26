@@ -9,8 +9,16 @@ export type Source = {
   url: string | null
 }
 
-/** Set by pka/overview.py tidy(). 'check this' means the excerpt it cites does not carry it. */
+/** Lexical overlap from pka/overview.py tidy(); not a factual correctness verdict. */
 export type Support = 'supported' | 'partly supported' | 'check this' | 'not measured'
+export type EvidenceKind = 'verified_code' | 'suggestion' | 'code' | 'test' | 'documentation' | 'discussion' | 'mixed' | 'unverified' | 'example'
+
+export const EVIDENCE_LABELS: Record<EvidenceKind, string> = {
+  verified_code: 'Verified from code', suggestion: 'Suggested behaviour', code: 'Code-based explanation',
+  test: 'Test definition, not a test result', documentation: 'Documentation or configuration',
+  discussion: 'Recorded requirement or discussion', mixed: 'Mixed evidence — needs verification',
+  unverified: 'Behaviour not verified', example: 'Example data',
+}
 
 export type Statement = {
   text: string
@@ -20,6 +28,8 @@ export type Statement = {
   about_this_project: boolean
   /** File names the sentence used that this scan never read. */
   files_not_read?: string[]
+  /** Evidence provenance is separate from lexical overlap and never model self-attestation. */
+  evidence?: { kind: EvidenceKind; reason: string }
 }
 
 export type Search = {
@@ -91,8 +101,13 @@ export const SUPPORT_TONE: Record<Support, 'ok' | 'warn' | 'bad' | 'quiet'> = {
 }
 
 export const SUPPORT_SAYS: Record<Support, string> = {
-  supported: 'The excerpt it cites carries this.',
-  'partly supported': 'Only part of this is in the excerpt it cites.',
-  'check this': 'This was not found in the excerpt it cites. Read the excerpt before believing it.',
+  supported: 'High word overlap with the citation; this is not a factual correctness check.',
+  'partly supported': 'Some words match the citation. Check the claim and its conditions in the source.',
+  'check this': 'Low word overlap with the citation. Inspect the source before relying on this claim.',
   'not measured': 'Not checked against an excerpt.',
+}
+
+export const SUPPORT_LABELS: Record<Support, string> = {
+  supported: 'High text overlap', 'partly supported': 'Some text overlap',
+  'check this': 'Low text overlap', 'not measured': 'Not measured',
 }

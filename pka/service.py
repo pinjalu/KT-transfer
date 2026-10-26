@@ -118,6 +118,12 @@ claim as verified. A new, independent question takes precedence over earlier top
 10. For explanations, lead with the direct answer, then explain the sequence, cause, or
 trade-off the user asked about. Connect components in plain language, preserve qualifications,
 and identify missing links. Do not compress a multi-step explanation into a single sentence.
+11. Separate existing behaviour from suggested changes or tests. Introduce a recommendation
+with "Suggested:" and keep it in its own statement. Cite the evidence motivating it; never
+claim the suggestion is already implemented or tested. A test definition is not a passing
+test run, and a Jira requirement or Slack agreement is not proof of implementation.
+Describe hypothetical failure handling as a suggestion unless the cited code establishes it.
+Do not call a model-written explanation verified just because it has citations.
 
 Return JSON matching the schema. No HTML, tools, or external links.'''
 
@@ -1502,20 +1508,26 @@ class Service:
                 response.update(statements=[],missing_information=detail,error=None)
             else:
                 try:
+                    verified_code = False
                     if self.demo:
                         answer = {'statements':[{'text':'Example mode found the excerpts below. Read them to check whether they answer your question. Live mode asks your local Ollama model to explain these excerpts.','source_ids':[sources[0]['source_id']]}],
                                   'missing_information':'This is a deterministic demonstration response, not a model-generated explanation.'}
                     else:
                         answer = checked_answer(question, sources)
+                        if answer is not None:
+                            verified_code = answer.pop('_verification', '') == 'numeric_code_rule'
                         if answer is None:
                             answer = (await self.generator(question, sources, history=history) if history
                                       else await self.generator(question, sources))
+                    # Internal verification metadata must never be echoed from a generator.
+                    answer.pop('_verification', None)
                     # The same checks the overview applies. A restated point, a citation of
                     # every excerpt at once and a sentence that is not in any excerpt it names
                     # are all just as unhelpful in an answer as they are in a section.
                     statements, checks = tidy(answer.get('statements',[]), sources,
                                               measure=not self.demo,
-                                              paths=self.index.code_paths(scan['id']))
+                                              paths=self.index.code_paths(scan['id']),
+                                              verified_code=verified_code)
                     response.update(answer, statements=statements, checks=checks, error=None)
                     applog.event('ask.checked', dropped=checks['dropped_repeats'],
                                  narrowed=checks['narrowed_citations'],

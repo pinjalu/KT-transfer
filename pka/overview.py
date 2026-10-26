@@ -21,6 +21,7 @@ from pathlib import PurePosixPath
 
 from pka.config import source_url
 from pka.index import is_source_path
+from pka.statement_evidence import describe as describe_evidence
 
 TOPICS = [
     {
@@ -442,7 +443,7 @@ def _repeats(words: set, earlier: list[set]) -> bool:
 
 
 def tidy(statements: list[dict], sources: list[dict],
-         measure: bool = True, facts=(), paths=()) -> tuple[list[dict], dict]:
+         measure: bool = True, facts=(), paths=(), *, verified_code=False) -> tuple[list[dict], dict]:
     """Check and clean up what the model returned, before anybody reads it.
 
     Three things go wrong with a small model asked for between one and eight statements, and
@@ -496,6 +497,8 @@ def tidy(statements: list[dict], sources: list[dict],
             'about_this_project': about_this,
             'files_not_read': missing,
         })
+        kept[-1]['evidence'] = describe_evidence(kept[-1], sources, example=not measure,
+                                                verified_code=verified_code)
     return kept, {'dropped_repeats': dropped, 'narrowed_citations': narrowed,
                   'unsupported': sum(1 for k in kept if k['support'] == 'check this'),
                   'generic': generic, 'names_unread_files': invented}

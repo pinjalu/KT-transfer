@@ -32,3 +32,12 @@ python -m pytest tests/test_answer_checks.py tests/test_answer_quality.py -q
 ```
 
 The four user-reported BSA questions are in `evals/answers_bsa_boundaries.json`. They require the matching repository snapshot and imported synthetic discussions. Run them through the existing authenticated evaluation command or Ask assistant, then inspect answers and citations. Automated phrase checks cannot distinguish all negation errors and remain separate from human correctness review.
+
+## Behaviour provenance (task 16.6)
+
+Every newly generated statement carries a separate evidence label. Suggestions, test
+definitions, documentation and discussions do not establish implemented behaviour. Only the
+deterministic numeric checker can mark a result **Verified from code**, with the runtime and
+default-value assumptions still visible. Text overlap remains a heuristic, not verification.
+Older retained responses keep their exact contents and show an unverified fallback. See
+[task 16.6](TASK_16_6.md) for labels, trust boundaries and limits.
