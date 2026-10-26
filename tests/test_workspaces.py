@@ -110,6 +110,22 @@ def test_member_does_not_inherit_host_credentials_and_logs(team):
     assert owner.get('/api/import-history/scan-0001-complete-secret.log').status_code == 200
 
 
+def test_existing_test_definitions_stay_inside_the_authenticated_workspace(team):
+    app, (owner, alice, bob), _, _ = team
+    for ident, client, marker in [(1, owner, 'owner-restricted'), (2, alice, 'alice-restricted')]:
+        service = seed(app, client, ident, marker)
+        scan = service.index.active_scan()
+        service.index.activate(scan['id'], chunk_file('tests/test_private.py',
+            f'def test_private():\n    assert value == {marker!r}\n'), scan)
+    for client, own, other in [(owner, 'owner-restricted', 'alice-restricted'), (alice, 'alice-restricted', 'owner-restricted')]:
+        response = client.get('/api/existing-tests?user_id=1&workspace=1', headers={'X-PKA-User': '1'})
+        assert response.status_code == 200
+        assert own in response.text and other not in response.text
+    response = bob.get('/api/existing-tests?user_id=1')
+    assert response.status_code == 200 and not response.json()['available']
+    assert 'owner-restricted' not in response.text and 'alice-restricted' not in response.text
+
+
 def test_revoked_upstream_permission_blocks_search_and_cached_code(team):
     app, (_,alice,_), _, denied = team
     service = seed(app, alice, 2, 'alice-restricted')

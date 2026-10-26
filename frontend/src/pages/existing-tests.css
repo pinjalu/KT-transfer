@@ -1,0 +1,12 @@
+.existing-tests { display: grid; gap: 20px; }
+.existing-tests p { line-height: 1.6; }
+.existing-test-search { display: grid; gap: 8px; max-width: 560px; margin-top: 18px; font-weight: 600; }
+.existing-test-search input { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); font: inherit; }
+.existing-test { padding: 16px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.existing-test summary { cursor: pointer; }
+.existing-test summary span { margin-left: 14px; color: var(--ink-soft); font-size: 13px; }
+.existing-test h3 { margin: 18px 0 8px; font-size: 15px; }
+.existing-test blockquote { white-space: pre-wrap; border-left: 3px solid var(--border); padding-left: 14px; }
+.existing-check { padding: 12px 0; }
+.existing-check pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--page); padding: 12px; border: 1px solid var(--border); border-radius: var(--r-sm); }
+@media (max-width: 700px) { .existing-test summary span { display: block; margin: 8px 0 0; } }

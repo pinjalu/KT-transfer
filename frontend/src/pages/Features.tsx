@@ -96,6 +96,7 @@ function Feature({ summary, revision }: { summary: FeatureSummary; revision: num
         </>}
         {view === 'Tests' && <>
           <h3>Tests linked by imports</h3>
+          <p><Link to="/tests">Read existing test definitions and assertions</Link></p>
           <p className="feature-note">These test files import a related file. They have not been executed here, and an import alone does not establish behavior coverage or a passing result.</p>
           {body.tests.existing.length ? <div className="feature-evidence-list">{body.tests.existing.map(test => <article key={test.path}>
             <strong>{test.name}</strong><p>Imports {sourcePath(test.covers.replace(/^Imports /, ''))}</p><SourceLink {...test} />

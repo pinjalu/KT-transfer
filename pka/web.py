@@ -20,7 +20,7 @@ from pka import auth_web
 from pka.connectors import registry
 from pka.connectors.base import SourceError
 from pka.connectors.local import is_local, local_selection
-from pka import facts, features, coverage, quality
+from pka import facts, features, coverage, quality, existing_tests
 from pka.index import Index
 from pka.overview import reading_order, topics_for
 from pka.service import Service
@@ -803,6 +803,18 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         if not path.is_file():
             raise HTTPException(404,'No such import report.')
         return {'name':name,'text':path.read_text(encoding='utf-8')[:200_000]}
+
+    @app.get('/api/existing-tests')
+    async def existing_test_definitions():
+        if not chosen['this_run']:
+            return {'available': False, 'reason': 'Choose a project in Connections first.', 'files': []}
+        scan = index.active_scan()
+        if not scan:
+            return {'available': False, 'reason': 'Run a successful scan first.', 'files': []}
+        checked = await service.check_external_access(scan)
+        payload = await run_in_threadpool(existing_tests.derive, index, scan)
+        service.ensure_current(checked)
+        return payload
 
     @app.get('/api/features')
     async def feature_list():

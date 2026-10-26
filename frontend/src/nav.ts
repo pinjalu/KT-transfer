@@ -14,6 +14,7 @@ export const DESTINATIONS: Dest[] = [
   { path: '/ask',             label: 'Ask assistant',    icon: 'chat',       needs: 'scan' },
   { path: '/quality',         label: 'Answer quality',   icon: 'check',      needs: 'scan' },
   { path: '/features',        label: 'Feature explorer', icon: 'grid',       needs: 'scan' },
+  { path: '/tests',           label: 'Existing tests',   icon: 'check',      needs: 'scan' },
   { path: '/jira',            label: 'Jira tasks',       icon: 'ticket',     needs: 'jira' },
   { path: '/decisions',       label: 'Team decisions',   icon: 'people',     needs: 'slack' },
   { path: '/architecture',    label: 'Architecture',     icon: 'nodes',      needs: 'scan' },

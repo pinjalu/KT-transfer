@@ -15,6 +15,7 @@ import { AuthGate } from './components/AuthGate'
 import { Account } from './pages/Account'
 import { LocalSource } from './pages/LocalSource'
 import { Features } from './pages/Features'
+import { ExistingTests } from './pages/ExistingTests'
 import './tokens.css'
 import './shell.css'
 
@@ -30,6 +31,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="ask" element={<Ask />} />
           <Route path="quality" element={<Quality />} />
           <Route path="features" element={<Features />} />
+          <Route path="tests" element={<ExistingTests />} />
           <Route path="jira" element={<JiraTasks />} />
           <Route path="decisions" element={<TeamDecisions />} />
           <Route path="architecture" element={<Architecture />} />

@@ -206,6 +206,8 @@ This is the keystone. Nothing in the second half of the chart moves without it.
     graph, where to check, suggested checks, and relevant tests marked as existing or suggested.
     Task 16.5 adds structured, cited test suggestions in Ask with reasons and observable
     verification steps. The troubleshooting screen remains separate work; see [task 16.5](TASK_16_5.md).
+    Task 16.1 adds a separate Existing tests page with deterministic Python assertion and
+    exception explanations, source links and explicit non-execution labels; see [task 16.1](TASK_16_1.md).
 
 ### Milestone D, freshness, home, settings, more sources
 
