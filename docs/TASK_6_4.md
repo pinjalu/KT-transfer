@@ -2,6 +2,8 @@
 
 This record describes the original task 6.4 delivery. [Task 6.5](TASK_6_5.md) subsequently adds
 thread pagination, message metadata/permalinks and checks for changed or removed source text.
+[Task 15.3](TASK_15_3.md) strengthens status and conflict checks and adds a source-wording
+comparison across model batches. Its rules supersede the original conflict criteria below.
 
 Open **Team decisions**, choose an imported Slack channel and click **Summarize decisions**.
 The screen shows concise points, supporting quotes and full imported passages. The shared job

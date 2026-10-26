@@ -200,6 +200,8 @@ This is the keystone. Nothing in the second half of the chart moves without it.
    and an open questions list from what found no evidence.
 9. **Team decisions, mockup 07.** Decision extraction from Slack threads, classification into
    agreed, proposed and historical, implementation evidence from the code, conflicting points.
+   Task 15.3 now adds source-wording comparisons across batches, explicit thread corrections,
+   and stronger distinction between alternatives and conflicting agreements; see [task 15.3](TASK_15_3.md).
 10. **Troubleshooting and test explanation, mockup 09.** Symptom to cause ranking from the feature
     graph, where to check, suggested checks, and relevant tests marked as existing or suggested.
 

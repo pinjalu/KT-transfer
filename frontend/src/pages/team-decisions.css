@@ -6,3 +6,7 @@
 .decision-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 .decision-evidence { margin: 14px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
 .decision-evidence .jira-related-text { max-height: 420px; }
+.decision-comparisons { display: grid; gap: 16px; margin: 20px 0; }
+.decision-comparison { padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.decision-comparison > summary { cursor: pointer; overflow-wrap: anywhere; }
+.decision-text { margin-left: 0; margin-right: 0; }

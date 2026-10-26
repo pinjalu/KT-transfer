@@ -172,7 +172,10 @@ def test_channel_summary_uses_only_selected_channel_and_persists_across_restart(
     assert result['items'][0]['kind']=='decision' and result['passages_read']==1
     assert sorted(source.checks)==['C1','C1','C2','C2']
     other=Service(Index(svc.index.path),connector_factory=factory)
-    assert run(other.decision_detail('C1'))['summary']==result
+    detail=run(other.decision_detail('C1'))
+    assert detail['summary']==result
+    assert detail['review']['positions'][0]['kind']=='decision'
+    assert detail['review']['passages_checked']==1
     assert run(other.decision_detail('C2'))['summary'] is None
     assert len(run(other.decision_channel_list())['channels'])==2
 
@@ -272,6 +275,7 @@ def test_api_validates_scope_and_runs_one_background_job_without_auto_generation
             await client.post('/api/config',json={'repo':'acme/shop','branch':'main'})
             response=await client.get('/api/decisions/channels/C1')
             assert response.json()['summary'] is None and 'no-store' in response.headers['cache-control']
+            assert response.json()['review']['positions'][0]['kind']=='decision'
             assert not entered.is_set()
             assert (await client.post('/api/decisions/channels/C999/summarize')).status_code==409
             started=await client.post('/api/decisions/channels/C1/summarize');await entered.wait()

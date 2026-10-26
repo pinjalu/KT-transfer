@@ -98,6 +98,10 @@ an example, proposed change or pending test as deployed, verified, reproduced or
 If sources conflict, distinguish a proposal from a correction that explicitly replaces it.
 Cite the final correction and state what it superseded. If no explicit resolution is shown,
 describe the conflict and cite both rather than silently choosing one.
+An agreement must name what was adopted. Vague assent, a question, a conditional plan,
+or the newest timestamp alone does not establish a final decision. Keep suggestions and
+agreements separate even within one message. Different proposals are alternatives, not
+conflicting agreements. A recorded agreement does not prove implementation or deployment.
 5. If the requested fact is absent, return statements: [] and explain the specific gap in
 missing_information. Do not fill the answer with related code or guess a plausible value.
 If part of a multi-part question is supported, answer that part and identify only the missing part.
@@ -1271,7 +1275,9 @@ class Service:
         sources = decisions.passages(self.index.slack_excerpts(scan['id'], channel['name']))
         imported = (self.index.source_import('slack') or {}).get('report') or {}
         coverage = next((r for r in imported.get('channels', []) if r['name'] == channel['name']), {})
-        result = {'channel':channel, 'sources':sources, 'summary':self.index.decision_summary(channel_id),
+        result = {'channel':channel, 'sources':sources,
+                  'summary':decisions.recheck_summary(self.index.decision_summary(channel_id), sources),
+                  'review':decisions.review(sources),
                   'revision':checked[0], 'read_at':imported.get('read_at'),
                   'coverage':coverage.get('coverage') or {'state':'unknown'},
                   'import_coverage':imported.get('coverage_state', 'unknown')}
@@ -1309,6 +1315,7 @@ class Service:
             self.check_cancelled()
             self.ensure_current(checked)
             result = {'channel_id':channel_id, 'channel_name':channel['name'], 'items':items,
+                      'classification_version':decisions.CLASSIFICATION_VERSION,
                       'generated_at':now(), 'model':'example-data' if self.demo else os.getenv('OLLAMA_MODEL', 'qwen3:1.7b'),
                       'demo':self.demo, 'parts':len(groups), 'passages_read':len(sources), 'excerpts_read':len(rows),
                       'elapsed_seconds':round(time.perf_counter()-started, 2)}

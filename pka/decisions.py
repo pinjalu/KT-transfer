@@ -3,6 +3,7 @@ import json
 import os
 import re
 import time
+from decimal import Decimal
 from typing import Literal
 
 import httpx
@@ -13,7 +14,8 @@ from pka.jira_links import slack_url
 from pka.jira_tasks import quote_choices
 from pka.index import small_talk
 
-KINDS = ('decision', 'proposal', 'historical', 'conflict', 'unclear')
+KINDS = ('decision', 'proposal', 'historical', 'conflict', 'mixed', 'unclear')
+CLASSIFICATION_VERSION = 2
 CONTEXT_CHARS = 6000
 HEADER = re.compile(r'^[ \t]*(?:reply )?\[\d{4}-\d\d-\d\d \d\d:\d\d\] [^\n]+?: ', re.M)
 
@@ -21,7 +23,7 @@ HEADER = re.compile(r'^[ \t]*(?:reply )?\[\d{4}-\d\d-\d\d \d\d:\d\d\] [^\n]+?: '
 class Point(BaseModel):
     model_config = ConfigDict(extra='forbid')
     text: str = Field(min_length=1, max_length=700)
-    kind: Literal['decision', 'proposal', 'historical', 'conflict', 'unclear']
+    kind: Literal['decision', 'proposal', 'historical', 'conflict', 'mixed', 'unclear']
     evidence_ids: list[str] = Field(min_length=1, max_length=4)
     quotes: list[str] = Field(min_length=1, max_length=4)
 
@@ -106,27 +108,176 @@ def greeting(source):
     return len(text) < 120 and small_talk(text)
 
 
-def recorded_kind(source):
+def wording_kind(text):
     """Only unqualified, explicit adoption wording earns a recorded-decision label.
 
     Missing/ambiguous cues stay unclear. These rules do not prove authority or current policy.
     A deliberate negative choice ('decided not to use X') is still a recorded decision.
     """
-    if source.get('partial'):
-        return 'unclear'
-    text = body(source)
-    if re.search(r'\b(previously|formerly|used to|superseded|no longer|withdrawn|historical|reversed)\b', text, re.I):
+    if re.search(r'\b(previously|formerly|used to|superseded|no longer|withdrawn|historical|reversed|not applied|was rejected)\b|\b(?:do not adopt|reject)\b.*\bproposal\b|\bthis replaces (?:the )?(?:(?:earlier|previous|above) )?proposal\b', text, re.I):
         return 'historical'
     if re.search(r'\b(?:not|never|haven.t|hasn.t)\s+(?:yet\s+)?(?:agreed|decided|approved)|\bno (?:final )?(?:decision|approval|agreement)\b', text, re.I):
         return 'unclear'
-    if re.search(r'\b(propos(?:e|ed|al)|suggest(?:ed|ion)?|recommend|should|could|might|maybe|tentative|draft)\b|\blet.s\b', text, re.I):
-        return 'proposal'
     if '?' in text or re.search(r'\b(if|unless|pending|awaiting|unconfirmed|unapproved)\b', text, re.I):
         return 'unclear'
+    if re.search(r'\b(?:I|we)\s+(?:(?:am|are|[\u2019\']m)\s+)?(?:propose|suggest|recommend|consider(?:ing)?)\b|'
+            r'\bI[\u2019\']m considering\b|\b(?:should|could|might|maybe|tentative|draft)\b|\blet.s\b|'
+            r'^\s*(?:proposed|suggested|proposal|suggestion|recommendation)\b|'
+            r'\b(?:working proposal|with that proposal|suggestion,)', text, re.I):
+        return 'proposal'
     normalized = text.lstrip('-*# _').replace('**', '')
-    if re.match(r'(?:decision\s*:\s*\S.{5,}|(?:we (?:have )?)?(?:agreed|decided|resolved)(?:\s+(?:not )?(?:to|on|that|against)\s+|\s*:\s*)\S.{5,}|(?:we (?:have )?)?approved\s+(?!by\b|thanks\b)\S.{5,})', normalized, re.I):
+    if re.match(r'(?:(?:final )?decision\s*:\s*\S.{5,}|(?:final )?correction:\s*(?:keep|use|set|retain)\s+\S.{5,}|(?:we (?:have )?)?(?:agreed|decided|resolved)(?:\s+(?:not )?(?:to|on|that|against)\s+|\s*:\s*)\S.{5,}|(?:we (?:have )?)?approved\s+(?!by\b|thanks\b)\S.{5,}|(?:for [A-Z][A-Z0-9]+-\d+,? )?(?:the )?(?:final |demo test )?decision(?: for [\w .-]{1,80})? is to \S.{5,})', normalized, re.I):
         return 'decision'
     return 'unclear'
+
+
+REASONS = {
+    'decision': 'Explicit agreement wording with a stated choice. This does not prove approval authority, current policy or implementation.',
+    'proposal': 'Suggestion or recommendation wording. No adoption is established by this statement.',
+    'historical': 'The source explicitly describes a former or withdrawn position; implementation has not been checked.',
+    'mixed': 'The message contains different kinds of positions. Read each statement separately.',
+    'unclear': 'The wording or available context does not establish an unqualified agreement.',
+    'conflict': 'Distinct recorded agreements name incompatible choices for the same explicit subject. Review both; no winner is inferred.',
+}
+
+
+def units(source):
+    # Preserve decimals, qualifiers within a sentence and complete lines of quoted material.
+    # Quotes, code blocks and oversized fragments never establish agreement on their own.
+    fenced = False
+    for line in body(source).splitlines():
+        if line.strip().startswith('```'):
+            fenced = not fenced
+            continue
+        if fenced or line.lstrip().startswith('>'):
+            continue
+        # Titles are context, not a substantive proposal or agreement by themselves.
+        line = re.sub(r'^\s*\[[^\]\n]+\]\s*', '', line)
+        for text in re.split(r'(?<=[.!?])\s+(?=[A-Z])', line):
+            text = text.strip()
+            if len(text) >= 4:
+                yield text
+
+
+def positions(sources):
+    result = []
+    for source in sources:
+        message = body(source)
+        # A later condition/negation can qualify an earlier apparent agreement. Do not
+        # cherry-pick the positive sentence in these messages.
+        qualified = bool(re.search(r'\b(?:awaiting|unless|if|not (?:yet )?(?:approved|agreed|decided)|'
+            r'no (?:final )?(?:approval|agreement|decision)|pending (?:approval|agreement|decision|sign.?off)|'
+            r'(?:approval|agreement|decision|sign.?off) (?:is |remains )?pending)\b', message, re.I))
+        for text in units(source):
+            kind = wording_kind(text)
+            if source.get('partial') or len(text) > 700 or qualified and kind == 'decision':
+                kind = 'unclear'
+            if kind == 'unclear':
+                continue
+            result.append({'id': f'P{len(result)+1}', 'text': text, 'kind': kind,
+                'reason': REASONS[kind], 'source_id': source['source_id'],
+                'message_id': source['message_id'], 'partial': source.get('partial', False)})
+    return result
+
+
+def recorded_kind(source):
+    if source.get('partial'):
+        return 'unclear'
+    kinds = {p['kind'] for p in positions([source])}
+    return next(iter(kinds)) if len(kinds) == 1 else 'mixed' if kinds else 'unclear'
+
+
+def choices(text):
+    """Only explicit same-subject values/polarities support automatic comparison.
+
+    Free-form semantic disagreement stays for human review. A shared Jira key, thread,
+    author or timestamp alone is not enough to establish a conflict.
+    """
+    values = []
+    scopes = set(re.findall(r'\b(?:production|staging|development|local)\b', text, re.I))
+    if len(scopes) > 1:
+        return []
+    scope = ' ('+next(iter(scopes)).lower()+')' if scopes else ''
+    for match in re.finditer(r'\b([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)`?\s*(?:=|to|at|is|of)\s*`?([+-]?\d+(?:\.\d+)?|true\b|false\b|"[^"\n]+"|\'[^\'\n]+\')', text):
+        value = match[2].strip('"\'').lower()
+        if re.fullmatch(r'[+-]?\d+(?:\.\d+)?', value):
+            value = str(Decimal(value).normalize())
+        values.append((match[1]+scope, value))
+    for match in re.finditer(r'\buse\s+([\w.:+-]+)\s+for\s+(?:the\s+)?([\w -]+)', text, re.I):
+        subject = match[2].strip().casefold()
+        # Do not join choices with conditions or different scopes into a single topic.
+        if not re.search(r'\b(?:but|and|in|when|if|unless)\b', subject) and len(subject.split()) <= 6:
+            values.append(('Use for '+subject, match[1].casefold()))
+    if not re.search(r'\bfor\b', text, re.I):
+        for match in re.finditer(r'\b(not to use|to use|against using)\s+([\w.:+-]+)', text, re.I):
+            values.append(('Use '+match[2].rstrip('.').casefold()+scope, 'no' if match[1].lower() != 'to use' else 'yes'))
+    # A sentence mentioning two values for one subject may describe a correction,
+    # example or alternative. Do not mistake both for adopted values.
+    return list(dict.fromkeys((subject, value) for subject, value in values
+                if len({v for key, v in values if key == subject}) == 1))
+
+
+def comparisons(points, sources=()):
+    groups = {}
+    for point in points:
+        if point['kind'] not in {'proposal', 'decision'} or point.get('partial'):
+            continue
+        for subject, value in choices(point['text']):
+            groups.setdefault(subject, []).append((point, value))
+    result = []
+    for subject, entries in sorted(groups.items()):
+        if len({p['message_id'] for p, _ in entries}) < 2 or len({value for _, value in entries}) < 2:
+            continue
+        agreed = [(p['message_id'], value) for p, value in entries if p['kind'] == 'decision']
+        conflict = any(mid != other_mid and value != other_value for mid, value in agreed for other_mid, other_value in agreed)
+        kind = 'conflict' if conflict else 'alternatives'
+        result.append({'subject': subject, 'kind': kind,
+            'reason': REASONS['conflict'] if kind == 'conflict' else 'Different proposed or recorded choices are present. A proposal is not a conflicting agreement.',
+            'position_ids': list(dict.fromkeys(p['id'] for p, _ in entries))})
+    # A direct thread reply can explicitly replace its parent's proposal. This records
+    # what the reply says, without inventing consensus or using timestamp precedence.
+    known = {s['source_id']: s for s in sources}
+    for reply in sources:
+        thread = reply.get('thread_ts')
+        if (not thread or thread == reply.get('message_ts') or reply.get('partial')
+                or not re.search(r'\bthis replaces (?:the )?(?:(?:earlier|previous|above) )?proposal\b', body(reply), re.I)):
+            continue
+        adopted = [p for p in points if p['source_id'] == reply['source_id'] and p['kind'] == 'decision']
+        proposed = [p for p in points if p['kind'] == 'proposal'
+                    and known.get(p['source_id'], {}).get('message_ts') == thread
+                    and known[p['source_id']]['path'] == reply['path']]
+        if not adopted or not proposed:
+            continue
+        withdrawal = [p for p in points if p['source_id'] == reply['source_id'] and p['kind'] == 'historical']
+        result.append({'subject': 'Explicit reply replacing a proposal', 'kind': 'recorded_update',
+            'reason': 'This thread reply explicitly replaces the earlier proposal and records a choice. This is a recorded correction, not independent confirmation of team authority or implementation.',
+            'position_ids': [p['id'] for p in proposed+adopted+withdrawal]})
+    return result
+
+
+def review(sources):
+    points = positions(sources)
+    return {'version': CLASSIFICATION_VERSION, 'positions': points, 'comparisons': comparisons(points, sources),
+            'passages_checked': len(sources), 'partial_passages': sum(bool(s.get('partial')) for s in sources)}
+
+
+def quoted_kind(source, quote):
+    normal = lambda value: re.sub(r'\s+', ' ', value).strip()
+    # A substring such as "decided to use X" cannot erase "not" or a condition.
+    kinds = {p['kind'] for p in positions([source]) if normal(p['text']) in normal(quote)}
+    return next(iter(kinds)) if len(kinds) == 1 else 'mixed' if kinds else 'unclear'
+
+
+def recheck_summary(summary, sources):
+    """Upgrade status checks on older cached summaries without starting generation."""
+    if summary is None or summary.get('classification_version') == CLASSIFICATION_VERSION:
+        return summary
+    items = []
+    for point in summary['items']:
+        quotes = point.get('quotes', [])
+        items.extend(checked_points({'items': [{'text': point['text'], 'kind': point['kind'],
+            'evidence_ids': [q['source_id'] for q in quotes], 'quotes': [q['text'] for q in quotes]}]}, sources))
+    return {**summary, 'items': items, 'classification_version': CLASSIFICATION_VERSION, 'labels_rechecked': True}
 
 
 def checked_points(raw, sources):
@@ -152,21 +303,22 @@ def checked_points(raw, sources):
                 quotes.append({'source_id':key, 'text':quote})
         if all(greeting(source) for source in evidence):
             continue
-        kinds = {recorded_kind(source) for source in evidence}
-        distinct_text = {re.sub(r'\s+', ' ', body(source)).casefold() for source in evidence}
-        if (point.kind == 'conflict' and len({source['message_id'] for source in evidence}) >= 2
-                and len(distinct_text) >= 2 and not any(s['partial'] for s in evidence)):
+        kinds = {quoted_kind(known[q['source_id']], q['text']) for q in quotes}
+        cited_positions = [p for p in positions(evidence) if any(
+            q['source_id'] == p['source_id'] and normal(p['text']) in normal(q['text']) for q in quotes)]
+        if point.kind == 'conflict' and any(c['kind'] == 'conflict' for c in comparisons(cited_positions)):
             kind = 'conflict'  # Always displayed as a POSSIBLE conflict, never resolved by the model.
         else:
-            kind = next(iter(kinds)) if len(kinds) == 1 else 'unclear'
+            kind = next(iter(kinds)) if len(kinds) == 1 else 'mixed' if 'unclear' not in kinds else 'unclear'
         text, wording = point.text.strip(), False
         literals = {v for quote in quotes for v in re.findall(r'\b\w+(?:[.:/_-]\w+)+\b|\b\d+\b|`[^`\n]+`', body(quote))}
-        if kind != point.kind or any(value not in text for value in literals):
+        if (kind != point.kind or any(value not in text for value in literals)
+                or kind in {'conflict', 'mixed'} or kind != 'unclear' and wording_kind(text) != kind):
             # Do not leave an unsupported agreement claim or omit a named value in the summary.
             text = '\n'.join(body(quote) for quote in quotes)
             text = text[:697]+'…' if len(text) > 700 else text
             wording = True
-        result.append({'text':text, 'kind':kind, 'source_ids':ids, 'quotes':quotes, 'source_wording':wording})
+        result.append({'text':text, 'kind':kind, 'reason':REASONS[kind], 'source_ids':ids, 'quotes':quotes, 'source_wording':wording})
     return result
 
 
@@ -184,9 +336,12 @@ Preserve named products, models, commands, versions, numbers, conditions and neg
 Explain the meaning in plain language. Do not infer implementation, authority or current policy.
 decision: explicit recorded agreement/adoption, not a suggestion, question, conditional or vague assent.
 proposal: an idea or recommendation, with no recorded adoption. historical: a former or superseded choice.
-conflict: possibly incompatible positions, requiring at least TWO distinct supporting messages.
+conflict: incompatible recorded agreements on the SAME explicit subject, requiring at least TWO
+distinct supporting messages. Two different proposals are alternatives, not conflicting agreements.
+mixed: a quoted passage contains both a suggestion and an agreement; keep those positions separate.
 unclear: useful discussion context whose decision status is not established. Do not invent a decision.
 Keep opposing positions separate or cite both as a possible conflict; never resolve them yourself.
+Do not choose a winner from the newest timestamp. Vague assent is not adoption of an earlier message.
 Authors and times must come from evidence, not your guesses. Do not infer that silence means consent.
 Messages marked partial lack their full context: classify them as unclear, never agreed.
 Read only this part. Other parts may contain later changes; never claim no decision exists elsewhere.
