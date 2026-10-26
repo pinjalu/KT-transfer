@@ -6,6 +6,44 @@ review is recorded. Reference phrases, valid citations and model confidence are 
 scores. The six reference cases were authored by the coding agent and checked against source
 lines; they are not a human-labelled benchmark.
 
+## Browser workflow (26 October 2026)
+
+Open **Answer quality** in the sidebar after selecting the project. Choose one of the three
+saved BSA question sets and select **Run evaluation**. A background job calls the normal
+answer pipeline sequentially and saves progress. Navigating away does not restart the run.
+Cancellation waits for the current request; retry starts a fresh run, leaving completed cases
+from the earlier run available for inspection. Restarted jobs are marked interrupted.
+
+Each question set requires its exact repository and commit. The four-question boundary set
+covers the 0.45/0.60 decision, strict equality at the handoff threshold, missing production
+configuration, and public-image versus private-signing evidence. This is a small regression
+set, not a general accuracy benchmark. Runs also record the model, scan completeness and
+knowledge revision. A generation failure stops the batch and remains a failure.
+
+Select **Inspect** on a case to see the exact retained answer, source excerpts, reference
+guidance and automatic-check details. Review correctness and source sufficiency separately,
+then select **Save my review**. Both fields start unselected. The authenticated account is
+recorded as reviewer, and the submission must match the dataset and response hashes. Reviews
+cannot be saved while the run is still changing. Agent browser testing must not populate
+human ratings on live data.
+
+The workspace retains at most 20 evaluation reports, subject to the existing 30-job history
+limit. Reports store metrics and answer IDs; they do not duplicate generated text or excerpts.
+Answer inspection and review recheck source access. Source refresh, selection changes or
+revocation remove dependent reports and answers. A stale in-flight run cannot recreate them.
+The existing command-line workflow below remains available. Arbitrary question-set upload and
+multi-turn evaluation are not included in this browser workflow.
+
+Verification on 26 October: 856 backend tests and 70 frontend tests passed; the production
+bundle built successfully. Chrome ran the four boundary questions against the retained BSA
+commit with `qwen3:1.7b` (run 44, partial source scan). Three passed the automatic checks.
+The decision answer correctly named 0.45 and said 0.60 was not applied, but used “remains”
+instead of a configured reference phrase, so the mechanical check flagged it for inspection.
+The dataset was not changed to turn that result green. Exact-answer/source inspection,
+unselected review controls, draft preservation across navigation and saved results after
+refresh were checked in Chrome. Live human ratings remain empty. This verifies the workflow,
+not human accuracy acceptance or performance on arbitrary questions.
+
 ## Run against the local app
 
 From the project directory, using the application's Python environment:

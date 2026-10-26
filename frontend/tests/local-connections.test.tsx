@@ -90,6 +90,16 @@ it('offers local folders only to the owner', async () => {
   expect(container.querySelector('option[value="local"]')).toBeNull()
 })
 
+it('shows reused and fetched counts and limits resume guidance to file imports', async () => {
+  status = { ...status, scan: { status:'complete', read:12, reused:10, fetched:2, skipped:1, failed:0 } }
+  await render()
+  expect(container.querySelector('.conn-counts')?.textContent).toContain('10 reused')
+  expect(container.querySelector('.conn-counts')?.textContent).toContain('2 fetched')
+  expect(container.textContent).toContain('Refresh reuses unchanged files')
+  await select('jira')
+  expect(container.textContent).not.toContain('Refresh reuses unchanged files')
+})
+
 it('offers the saved workspace name while reconnecting its actual repository', async () => {
   status = { settings:null, awaiting_project:true, stored_project:{repo:'acme/shop', branch:'main', project_name:'functionalAI'} }
   await render()

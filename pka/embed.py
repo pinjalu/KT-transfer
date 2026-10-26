@@ -74,6 +74,19 @@ def enabled() -> bool:
     return bool(model())
 
 
+def signature() -> str:
+    """Include preprocessing so old, unprefixed vectors cannot be mixed in."""
+    return model() + ('|search-prefix-v1' if model().split(':')[0] == 'nomic-embed-text' else '|v1')
+
+
+def query_texts(texts):
+    return ['search_query: ' + text for text in texts] if model().split(':')[0] == 'nomic-embed-text' else texts
+
+
+def document_texts(texts):
+    return ['search_document: ' + text for text in texts] if model().split(':')[0] == 'nomic-embed-text' else texts
+
+
 def pack(vector) -> bytes:
     return array.array('f', vector).tobytes()
 
@@ -90,7 +103,7 @@ def similarity(left, right) -> float:
     Vectors are normalised on the way in, so this is only the dot product and the length
     division does not have to happen on every comparison of every query against every chunk.
     """
-    return sum(a * b for a, b in zip(left, right))
+    return sum(a * b for a, b in zip(left, right)) if len(left) == len(right) else 0.0
 
 
 def normalise(vector):

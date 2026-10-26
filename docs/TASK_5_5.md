@@ -63,6 +63,7 @@ database on port 8001 with delayed fixture connectors and model responses.
 ## Limits
 
 Jobs run inside this local app process; they are not distributed workers. Cancellation is
-cooperative and may wait for the current request's timeout. Retry starts the job again instead
-of resuming halfway through a connector page or model generation. The shared controls belong
+cooperative and may wait for the current request's timeout. Task 7.2 now reuses completed GitHub
+and local file reads on retry; see [incremental imports](TASK_7_2.md). Jira/Slack connector pages
+and model generation still start again. The shared controls belong
 to the React interface; the legacy page retains its repository-scan cancellation action.

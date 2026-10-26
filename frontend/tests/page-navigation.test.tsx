@@ -188,6 +188,21 @@ it('keeps chat history when project sources update and marks the earlier answer'
   expect(draft.value).toBe('Follow up after the scan')
   expect(page('/ask').textContent).toContain('The project uses a local document index.')
   expect(page('/ask').textContent).toContain('the project sources have been updated since this reply')
+  await sendQuestion()
+  expect(vi.mocked(post).mock.calls.filter(([path]) => path === '/api/ask').at(-1)?.[1]).toEqual({ question: 'How are documents indexed?' })
+})
+
+it('sends prior conversation when asking a follow-up after navigation', async () => {
+  vi.mocked(post).mockResolvedValue(answer())
+  await renderApp(); await navigate('/ask'); await sendQuestion()
+  await navigate('/overview'); await navigate('/ask')
+  await type(page('/ask').querySelector('textarea')!, 'How is it updated?')
+  await click(page('/ask').querySelector<HTMLButtonElement>('button[type="submit"]')!)
+  const payload = vi.mocked(post).mock.calls.filter(([path]) => path === '/api/ask').at(-1)?.[1]
+  expect(payload).toEqual({ question: 'How is it updated?', conversation: {
+    repo: 'acme/project', commit: 'abcdefg', knowledge_revision: 1,
+    turns: [{ question: 'How are documents indexed?', answer: 'The project uses a local document index.' }],
+  } })
 })
 
 it('retains the conversation through a temporary status failure and recovery', async () => {

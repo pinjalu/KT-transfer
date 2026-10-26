@@ -7,7 +7,7 @@ import { usePageActive } from '../lib/pageState'
 import { ApiError, post } from '../lib/api'
 import { Said, Statements } from '../components/Statements'
 import type { Answer, Turn } from '../lib/answer'
-import { originOf, sourcePath } from '../lib/answer'
+import { originOf, sourcePath, conversationContext } from '../lib/answer'
 import './ask.css'
 
 const MODES = ['Beginner', 'Developer', 'Architect'] as const
@@ -103,7 +103,8 @@ export function Ask() {
       knowledge_revision: status.data?.knowledge_revision }
     setTurns((t) => [...t, turn])
     try {
-      const body = (await post('/api/ask', { question: text })) as Answer
+      const conversation = conversationContext(turns, status.data?.settings?.repo, status.data?.knowledge_revision)
+      const body = (await post('/api/ask', { question: text, ...(conversation ? { conversation } : {}) })) as Answer
       setTurns((t) => t.map((x) => (x === turn ? { ...x, answer: body } : x)))
     } catch (exc) {
       const why = exc instanceof ApiError ? exc.message : 'The answer could not be generated.'
@@ -122,7 +123,7 @@ export function Ask() {
     <>
       <PageHead title="Ask your project"
                 lead="Answers come only from what was read, and every one shows the excerpt behind it." />
-      <p className="ask-mode-note">Your conversation stays here when you switch pages or tabs. Refreshing this browser page clears it.</p>
+      <p className="ask-mode-note">Recent replies help with follow-up questions. Your conversation stays here when you switch pages or tabs. Refreshing this browser page clears it.</p>
 
       <div className="ask-modes">
         <Segmented items={[...MODES]} active={mode} onPick={(m) => setMode(m as Mode)} />

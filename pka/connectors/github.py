@@ -147,7 +147,10 @@ class GitHubSource:
             await self._get('commits/' + commit)
         return {'head':head, 'repo':self.repo, 'branch':self.branch}
 
-    async def begin_snapshot(self) -> dict:
+    async def begin_incremental(self, reusable):
+        return await self.begin_snapshot(reusable)
+
+    async def begin_snapshot(self, reusable=None) -> dict:
         result = await self._get('commits/' + quote(self.branch, safe=''))
         self.commit = result['sha']
         if not re.fullmatch('[0-9a-f]{40}', self.commit):
@@ -206,7 +209,16 @@ class GitHubSource:
         # One request per readable file. Check the allowance before spending any of it, so an
         # allowance that cannot cover the scan is reported instead of being used up on a
         # partial index that is then discarded.
-        needed = min(len(self.allowed), LIMITS.max_files)
+        reusable = reusable or {}
+        needed = 0
+        used = count = 0
+        for item in self.entries:
+            if item['skip'] or count >= LIMITS.max_files or used + item['size'] > LIMITS.max_total_bytes:
+                continue
+            count += 1
+            used += item['size']
+            if reusable.get(item['path']) != item['sha']:
+                needed += 1
         budget = await self.rate_budget()
         applog.event('github.snapshot', commit=self.commit[:12], candidates=len(self.entries),
                      readable=len(self.allowed), dependency_files=self.dependency_files,

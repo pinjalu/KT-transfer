@@ -6,6 +6,7 @@ import { Pending } from './pages/Pending'
 import { Home } from './pages/Home'
 import { Connections } from './pages/Connections'
 import { Ask } from './pages/Ask'
+import { Quality } from './pages/Quality'
 import { Overview } from './pages/Overview'
 import { Architecture } from './pages/Architecture'
 import { JiraTasks } from './pages/JiraTasks'
@@ -27,6 +28,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="overview" element={<Overview />} />
           <Route path="source" element={<LocalSource />} />
           <Route path="ask" element={<Ask />} />
+          <Route path="quality" element={<Quality />} />
           <Route path="features" element={<Features />} />
           <Route path="jira" element={<JiraTasks />} />
           <Route path="decisions" element={<TeamDecisions />} />

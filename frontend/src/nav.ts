@@ -1,4 +1,4 @@
-/** The ten destinations, in the order the mockups show them down the sidebar. */
+/** Project destinations in sidebar order. */
 export type Dest = {
   path: string
   label: string
@@ -12,6 +12,7 @@ export const DESTINATIONS: Dest[] = [
   { path: '/connections',     label: 'Connections',      icon: 'link',       needs: 'nothing' },
   { path: '/overview',        label: 'Project overview', icon: 'doc',        needs: 'scan' },
   { path: '/ask',             label: 'Ask assistant',    icon: 'chat',       needs: 'scan' },
+  { path: '/quality',         label: 'Answer quality',   icon: 'check',      needs: 'scan' },
   { path: '/features',        label: 'Feature explorer', icon: 'grid',       needs: 'scan' },
   { path: '/jira',            label: 'Jira tasks',       icon: 'ticket',     needs: 'jira' },
   { path: '/decisions',       label: 'Team decisions',   icon: 'people',     needs: 'slack' },

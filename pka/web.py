@@ -20,10 +20,11 @@ from pka import auth_web
 from pka.connectors import registry
 from pka.connectors.base import SourceError
 from pka.connectors.local import is_local, local_selection
-from pka import facts, features, coverage
+from pka import facts, features, coverage, quality
 from pka.index import Index
 from pka.overview import reading_order, topics_for
 from pka.service import Service
+from pka.conversation import Conversation
 
 class Selection(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -49,11 +50,23 @@ class Question(BaseModel):
     # with a field validation error instead of the greeting the small talk guard exists to
     # give. A short question is not a malformed one.
     question: str = Field(min_length=1,max_length=600)
+    conversation: Conversation | None = None
 class Feedback(BaseModel):
     model_config = ConfigDict(extra='forbid')
     answer_id: int
     rating: Literal['correct','partially correct','incorrect','not assessed']
     sufficiency: Literal['sufficient','partly sufficient','insufficient','not assessed']
+
+class EvaluationStart(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    set_id: str = Field(min_length=1, max_length=80)
+
+class EvaluationReview(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    dataset_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    response_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    correctness: Literal['correct', 'partially correct', 'incorrect']
+    source_sufficiency: Literal['sufficient', 'partly sufficient', 'insufficient']
 
 
 def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=None,
@@ -714,7 +727,32 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         idle()
         if not question.question.strip():
             raise HTTPException(422,'Enter a question.')
-        return await service.ask(question.question.strip())
+        return await service.ask(question.question.strip(), conversation=question.conversation)
+
+    def quality_selected():
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose your project on Connections first.')
+
+    @app.get('/api/quality')
+    async def quality_list():
+        quality_selected()
+        service.sync_source_credentials()
+        return {'sets': quality.catalog(service), 'runs': quality.runs(index)}
+
+    @app.post('/api/quality/runs')
+    async def quality_start(item: EvaluationStart):
+        quality_selected()
+        return {'started': True, 'job_id': service.start_job('evaluation', target=item.set_id)}
+
+    @app.get('/api/quality/runs/{run_id}/cases/{case_id}')
+    async def quality_case(run_id: int, case_id: str):
+        quality_selected()
+        return await quality.inspect(service, run_id, case_id)
+
+    @app.post('/api/quality/runs/{run_id}/cases/{case_id}/review')
+    async def quality_review(run_id: int, case_id: str, item: EvaluationReview, request: Request):
+        quality_selected()
+        return await quality.review(service, run_id, case_id, item, request.state.owner['username'])
 
     # A scan writes one plain-text report per run to data/logs. They were only readable by
     # opening the folder, so a run that went wrong left nothing visible in the application.

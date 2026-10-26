@@ -132,6 +132,11 @@ def test_partial_scan_and_size_limit(index,monkeypatch):
 
 def test_failed_scan_disables_previous_snapshot(index):
     class Broken(FixtureSource):
+        async def list_files(self, cursor=0):
+            page = await super().list_files(cursor)
+            # A changed blob requires a read; unchanged blobs now reuse checkpoints.
+            page['files'][0]['sha'] = 'd' * 40
+            return page
         async def read_file(self,path):raise SourceError('network','GitHub unavailable.')
     @asynccontextmanager
     async def broken(settings,demo):yield Broken()

@@ -2,7 +2,7 @@ import { useApi } from './useApi'
 import type { BackgroundJob } from './types'
 import type { CoverageReply } from '../components/ImportCoverage'
 
-export const JOB_NAMES = { scan: 'Repository scan', overview: 'Project overview', jira: 'Jira read', slack: 'Slack read', local: 'Local folder read', jira_task: 'Jira task explanation', decisions: 'Team decision summary' }
+export const JOB_NAMES = { scan: 'Repository scan', overview: 'Project overview', jira: 'Jira read', slack: 'Slack read', local: 'Local folder read', jira_task: 'Jira task explanation', decisions: 'Team decision summary', evaluation: 'Answer evaluation' }
 export const jobActive = (job?: BackgroundJob | null) => !!job && ['queued', 'running', 'cancelling'].includes(job.state)
 
 export function useJobProgress(job?: BackgroundJob | null) {

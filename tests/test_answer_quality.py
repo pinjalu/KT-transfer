@@ -64,6 +64,18 @@ def test_missing_definition_is_not_invented_and_unrelated_questions_still_refuse
     assert not index.search('quasar nebula zebras', scan)
 
 
+def test_semantic_distractors_cannot_displace_a_direct_configuration_value(repository):
+    index, scan = repository
+    chunks = chunk_file('settings.py', 'EMBED_MODEL = "vector-alpha"\n')
+    for n in range(8):
+        chunks += chunk_file(f'guide{n}.md', '# Embeddings\n' + 'Embedding model retrieval helps match documents. ' * 10)
+    index.activate(1, chunks, scan)
+    rows = index.unembedded(1)
+    index.save_vectors(1, [(row['id'], [0, 1] if row['path'] == 'settings.py' else [1, 0]) for row in rows])
+    found = index.search('Which embedding model is used?', scan, query_vectors=[[1, 0]])
+    assert found[0]['path'] == 'settings.py' and 'vector-alpha' in found[0]['text']
+
+
 def test_ollama_can_refuse_when_retrieved_excerpts_do_not_answer(monkeypatch):
     from pka import service
     real_client = httpx.AsyncClient
@@ -103,7 +115,7 @@ def test_focused_schema_cannot_combine_an_answer_with_a_missing_message(question
                                     'How does the pipeline work?'])
 def test_explanations_keep_room_for_partial_evidence_and_details(question):
     assert not focused_question(question)
-    assert answer_schema(question)['properties']['statements']['maxItems'] == 4
+    assert answer_schema(question)['properties']['statements']['maxItems'] == 6
 
 
 @pytest.mark.parametrize('question', [

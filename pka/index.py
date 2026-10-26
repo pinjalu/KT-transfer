@@ -274,12 +274,16 @@ class Index:
             CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(path, symbols, text, tokenize='porter unicode61');
             CREATE TABLE IF NOT EXISTS vectors (chunk_id INTEGER PRIMARY KEY, scan_id INTEGER,
                 vector BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS vector_models (scan_id INTEGER PRIMARY KEY, signature TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS calibration (scan_id INTEGER, model TEXT, ceiling REAL,
                 floor REAL, probes INTEGER, created TEXT, PRIMARY KEY (scan_id, model));
             CREATE TABLE IF NOT EXISTS overviews (commit_sha TEXT PRIMARY KEY, scan_id INTEGER,
                 payload TEXT, created TEXT);
             CREATE TABLE IF NOT EXISTS source_imports (name TEXT PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS file_checkpoints (slot TEXT, scope TEXT, path TEXT, sha TEXT,
+                payload TEXT NOT NULL, PRIMARY KEY(slot,path));
             CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, detail TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS evaluation_runs (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS jira_explanations (issue_key TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS decision_summaries (channel_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS answers (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, question TEXT,
@@ -338,7 +342,7 @@ class Index:
                 for key in ('read_at', 'import_report'):
                     (merged.get(name) or {}).pop(key, None)
             db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(merged),))
-            for table in ('chunks','search','answers','overviews','scans','vectors','source_imports','calibration','jira_explanations','decision_summaries'):
+            for table in ('chunks','search','answers','overviews','scans','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','file_checkpoints','evaluation_runs'):
                 db.execute('DELETE FROM '+table)
             db.execute('UPDATE active SET scan_id=NULL')
     @staticmethod
@@ -356,6 +360,7 @@ class Index:
         """Derived content must never outlive the source snapshot it describes."""
         self._advance_revision(db)
         db.execute('DELETE FROM answers')
+        db.execute('DELETE FROM evaluation_runs')
         db.execute('DELETE FROM overviews')
         db.execute('DELETE FROM calibration')
         db.execute('DELETE FROM jira_explanations')
@@ -376,6 +381,8 @@ class Index:
             value = dict(value)
             if self.source_scope(name, settings.get(name) or {}) != self.source_scope(name, value):
                 self._drop_source(db, name)
+                if name == 'local':
+                    db.execute("DELETE FROM file_checkpoints WHERE slot='local'")
                 self._changed(db)
                 value.pop('read_at', None)
                 value.pop('import_report', None)
@@ -389,10 +396,12 @@ class Index:
             row = db.execute('SELECT payload FROM source_imports WHERE name=?', (name,)).fetchone()
             return json.loads(row[0]) if row else None
 
-    def discard_source(self, name):
+    def discard_source(self, name, *, keep_checkpoints=False):
         """Remove inaccessible content and every answer/overview that could cite it."""
         with self.db() as db:
             self._drop_source(db, name)
+            if name == 'local' and not keep_checkpoints:
+                db.execute("DELETE FROM file_checkpoints WHERE slot='local'")
             self._changed(db)
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             settings = json.loads(row[0]) if row else {}
@@ -425,6 +434,13 @@ class Index:
     def activate(self, scan_id, chunks, detail):
         # Replace the whole snapshot in one transaction; deleted files cannot linger in retrieval.
         with self.db() as db:
+            # Embedding input is exactly path + text. Preserve only exact inputs from
+            # the same model/preprocessing; changed chunks are embedded after publication.
+            signature = embed.signature() if embed.enabled() else ''
+            reusable_vectors = {(r['path'], r['text']):r['vector'] for r in db.execute('''
+                SELECT c.path,c.text,v.vector FROM chunks c JOIN vectors v ON c.id=v.chunk_id
+                JOIN vector_models m ON v.scan_id=m.scan_id WHERE m.signature=?
+                LIMIT ?''', (signature, embed.MAX_CHUNKS))} if signature else {}
             self._changed(db)
             db.execute('DELETE FROM source_imports')
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
@@ -437,11 +453,20 @@ class Index:
             db.execute('DELETE FROM search')
             db.execute('DELETE FROM chunks')
             db.execute('DELETE FROM vectors')
+            db.execute('DELETE FROM vector_models')
+            reused_vectors = 0
             for c in chunks:
                 cur = db.execute('INSERT INTO chunks(scan_id,path,start,end,text,symbols,split) VALUES(?,?,?,?,?,?,?)',
                     (scan_id,c['path'],c['start'],c['end'],c['text'],c['symbols'],int(c['split'])))
                 db.execute('INSERT INTO search(rowid,path,symbols,text) VALUES(?,?,?,?)',
                     (cur.lastrowid,' '.join(words(c['path'])),c['symbols'],' '.join(words(c['text']))))
+                vector = reusable_vectors.get((c['path'], c['text']))
+                if vector is not None and reused_vectors < embed.MAX_CHUNKS:
+                    db.execute('INSERT INTO vectors VALUES(?,?,?)', (cur.lastrowid, scan_id, vector))
+                    reused_vectors += 1
+            if reused_vectors:
+                db.execute('INSERT INTO vector_models VALUES(?,?)', (scan_id, signature))
+            detail['reused_vectors'] = reused_vectors
             db.execute('UPDATE active SET scan_id=?',(scan_id,))
             db.execute('UPDATE scans SET status=?,detail=? WHERE id=?',(detail['status'],json.dumps(detail),scan_id))
     def replace_source(self, scan_id, prefix, blocks, import_meta=None):
@@ -558,11 +583,13 @@ class Index:
             db.execute('INSERT OR REPLACE INTO decision_summaries VALUES(?,?,?)',
                        (channel_id, revision, json.dumps(payload)))
 
-    def invalidate(self):
+    def invalidate(self, *, keep_checkpoints=False):
         with self.db() as db:
+            if not keep_checkpoints:
+                db.execute('DELETE FROM file_checkpoints')
             self._advance_revision(db)
             db.execute('UPDATE active SET scan_id=NULL')
-            for table in ('chunks','search','answers','overviews','vectors','source_imports','calibration','jira_explanations','decision_summaries'):
+            for table in ('chunks','search','answers','overviews','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','evaluation_runs'):
                 db.execute('DELETE FROM '+table)
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             if row:
@@ -718,14 +745,24 @@ class Index:
         return [dict(row, _direct_value=definition_coverage(row['text'], groups, row['path']) >= min(2, len(groups)))
                 for row in sorted(rows, key=rank)]
 
+    def prepare_vectors(self, scan_id: int, signature: str):
+        """Retain source text; rebuild only derived vectors when model/preprocessing changes."""
+        with self.db() as db:
+            row = db.execute('SELECT signature FROM vector_models WHERE scan_id=?', (scan_id,)).fetchone()
+            if not row or row[0] != signature:
+                db.execute('DELETE FROM vectors WHERE scan_id=?', (scan_id,))
+                db.execute('DELETE FROM calibration WHERE scan_id=?', (scan_id,))
+                db.execute('INSERT OR REPLACE INTO vector_models VALUES(?,?)', (scan_id, signature))
+
     def unembedded(self, scan_id: int) -> list[dict]:
         """Chunks in this scan that have no vector yet, so a scan can be embedded in batches."""
         with self.db() as db:
             return [dict(r) for r in db.execute(
                 'SELECT c.id, c.path, c.text FROM chunks c '
                 'LEFT JOIN vectors v ON v.chunk_id=c.id '
-                'WHERE c.scan_id=? AND v.chunk_id IS NULL ORDER BY c.id LIMIT ?',
-                (scan_id, embed.MAX_CHUNKS)).fetchall()]
+                'WHERE c.scan_id=? AND v.chunk_id IS NULL ORDER BY c.id '
+                'LIMIT MAX(0, ? - (SELECT COUNT(*) FROM vectors WHERE scan_id=?))',
+                (scan_id, embed.MAX_CHUNKS, scan_id)).fetchall()]
 
     def save_vectors(self, scan_id: int, pairs: list[tuple[int, object]]) -> int:
         with self.db() as db:
@@ -909,7 +946,7 @@ class Index:
     def search(self, question: str, scan: dict, info: dict | None = None,
                max_sources: int | None = None, context_chars: int | None = None,
                test_cap: int | None = None, vendor_cap: int | None = None,
-               query_vectors: list | None = None) -> list[dict]:
+               query_vectors: list | None = None, context_question: str | None = None) -> list[dict]:
         # A direct question naming a file must not borrow another file's values.
         # Relationship/explanation questions keep cross-file retrieval available.
         related = re.search(r'\b(?:how|why|explain|describe|depend\w*|call\w*|referenc\w*|'
@@ -919,7 +956,8 @@ class Index:
         retrieval_question = model_role_query(question)
         if info is not None and retrieval_question != question:
             info['interpretation'] = 'chat model configuration'
-        found = self.search_many([retrieval_question], scan, info, max_sources, context_chars,
+        queries = [retrieval_question] + ([context_question] if context_question else [])
+        found = self.search_many(queries, scan, info, max_sources, context_chars,
                                  test_cap, vendor_cap, query_vectors, path_filter=named)
         references = comparison_references(question, found)
         if not references:
@@ -973,7 +1011,7 @@ class Index:
             info.setdefault('unknown', [])
             info.setdefault('corrections', {})
         with self.db() as db:
-            rankings, weights = [], []
+            rankings, weights, anchors = [], [], []
             for question in questions:
                 tokens = self._terms(question, scan, info)
                 vocab = self.vocabulary(scan['id'])
@@ -984,6 +1022,8 @@ class Index:
                 if ranked:
                     rankings.append(ranked)
                     weights.append(1.0)
+                    if ranked[0].get('_direct_value'):
+                        anchors.append((ranked[0]['path'], ranked[0]['start'], ranked[0]['end']))
             # Semantic candidates are one more ranking, not a replacement. A question whose
             # words are all in the project still gets its exact matches; a question phrased in
             # words the project never uses now has something to find.
@@ -1008,11 +1048,15 @@ class Index:
             # is no second opinion, and refusing on unknown words alone would throw away the
             # ordinary case of someone naming a thing differently from the code.
             asked, unmatched = info.get('asked') or [], info.get('unknown') or []
-            if query_vectors and self.embedded(scan['id']) and not info.get('semantic'):
+            if query_vectors and self.embedded(scan['id']) and not info.get('semantic') and not anchors:
                 if asked and len(unmatched) >= OFF_TOPIC_UNKNOWN_RATIO * len(asked):
                     info['off_topic'] = True
                     return []
             rows = self._fuse(rankings, weights)
+            # Semantic matches can crowd a literal configuration definition out of
+            # the bounded prompt. Preserve each query's strongest direct value;
+            # use fused relevance for the remaining evidence.
+            rows.sort(key=lambda row: (row['path'], row['start'], row['end']) not in anchors)
             if path_filter:
                 rows = [row for row in rows if row['path'] in path_filter]
                 info['focused_paths'] = path_filter

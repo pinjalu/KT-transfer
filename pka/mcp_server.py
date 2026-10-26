@@ -17,6 +17,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pka.connectors.base import SourceError
+from pka.config import LIMITS
 from pka.connectors.github import GitHubSource
 from pka.connectors.local import LocalSource, is_local
 from pka.connectors.fixture import FixtureSource
@@ -98,9 +99,12 @@ async def github_check_access(commit: str = '') -> dict:
     return await guarded_on(github, 'check_access', commit=commit)
 
 @server.tool(annotations=READ_ONLY)
-async def github_begin_snapshot() -> dict:
+async def github_begin_snapshot(reusable: dict[str, str] | None = None) -> dict:
     """Resolve the selected branch to one commit and enumerate its files."""
-    return await guarded_on(github, 'begin_snapshot')
+    if reusable and len(reusable) > LIMITS.max_files:
+        return {'ok':False, 'code':'scope', 'error':'Too many reusable files.'}
+    # Demo fixtures do not need request budgeting.
+    return await guarded_on(github, 'begin_snapshot', **({'reusable':reusable} if reusable and not DEMO else {}))
 
 @server.tool(annotations=READ_ONLY)
 async def github_list_files(cursor: int = 0) -> dict:

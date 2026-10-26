@@ -12,11 +12,13 @@ Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windo
 - Selects one GitHub repository and branch, with an optional additional local folder. Local folders also work on their own. GitHub reads pin a commit; local reads pin a content snapshot that includes uncommitted files.
 - Reads supported source files and documentation without cloning, importing, installing or executing the project's code.
 - Uses Python syntax boundaries for Python chunks; uses headings and simple declaration boundaries for other text. Oversized sections are split with accurate line ranges.
-- Searches words, filenames and split code symbols. A small synonym dictionary and the project's own vocabulary help ordinary questions such as “How does login work?” find authentication code. Word matching is the default and the only thing enabled out of the box. Meaning-based retrieval is available beside it and off unless `PKA_EMBED_MODEL` names a local embedding model.
+- Searches words, filenames and split code symbols. A small synonym dictionary and the project's own vocabulary help ordinary questions such as “How does login work?” find authentication code. The example configuration also enables semantic retrieval with `nomic-embed-text`; install that model once, or clear `PKA_EMBED_MODEL` to use only word matching. Follow-ups can use four recent turns from the current project and source revision.
 - Sends up to five relevant excerpts to `qwen3:1.7b`, using local Ollama's structured-output API, non-streaming responses and thinking disabled.
 - Shows source paths, line ranges, commit links, scan times in IST, elapsed answer time and manual feedback. Source sufficiency is recorded separately from answer quality.
+- Runs saved BSA regression questions from **Answer quality**, with exact-answer/source inspection and separate human correctness and evidence ratings. Automatic checks are not accuracy scores. See [answer evaluation](docs/TASK_5_2.md).
 - Rejects unknown citation IDs and preserves retrieved excerpts if Ollama fails. Valid IDs do not prove the model's statements are correct.
 - Replaces the index atomically after a completed collection. Deleted files do not survive a refresh. A failed, interrupted or cancelled scan disables answers until another usable scan.
+- Reuses unchanged GitHub/local files and compatible repository embeddings on refresh. **Retry job** continues from saved file reads after interruption, with current access and hash checks. See [incremental and resumable imports](docs/TASK_7_2.md) for scope and limits.
 - Verifies GitHub read access and the branch head for every question. If the head changed, it disables old excerpts and requires a refresh. It does not answer offline from an unverified cache.
 
 ## The project overview and the questions page
@@ -215,27 +217,28 @@ uses localhost and must return to the session that started it.
 | Tree entries considered | 20,000 |
 | Non-recursive tree requests during fallback | 200 |
 | Excerpt size | 1,800 characters / 60 lines |
-| Answer context | Up to 5 excerpts / 7,200 source-text characters |
+| Answer context | Facts: 5 excerpts / 7,200 characters; explanations: 8 / 14,000 |
 | Excerpts retrieved per overview topic | Up to 5, merged from 2 to 4 separate searches |
 | Overview topics | 8, or 9 once Slack or Jira content has been read |
 | Walkthrough steps | Up to 9, each dropped when this project cannot fill it |
 | Boxes per diagram column | 7, then the remainder is counted in one box |
 | Files drawn individually before folders replace them | 26 |
-| Ollama context setting | 8,192 tokens |
-| Ollama output budget | 1,200 tokens |
+| Ollama context setting | 8,192 tokens; 16,384 for explanations or conversation context |
+| Ollama output budget | Facts: 1,200 tokens; explanations: 2,000 |
 | Answer request timeout | 180 seconds |
 | Concurrent scan or answer | 1 |
 
 Limits live in `pka/config.py`. Supported extensions and exclusions are explicit in `pka/connectors/github.py`.
 
-Retrieval is word matching by default. Naming an embedding model in `PKA_EMBED_MODEL` adds
+Naming an embedding model in `PKA_EMBED_MODEL` adds
 meaning-based retrieval beside it: the snapshot is turned into vectors after a scan, a question
 is turned into a vector when it is asked, and the nearest excerpts join the word matches in the
 same merge rather than replacing them, so asking for a function by name or for a ticket key
 still works by exact match. It is off unless you name a model, and if the model is missing or
 Ollama is down the scan and the answer carry on exactly as they did without it. This has been
-checked against a stub embedder and the failure paths, not against a live embedding model; see
-[docs/STATUS.md](docs/STATUS.md). The GitHub connector supports GitHub.com; GitHub Enterprise hosts are not implemented. It collects files in the selected branch snapshot, without GitHub issues, PRs, commit history, Git LFS objects or submodule contents. Jira issues and selected Slack channels are read separately.
+checked against a stub embedder and the failure paths. Existing snapshots are also embedded on
+the first question without rescanning or dropping imports. See [answer quality checks](docs/ANSWER_CHECKS.md)
+for context handling and the repeatable local-model comparison. The GitHub connector supports GitHub.com; GitHub Enterprise hosts are not implemented. It collects files in the selected branch snapshot, without GitHub issues, PRs, commit history, Git LFS objects or submodule contents. Jira issues and selected Slack channels are read separately.
 
 Selecting a project or platform does not grant access. Reading requires your credential and an explicit scope: one repository, one Jira project, or selected Slack channels. In the current React Connections screen, Jira credentials can be saved locally, and Slack supports its configured OAuth connection. GitHub and Slack user tokens can be set in `.env`; the legacy interface at `/legacy` also exposes credential forms. The Slack bot-token connector is not implemented. Use the Slack user-token path described in [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md).
 
@@ -245,7 +248,7 @@ A **complete** scan means all discovered, supported, policy-allowed files within
 
 Potential secret filenames, dependency folders, build artefacts, lock files, symlinks and unsupported formats are excluded. Dependency folders such as `.venv`, `node_modules` and `vendor` are discarded before the entry cap is applied and the crawler does not descend into them, so a repository that commits its virtual environment still has its own source read. The count of files dropped this way is reported in the scan log. This filename policy is not a secret scanner: credentials embedded inside an otherwise normal source file can still enter the local index. Review what you select and keep credentials out of project files.
 
-Refresh is manual. Short transient failures get bounded retries; longer rate-limit waits are reported so you can retry later. Interrupted scans restart from the beginning. There is no scheduled sync or incremental backfill yet.
+Refresh is manual. Short transient failures get bounded retries; longer rate-limit waits are reported so you can retry later. GitHub and local-file retries reuse completed file reads after checking current access and content hashes. Jira/Slack reads still restart; there is no scheduled sync or incremental archive backfill. See [task 7.2](docs/TASK_7_2.md).
 
 Repository scans, Jira and Slack reads, overview builds and Jira task explanations have a shared job banner in the
 React interface. You can navigate or reload while they run. **Cancel job** requests a safe stop;

@@ -45,6 +45,8 @@ export function BackgroundJob({ job, onChanged }: { job: Job | null; onChanged: 
             ? `${progressText(progress)}. You can keep browsing.`
             : job.error || (job.state === 'partial' ? 'Some information was not read. Check import coverage before retrying.' : 'The job has finished.')}
         </p>
+        {job.can_retry && (job.kind === 'scan' || job.kind === 'local') && <p>Retry reuses completed files after checking access and changes.</p>}
+        {job.can_retry && job.kind === 'evaluation' && <p>Retry starts a fresh evaluation; completed cases from this run remain available for review.</p>}
         {error && <p role="alert">{error}</p>}
       </div>
       <div className="background-job-actions">

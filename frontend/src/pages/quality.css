@@ -1,0 +1,13 @@
+.quality-page { display: grid; gap: 20px; }
+.quality-review { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+.quality-page label { display: grid; gap: 8px; font-weight: 600; min-width: 180px; }
+.quality-page select { padding: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: inherit; max-width: 100%; }
+.quality-run-select { max-width: 100%; width: fit-content; }
+.quality-scope { overflow-wrap: anywhere; }
+.quality-counts { display: flex; flex-wrap: wrap; gap: 32px; }
+.quality-counts strong { font-size: 22px; display: block; }
+.quality-table-wrap { overflow-x: auto; }
+.quality-table { border-collapse: collapse; width: 100%; }
+.quality-table th, .quality-table td { text-align: left; padding: 14px 10px; border-bottom: 1px solid var(--border); }
+.quality-checks { margin: 20px 0; }
+.quality-checks summary { cursor: pointer; font-weight: 600; }

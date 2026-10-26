@@ -9,6 +9,8 @@ export type Scan = {
   branch: string
   commit: string | null
   read: number
+  reused?: number
+  fetched?: number
   skipped: number
   failed: number
   total: number
@@ -55,7 +57,7 @@ export type Progress = { phase?: string; read?: number; total?: number; done?: n
 
 export type BackgroundJob = {
   id: number
-  kind: 'scan' | 'overview' | 'jira' | 'slack' | 'local' | 'jira_task' | 'decisions'
+  kind: 'scan' | 'overview' | 'jira' | 'slack' | 'local' | 'jira_task' | 'decisions' | 'evaluation'
   target?: string
   state: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | 'interrupted'
   attempt: number

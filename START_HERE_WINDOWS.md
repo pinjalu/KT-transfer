@@ -106,8 +106,11 @@ also clears prior answers and the overview.
 Scans, imports and overview builds continue during page navigation and reloads. Their shared
 banner offers **Cancel job**, which waits for the current connector/model request to reach a
 safe checkpoint. **Retry job** starts a fresh attempt after failure, cancellation, partial
-completion or interruption; it does not resume halfway through or bypass import limits.
-After app restart, unfinished jobs are Interrupted and wait for explicit retry.
+completion or interruption. GitHub and local-file attempts reuse saved files whose current
+content hashes match; Connections shows reused and fetched counts. Jira/Slack pages and model
+generation still restart. Import limits and access checks always apply.
+After app restart, unfinished jobs are Interrupted and wait for explicit retry. Reselect the
+saved project first. See [task 7.2](docs/TASK_7_2.md) for details.
 
 ## Current screens and limits
 

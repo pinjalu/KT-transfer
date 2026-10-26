@@ -30,6 +30,7 @@ export type Search = {
 }
 
 export type Answer = {
+  knowledge_revision?: number
   answer_id: number
   statements: Statement[]
   sources: Source[]
@@ -55,6 +56,19 @@ export type Turn = {
   knowledge_revision?: number
   rating?: string
   sufficiency?: string
+}
+
+/** Send only this browser session's recent replies from the current source revision. */
+export function conversationContext(turns: Turn[], repo: string | undefined, revision: number | undefined) {
+  const eligible = turns.filter(t => t.answer && !t.answer.error && !t.failed
+    && t.rating !== 'incorrect' && t.answer.repo === repo
+    && (t.answer.knowledge_revision ?? t.knowledge_revision) === revision)
+  const latest = eligible.at(-1)?.answer
+  if (!latest?.commit || revision === undefined) return undefined
+  const recent = eligible.filter(t => t.answer!.commit === latest.commit).slice(-4)
+  return { repo: latest.repo, commit: latest.commit, knowledge_revision: revision,
+    turns: recent.map(t => ({ question: t.question,
+      answer: [...t.answer!.statements.map(s => s.text), t.answer!.missing_information].filter(Boolean).join('\n').slice(0, 1800) })) }
 }
 
 /** Where an excerpt came from. Slack and Jira blocks are stored under their own path prefix. */

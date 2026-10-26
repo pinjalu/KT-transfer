@@ -131,12 +131,13 @@ export function Connections() {
             <Button kind="secondary" icon="refresh" onClick={() => void refresh()} disabled={busy || awaiting || !settings || (connection === 'local' && !primaryLocal && !settings.local?.path)}>{connection === 'local' ? 'Read local folder again' : 'Refresh repository'}</Button>
           </div>
         </div>
+        <p className="conn-local-note">Refresh reuses unchanged files. After an interrupted read, choose Retry job to continue with saved files. Access and file changes are checked each time.</p>
         {connection === 'local' ? <p className="conn-local-note">Choose a folder on the computer running KT Assistant. A Git clone is optional.
           Local files are added beside your GitHub code, Jira issues and Slack messages. Read this folder again after editing files.
           Built-in rules exclude secret filenames, dependencies, generated files and linked folders; custom .gitignore rules are not applied.</p>
           : <><p className="conn-local-note">Refreshing the repository replaces the project scan. Read the local folder, Jira issues and Slack messages again afterward, then rebuild the overview.</p>
             {!status.data?.token_configured && !status.data?.demo && <p className="conn-local-note">No GitHub token saved. Add one in Account settings for a private repository.</p>}</>}
-        {primaryForm && scan && <div className="conn-counts"><span><b>{scan.read}</b> read</span><span><b>{scan.skipped}</b> skipped</span><span><b>{scan.failed}</b> failed</span><Chip tone={scan.status === 'complete' ? 'ok' : 'quiet'}>{scan.status}</Chip></div>}
+        {primaryForm && scan && <div className="conn-counts"><span><b>{scan.read}</b> read</span>{scan.reused !== undefined && <span><b>{scan.reused}</b> reused</span>}{scan.fetched !== undefined && <span><b>{scan.fetched}</b> fetched</span>}<span><b>{scan.skipped}</b> skipped</span><span><b>{scan.failed}</b> failed</span><Chip tone={scan.status === 'complete' ? 'ok' : 'quiet'}>{scan.status}</Chip></div>}
         {primaryForm && scan?.error && <Failed message={scan.error} />}
         <ImportCoverage coverage={coverage.data?.sources[connection]} />
       </Card>}

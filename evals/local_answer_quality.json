@@ -1,0 +1,50 @@
+{
+  "description": "Small synthetic evidence benchmark for local model comparison. Expected facts require manual review; this is not a production accuracy score.",
+  "cases": [
+    {
+      "id": "component_settings",
+      "question": "Which database and Python driver does the admin panel use?",
+      "sources": [{"path": "README.md", "text": "# Components\n## Admin panel\nStores dealer records in PostgreSQL. The Python API uses asyncpg.\n## Chat search\nEmbeddings are stored in Pinecone; this is separate from the admin database."}],
+      "expected": "PostgreSQL and asyncpg; must not answer Pinecone."
+    },
+    {
+      "id": "followup",
+      "question": "Why does it reject that?",
+      "history": [{"question": "What happens when I upload a PDF to the image endpoint?", "answer": "The image endpoint rejects the PDF with HTTP 415."}],
+      "sources": [{"path": "uploads.py", "text": "IMAGE_FORMATS = {'.png', '.jpg'}\ndef upload_image(file):\n    if file.suffix.lower() not in IMAGE_FORMATS:\n        raise HTTPException(415, 'Unsupported image format')\n    return save_image(file)"}],
+      "expected": "Resolve it to the image endpoint and that to PDF; explain PDF is outside png/jpg allowlist, causing 415."
+    },
+    {
+      "id": "conflicting_decisions",
+      "question": "What is the final decision on the timeout: 15 or 30 seconds?",
+      "sources": [
+        {"path": "slack/operations/1", "text": "Monday: Proposal: reduce the worker timeout to 15 seconds. Needs load-test review."},
+        {"path": "slack/operations/2", "text": "Tuesday final decision: retain 30 seconds. The 15-second proposal is rejected because batch jobs legitimately take 20 seconds."},
+        {"path": "config.py", "text": "TIMEOUT_SECONDS = 30"}
+      ],
+      "expected": "30 seconds, cites final discussion, identifies 15 as a rejected proposal."
+    },
+    {
+      "id": "runtime_unknown",
+      "question": "What timeout is currently configured in production?",
+      "sources": [{"path": "config.py", "text": "TIMEOUT_SECONDS = int(os.getenv('TIMEOUT_SECONDS', '30'))"}],
+      "expected": "Cannot determine production value from environment default."
+    },
+    {
+      "id": "request_flow",
+      "question": "Explain the request flow from accepting a question to returning an answer, and what happens when evidence is missing.",
+      "sources": [
+        {"path": "api.py", "text": "def ask(request):\n    user = require_login(request)\n    question = validate_question(request.json['question'])\n    return service.answer(user.workspace, question)"},
+        {"path": "service.py", "text": "def answer(workspace, question):\n    sources = search(workspace, question)\n    if not sources:\n        return {'answer': None, 'missing': 'No matching evidence'}\n    draft = model.generate(question, sources)\n    validate_citation_ids(draft, sources)\n    return draft"}
+      ],
+      "expected": "Login and validation, workspace-scoped retrieval, no-evidence branch without model, model generation then citation-ID validation. Must not call ID validation proof of factual correctness."
+    },
+    {
+      "id": "history_not_evidence",
+      "question": "What is its retry limit?",
+      "history": [{"question": "Explain the worker retry behavior.", "answer": "The worker retry limit is 99."}],
+      "sources": [{"path": "worker.py", "text": "MAX_RETRIES = 3\ndef retry_job(job):\n    if job.attempts >= MAX_RETRIES:\n        return 'failed'\n    return enqueue(job)"}],
+      "expected": "Three; correct earlier 99 claim using current code rather than repeating history."
+    }
+  ]
+}

@@ -48,7 +48,7 @@ path remains a placeholder. Missing workspace configuration prevents Slack messa
 | Title | State |
 |---|---|
 | Test live GitHub, Jira and Slack connections | Done for scoped live reads. See `TASK_5_1.md` and the final rerun in `TASK_5_8.md`. |
-| Evaluate answer quality | Progress. `pka/answer_evaluation.py` runs source-checked questions through the app and measures retrieval, citations, reference phrases and refusal behavior separately. Human correctness and source-sufficiency review remains pending; see `TASK_5_2.md`. |
+| Evaluate answer quality | Progress. The **Answer quality** browser screen and CLI run saved questions, retain exact-answer inspection and record authenticated human ratings separately from automatic retrieval/citation/phrase checks. Human correctness and source-sufficiency acceptance remains pending; see `TASK_5_2.md`. |
 | Recheck Jira and Slack access before using information | Done. Saved Jira issue/comment visibility and Slack history permissions are rechecked before use, cached views, and publication of generated external-source content. See `TASK_5_3.md` for verification and limits. |
 | Refresh saved information and cached answers | Done. Transactional source revisions survive restarts; source replacement clears derived caches and open views reload safely. Repository scans invalidate same-commit overviews. See `TASK_5_4.md` for tests, live refresh checks and limits. |
 | Improve background jobs, cancellation and retries | Done. Saved job states, shared progress/cancel/retry controls, duplicate-start protection and interrupted-job recovery. Cancellation waits for a safe checkpoint; retries require an explicit action. See `TASK_5_5.md`. |
@@ -60,7 +60,7 @@ path remains a placeholder. Missing workspace configuration prevents Slack messa
 | Explain supported parts when some information is missing | Done. |
 | Show what was checked and what remains unknown | Done. `gaps` in `pka/facts.py`. |
 | Identify unavailable, outdated or conflicting sources | Partly. Unavailable yes, conflicting no. |
-| Add automatic, incremental or resumable imports | Partly. Recovery exists, incremental does not. |
+| Add automatic, incremental or resumable imports | Incremental/resumable GitHub and local file imports implemented; see `TASK_7_2.md`. Scheduled refresh and Jira/Slack page resumption remain outside this scope. |
 | Detect changes across connected project sources | Partly. GitHub commit comparison only. |
 | Refresh affected relationships and KT explanations | Not started. |
 | Remove deleted or no-longer-permitted information | Partly. Slack and Jira replace on read. |

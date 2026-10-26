@@ -45,6 +45,10 @@ class ConnectorClient:
         return await self.call(self.repository_tool + '_check_access', commit=commit)
     async def begin_snapshot(self):
         return await self.call(self.repository_tool + '_begin_snapshot')
+    async def begin_incremental(self, reusable):
+        if self.repository_tool == 'local':
+            return await self.begin_snapshot()
+        return await self.call('github_begin_snapshot', reusable=reusable)
     async def list_files(self, cursor=0):
         return await self.call(self.repository_tool + '_list_files', cursor=cursor)
     async def read_file(self, path):

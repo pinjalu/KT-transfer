@@ -86,7 +86,11 @@ Measure source relevance and answer quality separately using human-labelled case
 retrieval-side check on whether a sentence appears in the excerpt it cites, not a judgement of
 whether the sentence is true, and it must not be reported as an accuracy score.
 
-Consider incremental refresh, resumable scans, import/call-graph expansion, language-specific parsers, persistent evaluation history without retained restricted excerpts, or a larger local model only when an observed limitation justifies the additional cost. No such features are represented as implemented.
+Task 7.2 implements incremental/resumable GitHub and local file reads, with current access and
+content-hash checks; see [task 7.2](TASK_7_2.md). Scheduled refresh and incremental Jira/Slack reads
+remain outside that scope. Consider import/call-graph expansion, language-specific parsers,
+persistent evaluation history without retained restricted excerpts, or a larger local model only
+when an observed limitation justifies the additional cost.
 
 ## Gate before multiple users
 

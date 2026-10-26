@@ -18,6 +18,9 @@ def repository(scan, available):
     result['counts'] = [metric(label, scan.get(key, 0)) for label, key in (
         ('Files read','read'), ('Skipped','skipped'), ('Failed','failed'), ('Listed candidates','total'))]
     result['counts'].append(metric('Not processed', max(0, scan.get('total', 0)-scan.get('processed', 0))))
+    for key, label in (('reused', 'Unchanged files reused'), ('fetched', 'Files fetched')):
+        if key in scan:
+            result['counts'].append(metric(label, scan[key]))
     if scan.get('dependency_files'):
         result['counts'].append(metric('Dependency files excluded before listing', scan['dependency_files']))
     if scan.get('tree_incomplete'):
