@@ -2,6 +2,11 @@
 
 Understand a project with a local assistant. Connect a GitHub repository, add a local project folder, read relevant Jira issues and Slack messages, and inspect the excerpts behind each answer. The Connections dropdown opens one source's form at a time; all saved sources can be used together. See [local folder setup and limits](docs/LOCAL_REPOSITORIES.md).
 
+Private team release work and test results are in [TEAM_RELEASE.md](docs/TEAM_RELEASE.md).
+For the selected office Windows host, follow [TEAM_OFFICE_SETUP.md](docs/TEAM_OFFICE_SETUP.md).
+The Feature explorer now offers six evidence-linked KT sections, and Connections shows
+saved refresh times for all sources. Generated explanations still require review.
+
 The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, selected Jira task explanations and related source links, Slack discussion summaries with evidence and status labels, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Requirement implementation checks and other planned screens remain unfinished. See [Jira task explanations](docs/TASK_6_2.md), [related sources](docs/TASK_6_3.md), [Team decisions](docs/TASK_6_4.md), [baseline acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
 
 Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windows PowerShell in this project's folder. Python 3.10 or newer is required. Current target-machine checks are recorded in [task 5.8](docs/TASK_5_8.md); older platform checks remain in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
@@ -407,6 +412,23 @@ citation checks, reference-phrase coverage, expected refusal behavior and human 
 Automatic checks are not factual accuracy. Reports exclude generated prose and source excerpts;
 `--inspect-report report.json --case database` displays an exact retained answer for review.
 See [task 5.2](docs/TASK_5_2.md) for the baseline, review rubric and commands.
+
+## AI providers and routing
+
+**Settings → AI settings** now controls per-feature Gemini/Groq routes, manual model tests,
+local Ollama fallback, project cloud permission and usage limits. Cloud is **disabled by default**.
+API keys use the existing Windows secure vault. Free-plan attestation and explicit per-project,
+per-provider permission are required before cloud generation. Connected public and private GitHub
+repositories are supported with current access checks. Jira and Slack require separate project
+approval in AI Settings; existing approvals remain GitHub-only. Local-folder content and
+conversation history remain local. See [multi-LLM setup, privacy, quotas and evaluation](docs/MULTI_LLM.md).
+
+New members add their own GitHub, Jira and Slack credentials in **Connections → 1. Add your connection
+tokens**, then select sources in **2. Choose what to read**. Credentials are isolated per account.
+
+Overview rebuilds reuse completed validated topics for the same sources and model configuration,
+and retry failures. AI Settings also provides a minimum gap between overview requests for free-tier
+quotas. Existing deterministic diagrams, local embeddings and retrieval remain in use.
 
 ## Checking saved source access
 
