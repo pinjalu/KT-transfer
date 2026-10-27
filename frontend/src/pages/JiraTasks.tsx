@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Empty, Failed, Loading, NoProject, PageHead } from '../components/ui'
 import { Said } from '../components/Statements'
+import { GenerationDetails } from '../components/GenerationDetails'
 import { JiraRelated } from '../components/JiraRelated'
 import { ApiError, post } from '../lib/api'
 import { useApi } from '../lib/useApi'
@@ -14,6 +15,7 @@ import './jira-tasks.css'
 type Issue = { key: string; title: string; url: string; excerpts: number }
 type Point = Statement & { quote: string }
 type Explanation = {
+  generations?: import('../lib/ai').Generation[]
   issue_key: string; summary: Point[]; requirements: Point[]; acceptance_criteria: Point[]; questions: Point[]
   sources: Source[]; generated_at: string; model: string; demo: boolean; excerpts_read: number; parts: number
 }
@@ -86,6 +88,7 @@ function Task({ issueKey, status }: { issueKey: string; status: Status }) {
         {answer.demo && ' · Example data and deterministic explanation'}
       </p>
       <Points title="What this task means" points={answer.summary} sources={sources} empty="No summary was extracted. Read the imported text below." />
+      {answer.generations?.map((g,i)=><GenerationDetails key={i} value={g}/>)}
       <Points title="Requested work" points={answer.requirements} sources={sources} empty="No requested work was extracted. Check the original task for details." />
       <Points title="Acceptance criteria" points={answer.acceptance_criteria} sources={sources} empty="No explicit acceptance criteria were extracted. Confirm completion checks with the task owner." />
       <Points title="Questions to clarify" points={answer.questions} sources={sources}

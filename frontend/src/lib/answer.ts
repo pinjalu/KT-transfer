@@ -52,6 +52,7 @@ export type TestSuggestion = {
 }
 
 export type Answer = {
+  generation?: import('./ai').Generation
   knowledge_revision?: number
   answer_id: number
   statements: Statement[]

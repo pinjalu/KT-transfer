@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { GenerationDetails } from '../components/GenerationDetails'
 import { Button, Card, Chip, Empty, Failed, Loading, Missing, NoProject, PageHead } from '../components/ui'
 import { useStatus } from '../lib/useStatus'
 import { useApi } from '../lib/useApi'
@@ -15,9 +17,25 @@ type Result = { case_id: string; status: string; response_hash: string; answer_i
   citations: { unknown_ids: number; uncited_statements: number; invalid_github_links: number; external_links_not_checked: number };
   reference_phrase_checks: { id: string; cited_reference_phrase_match: boolean }[] }
 type Run = { id: number; title: string; state: string; model: string; started_at: string; scan_status: string;
+  performance?: Performance;
   results: Result[]; cases_planned: number; summary: { automatic_checks_passed: number; human_reviewed: number;
     human_correctness: Record<string, number>; human_source_sufficiency: Record<string, number> } }
 type Catalog = { sets: { id: string; title: string; repo: string; commit: string; cases: number; available: boolean; reason: string }[]; runs: Run[] }
+type Performance = {average_response_seconds:number|null;timeout_rate:number|null;validated_response_rate:number|null;input_tokens:number;output_tokens:number;usage_reported_answers:number;answers_with_metadata:number}
+type Comparison = {comparable:boolean;reasons:string[];note:string;runs:Pick<Run,'id'|'model'|'performance'|'summary'>[]}
+function PerformanceDetails({value}:{value?:Performance}) {
+  if (!value) return <p>Performance metadata was not recorded for this older run.</p>
+  return <p>Average response: {value.average_response_seconds??'unreported'}s; timeout rate: {value.timeout_rate===null?'unreported':`${(value.timeout_rate*100).toFixed(1)}%`}; validated responses: {value.validated_response_rate===null?'unreported':`${(value.validated_response_rate*100).toFixed(1)}%`}. Reported tokens across attempts: {value.input_tokens} input / {value.output_tokens} output; usage reported for {value.usage_reported_answers}/{value.answers_with_metadata} answers. Validation is not an accuracy score.</p>
+}
+function CompareRuns({runs}:{runs:Run[]}) {
+  const [left,setLeft]=useState(0),[right,setRight]=useState(0),[result,setResult]=useState<Comparison|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+  const compare=async()=>{setBusy(true);setResult(null);setError('');try{setResult(await post('/api/quality/compare',{left,right}) as Comparison)}catch(e){setError(e instanceof Error?e.message:'Comparison unavailable.')}finally{setBusy(false)}}
+  return <Card title="Compare model runs" sub="Use manual routing with fallback disabled, then run the same question set for each model.">
+    <p>Choose the model in <Link to="/settings">AI settings</Link>. Keep the same source snapshot. The server checks questions, excerpts, source revision and prompt version before allowing comparison.</p>
+    <div className="quality-review">{[['First run',left,setLeft],['Second run',right,setRight]].map(([label,value,setter])=><label key={String(label)}>{String(label)}<select value={value as number} onChange={e=>{(setter as (n:number)=>void)(Number(e.target.value));setResult(null)}}><option value="0">Choose run</option>{runs.map(r=><option key={r.id} value={r.id}>#{r.id} · {r.model}</option>)}</select></label>)}<Button disabled={!left||!right||left===right||busy} onClick={()=>void compare()}>Compare conditions</Button></div>
+    {error&&<Failed message={error}/>}{result&&<><p role="status">{result.comparable?'Test conditions match.':'These runs are not a controlled comparison.'}</p><ul>{result.reasons.map(reason=><li key={reason}>{reason}</li>)}</ul><p>{result.note}</p>{result.comparable&&result.runs.map(r=><div key={r.id}><h3>#{r.id} · {r.model}</h3><PerformanceDetails value={r.performance}/><p>{r.summary.human_reviewed} human reviews; correctness: {Object.entries(r.summary.human_correctness).map(([k,v])=>`${k}: ${v}`).join(', ')}; source sufficiency: {Object.entries(r.summary.human_source_sufficiency).map(([k,v])=>`${k}: ${v}`).join(', ')}.</p></div>)}</>}
+  </Card>
+}
 type Detail = { dataset_hash: string; case: { id: string; question: string; behavior: string; review_note?: string;
   facts?: { id: string; references: { path: string; start: number; end: number }[] }[] }; result: Result; answer: Answer }
 const running = (state: string) => ['queued', 'running', 'cancelling'].includes(state)
@@ -53,6 +71,7 @@ function CaseReview({ run, caseId, onSaved }: { run: Run; caseId: string; onSave
   return <Card title={data.case.question} sub={`Expected behaviour: ${data.case.behavior.replaceAll('_', ' ')}`}>
     {data.case.review_note && <Missing what={data.case.review_note} checked="Reference guidance for the reviewer" />}
     <h3>Exact generated answer</h3>
+    <GenerationDetails value={answer.generation}/>
     {answer.error && <Failed message={answer.error} />}
     {tests?.length ? <TestSuggestions tests={tests} sources={sources} /> : <Statements statements={statements} sources={sources} />}
     {answer.missing_information && <Missing what={answer.missing_information} />}
@@ -130,6 +149,7 @@ export function Quality() {
             {data.runs.map(r => <option key={r.id} value={r.id}>#{r.id} · {r.title} · {r.started_at}</option>)}
           </select></label>
           {run && <>
+            <PerformanceDetails value={run.performance}/>
             <p><Chip>{run.state}</Chip> {run.model} · {run.results.length} of {run.cases_planned} cases run · {run.scan_status} source scan</p>
             <div className="quality-counts"><p><strong>{run.summary.automatic_checks_passed}/{run.cases_planned}</strong> passed automatic checks</p><p><strong>{run.summary.human_reviewed}/{run.cases_planned}</strong> reviewed by a person</p></div>
             {run.summary.human_reviewed > 0 && <p>Human correctness: {Object.entries(run.summary.human_correctness).map(([label, count]) => `${count} ${label}`).join(', ')}. Sources: {Object.entries(run.summary.human_source_sufficiency).map(([label, count]) => `${count} ${label}`).join(', ')}.</p>}
@@ -139,6 +159,7 @@ export function Quality() {
           </>}
         </Card>}
         {run && selectedCase && <CaseReview key={`${run.id}:${caseId}`} run={run} caseId={caseId} onSaved={catalog.reload} />}
+        <CompareRuns runs={data.runs}/>
       </>}
     </>}
   </div>

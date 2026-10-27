@@ -90,7 +90,8 @@ it('withholds saved excerpts when inspection access fails', async () => {
   await render(); await click('Inspect boundary')
   expect(container.textContent).toContain('Source access could not be verified.')
   expect(container.textContent).not.toContain('score < 0.45')
-  expect(container.querySelectorAll('select')).toHaveLength(2)
+  expect(container.querySelector('.quality-review select[value="correct"]')).toBeNull()
+  expect(Array.from(container.querySelectorAll('label')).some(label => label.textContent?.startsWith('Correctness'))).toBe(false)
 })
 
 it('shows failed review writes without reporting a saved review', async () => {

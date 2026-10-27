@@ -33,6 +33,12 @@
 .said { padding-left: var(--s4); border-left: 3px solid var(--accent-wash); }
 .said-bad { border-left-color: var(--bad); }
 .said-text { line-height: 1.6; }
+.said-text p { margin: 0 0 10px; white-space: pre-line; }
+.said-text p:last-of-type { display: inline; margin: 0; }
+.said-text strong { font-weight: 650; }
+.said-source-details { margin-top: 8px; font-size: 12px; color: var(--ink-dim); }
+.said-source-details summary { cursor: pointer; width: fit-content; }
+.said-source-details p { margin-top: 8px; line-height: 1.6; }
 .cites { margin-left: 6px; }
 .cite { font-size: 12px; font-weight: 700; margin-right: 3px; }
 .said-mark {

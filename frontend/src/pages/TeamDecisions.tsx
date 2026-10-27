@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { GenerationDetails } from '../components/GenerationDetails'
 import { Button, Card, Chip, Empty, Failed, Loading, NoProject, PageHead } from '../components/ui'
 import { ApiError, post } from '../lib/api'
 import { useApi } from '../lib/useApi'
@@ -13,7 +14,7 @@ const LABELS = { decision: 'Recorded agreement', proposal: 'Suggestion / proposa
 type Kind = keyof typeof LABELS
 type Source = { source_id: string; path: string; start: number; text: string; url: string; partial: boolean; message_ts?: string; thread_ts?: string; edited_ts?: string; author?: string }
 type Point = { text: string; kind: Kind; reason?: string; source_ids: string[]; quotes: { source_id: string; text: string }[]; source_wording: boolean }
-type Summary = { items: Point[]; model: string; generated_at: string; parts: number; passages_read: number; excerpts_read: number; demo: boolean; labels_rechecked?: boolean }
+type Summary = { items: Point[]; model: string; generated_at: string; parts: number; passages_read: number; excerpts_read: number; demo: boolean; labels_rechecked?: boolean; generations?: import('../lib/ai').Generation[] }
 type Position = { id: string; text: string; kind: Kind; reason: string; source_id: string }
 type Review = { positions: Position[]; comparisons: { subject: string; kind: 'conflict' | 'alternatives' | 'recorded_update'; reason: string; position_ids: string[] }[]; passages_checked: number; partial_passages: number }
 type Channel = { id: string; name: string; excerpts?: number }
@@ -122,6 +123,7 @@ function ChannelSummary({ channelId, status }: { channelId: string; status: Stat
     </Card>
     {review && <DiscussionReview review={review} sources={sources} />}
     {summary ? <Card title="Discussion summary" sub="Review each point with its supporting messages.">
+      {summary.generations?.map((g,i)=><GenerationDetails key={i} value={g}/>)}
       <p className="jira-muted" aria-label="Summary details">Model: <strong>{summary.model}</strong> · Saved {new Date(summary.generated_at).toLocaleString()} · {summary.passages_read} passages read in {summary.parts} {summary.parts === 1 ? 'part' : 'parts'}{summary.demo && ' · Example data'}</p>
       {!summary.items.some(point => point.kind === 'decision') && <p className="jira-note">No explicit agreement was identified in this summary. The imported messages may contain additional context.</p>}
       {summary.labels_rechecked && <p className="jira-note">Labels on this saved summary were rechecked against its supporting quotes. No new model summary was generated.</p>}

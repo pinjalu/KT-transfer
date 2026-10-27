@@ -2,6 +2,8 @@
 import type { Source, Statement } from './answer'
 
 export type Section = {
+  generation?: import('./ai').Generation
+  cache_hit?: boolean
   key: string
   title: string
   statements: Statement[]
@@ -24,6 +26,10 @@ export type FactGroup = {
 export type Reading = { path: string; why: string; url: string }
 
 export type Overview = {
+  routing_changed?: boolean
+  partial?: boolean
+  failed_topics?: number
+  successful_topics?: number
   scan_id: number
   commit: string
   repo: string
@@ -48,7 +54,7 @@ export type Overview = {
 export type OverviewReply = {
   available: boolean
   building: boolean
-  progress: { done?: number; total?: number; topic?: string } | null
+  progress: { done?: number; total?: number; topic?: string; topics?: Record<string,{title:string;state:string}> } | null
   overview: Overview | null
   reason: string
 }

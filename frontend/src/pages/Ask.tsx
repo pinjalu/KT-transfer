@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { GenerationDetails } from '../components/GenerationDetails'
 import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Empty, Failed, Missing, NoProject, PageHead, Segmented } from '../components/ui'
 import { Icon } from '../components/Icon'
@@ -163,7 +164,7 @@ export function Ask() {
                       <div className="theirs">
                         <div className="loading">
                           <span className="spinner" aria-hidden="true" />
-                          Reading the files and writing an answer. On a small local model this takes a while.
+                          Retrieving source excerpts and generating an answer with your saved AI routing.
                         </div>
                       </div>
                     )}
@@ -219,6 +220,7 @@ export function Ask() {
                           </p>
                         )}
 
+                        <GenerationDetails value={turn.answer.generation}/>
                         {/* A greeting is answered without reading anything and is never
                             recorded, so it carries answer_id 0 and there is nothing to rate. */}
                         {turn.answer.answer_id > 0 && (

@@ -16,6 +16,7 @@ import { Account } from './pages/Account'
 import { LocalSource } from './pages/LocalSource'
 import { Features } from './pages/Features'
 import { ExistingTests } from './pages/ExistingTests'
+import { Settings } from './pages/Settings'
 import './tokens.css'
 import './shell.css'
 
@@ -43,14 +44,7 @@ createRoot(document.getElementById('root')!).render(
                 'Where to check, pointing at real files, tables and services',
                 'Relevant tests, separated into existing and suggested',
               ]} />} />
-          <Route path="settings" element={
-            <Pending step="Step 12" title="Settings"
-              lead="Use your username at the bottom of the sidebar for password and session controls. Model and refresh settings remain environment variables."
-              items={[
-                'General, Model, Refresh and Activity, all backed by what is already stored',
-                'Team and access stays empty until the multi-user gate in ROADMAP.md is passed',
-                'Source permissions reflecting the allowlists already enforced',
-              ]} />} />
+          <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Shell>
     </BrowserRouter></AuthGate>
