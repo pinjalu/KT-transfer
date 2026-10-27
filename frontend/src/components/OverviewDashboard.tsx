@@ -122,6 +122,7 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
   const [query, setQuery] = useState('')
   const heading = useRef<HTMLHeadingElement>(null)
   const review = body.sections.filter(needsReview)
+  const written = body.successful_topics ?? body.sections.filter(section => !section.error).length
   const gaps = factsOf(body, 'gaps')
   const issueCount = review.length + (gaps?.items.length ?? 0)
   const sections = body.sections.map(s => ({ id: s.key, title: s.title,
@@ -164,7 +165,7 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
 
     <div className="ov-metrics" aria-label="Overview shortcuts">
       {[
-        { label: 'Topics written', value: `${body.topics_done}/${body.topics_total}`, icon: 'doc', to: sections[0]?.id ?? '_facts', hint: 'Explore the overview', tone: 'teal' },
+        { label: 'Topics written', value: `${written}/${body.topics_total}`, icon: 'doc', to: sections[0]?.id ?? '_facts', hint: 'Explore the overview', tone: 'teal' },
         { label: 'Files indexed', value: body.files_indexed, icon: 'database', to: '_facts', hint: `${body.files_skipped} files skipped`, tone: 'blue' },
         { label: 'Feature groups', value: features.loading ? '…' : features.error || !features.data?.available ? '—' : featureRows.length,
           icon: 'grid', to: '_features', hint: features.error ? 'Read unavailable' : 'Explore grouped routes', tone: 'violet' },
@@ -228,7 +229,7 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
               <dl><div><dt>Repository</dt><dd>{body.repo}</dd></div>
                 <div><dt>{body.repo.startsWith('local:') ? 'Snapshot' : 'Commit'}</dt><dd className="mono">{body.commit?.slice(0, 7)}</dd></div>
                 <div><dt>Files</dt><dd>{body.files_indexed} indexed · {body.files_skipped} skipped</dd></div>
-                <div><dt>Topics written</dt><dd>{body.topics_done} of {body.topics_total}</dd></div>
+                <div><dt>Topics written</dt><dd>{written} of {body.topics_total}</dd></div>
                 {body.scanned_at && <div><dt>Sources read</dt><dd>{new Date(body.scanned_at).toLocaleString()}</dd></div>}
               </dl>
             </div>

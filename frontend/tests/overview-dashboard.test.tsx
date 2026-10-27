@@ -151,11 +151,14 @@ describe('interactive overview', () => {
       items: [{ text: 'No deployment guide', detail: '', path: '', line: 0, url: '' }] })
     await render()
     const metric = Array.from(container.querySelectorAll('.ov-metric')).find(el => el.textContent?.includes('Review items'))!
+    const written = Array.from(container.querySelectorAll('.ov-metric')).find(el => el.textContent?.includes('Topics written'))!
+    expect(written.querySelector('strong')!.textContent).toBe('2/3')
     expect(metric.querySelector('strong')!.textContent).toBe('4')
     await act(async () => (metric as HTMLButtonElement).click())
     expect(panel().textContent).toContain('Build failed: Model unavailable')
     expect(panel().textContent).toContain('No CI configuration was read.')
     expect(panel().textContent).toContain('No deployment guide')
+    expect(panel().querySelector('.ov-coverage')?.textContent).toContain('Topics written2 of 3')
     await click('Getting started')
     expect(panel().querySelector('[role="alert"]')?.textContent).toContain('Model unavailable')
     expect(panel().textContent).not.toContain('No evidence was found')
