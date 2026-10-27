@@ -85,8 +85,7 @@ describe('interactive overview', () => {
   it('navigates topics and exposes all points without requesting a build or fetching again', async () => {
     await render()
     expect(panel().textContent).toContain('Project purpose point 3')
-    expect(panel().textContent).not.toContain('Project purpose point 4')
-    await click('Read 2 more points')
+    expect(panel().textContent).toContain('Project purpose point 4')
     expect(panel().textContent).toContain('Project purpose point 5')
     await click('Getting started')
     expect(panel().textContent).toContain('Project setup point 1')
@@ -170,6 +169,20 @@ describe('interactive overview', () => {
     await click('Main features')
     expect(panel().querySelector('[role="alert"]')).not.toBeNull()
     expect(panel().textContent).not.toContain('No features were derived.')
+  })
+
+  it('offers retry beside partial coverage and prevents duplicate builds', async () => {
+    body.failed_topics = 1
+    body.successful_topics = 2
+    vi.mocked(post).mockResolvedValue({})
+    await render()
+    await click('Retry failed topics')
+    expect(post).toHaveBeenCalledExactlyOnceWith('/api/overview')
+    status = { ...status, busy: true, overview_building: true }
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(button('Retry failed topics').disabled).toBe(true)
+    await click('Retry failed topics')
+    expect(post).toHaveBeenCalledTimes(1)
   })
 
   it('offers partial topics during a build without starting a second one', async () => {

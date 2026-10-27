@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Icon } from './Icon'
 import { Statements } from './Statements'
+import { GenerationDetails } from './GenerationDetails'
 import { Button, Chip, Empty, Failed, Loading, Missing, SourceLink } from './ui'
 import { originOf, sourcePath } from '../lib/answer'
 import { factsOf } from '../lib/overview'
@@ -27,7 +28,6 @@ const TOPIC: Record<string, { label: string; icon: string; hint: string }> = {
   testing: { label: 'Testing', icon: 'check', hint: 'Understand what the existing checks cover.' },
   decisions: { label: 'Team context', icon: 'people', hint: 'What the imported tickets and discussions say.' },
 }
-const PREVIEW: Record<OverviewMode, number> = { Beginner: 3, Developer: 8, Architect: 2 }
 
 function needsReview(section: Section) {
   return !!section.error || !!section.missing_information || !section.statements.length
@@ -55,11 +55,8 @@ function FactDetails({ group, open = false }: { group: FactGroup; open?: boolean
   </details>
 }
 
-function TopicContent({ section, mode, body }: { section: Section; mode: OverviewMode; body: Overview }) {
-  const [expanded, setExpanded] = useState(false)
+function TopicContent({ section, body }: { section: Section; body: Overview }) {
   const content = useRef<HTMLDivElement>(null)
-  const limit = PREVIEW[mode]
-  const more = section.statements.length > limit
   const supportingFacts = section.key === 'setup' ? factsOf(body, 'commands')
     : section.key === 'technologies' ? factsOf(body, 'dependencies') : undefined
 
@@ -72,11 +69,9 @@ function TopicContent({ section, mode, body }: { section: Section; mode: Overvie
     if (excerpt) excerpt.open = true
   }}>
     {section.error && <Failed message={`This section could not be written. ${section.error}`} />}
+    <GenerationDetails value={section.generation} cached={section.cache_hit}/>
     {section.statements.length > 0 ? <>
-      <Statements statements={expanded ? section.statements : section.statements.slice(0, limit)}
-        sources={section.sources} />
-      {more && <Button kind="ghost" onClick={() => setExpanded(!expanded)}
-        aria-expanded={expanded}>{expanded ? 'Show less' : `Read ${section.statements.length - limit} more point${section.statements.length - limit === 1 ? '' : 's'}`}</Button>}
+      <Statements statements={section.statements} sources={section.sources} />
     </> : !section.error && <Missing what={section.missing_information || 'No evidence was found for this topic.'}
       checked="The excerpts retrieved for this topic" />}
     {!!section.statements.length && section.missing_information && <Missing what={section.missing_information} />}
@@ -208,7 +203,7 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
           <span className="ov-panel-icon"><Icon name={active.icon} size={24} /></span>
         </header>
         <div className="ov-panel-body">
-          {selected && <TopicContent key={`${selected.key}:${mode}`} section={selected} mode={mode} body={body} />}
+          {selected && <TopicContent key={`${selected.key}:${mode}`} section={selected} body={body} />}
           {active.id === '_features' && <>
             <p className="ov-hint">Grouped from routes, the files they reach and tickets that name them.</p>
             {features.loading ? <Loading what="features" /> : features.error

@@ -34,3 +34,32 @@ it('keeps test definitions separate from test execution and labels overlap hones
   expect(html).toContain('Some text overlap')
   expect(html).not.toContain('Only part of this is in the excerpt')
 })
+
+it('puts repetitive code and mixed-evidence explanations in a closed disclosure', () => {
+  for (const kind of ['code', 'mixed'] as const) {
+    const html = render({ ...base, evidence: { kind, reason: 'Long provenance explanation.' } })
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const details = container.querySelector('details')!
+    expect(details.open).toBe(false)
+    expect(details.querySelector('summary')?.textContent).toBe('Source details')
+    expect(details.textContent).toContain('Long provenance explanation.')
+    details.remove()
+    expect(container.textContent).not.toContain('Long provenance explanation.')
+    expect(container.textContent).not.toContain('Code-based explanation')
+    expect(container.textContent).not.toContain('Mixed evidence')
+  }
+})
+
+it('renders headings and paragraphs without raw entities, empty list numbers or executable HTML', () => {
+  const html = render({ ...base, text: '**What happens**&#x20;A request enters `app.py`.\n\n1.\n\n**Example:** A sample input.\n\n&#60;script&#62;alert(1)&#60;/script&#62;' })
+  const container = document.createElement('div')
+  container.innerHTML = html
+  expect(container.querySelector('strong')?.textContent).toBe('What happens ')
+  expect(container.querySelector('code')?.textContent).toBe('app.py')
+  expect(container.querySelectorAll('.said-text p')).toHaveLength(3)
+  expect(container.textContent).not.toContain('&#x20;')
+  expect(container.textContent).not.toContain('1.')
+  expect(container.querySelector('script')).toBeNull()
+  expect(container.textContent).toContain('<script>alert(1)</script>')
+})

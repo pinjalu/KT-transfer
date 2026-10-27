@@ -7,7 +7,8 @@ import { EVIDENCE_LABELS, SUPPORT_LABELS, SUPPORT_SAYS, SUPPORT_TONE } from '../
  *
  * Provenance, word overlap and project specificity are separate signals. None of the
  * model-written prose is verified merely because its citation has matching words.
- * Keep the evidence label visible in every reader mode, including saved legacy answers.
+ * Keep citations available; explanatory provenance belongs in an optional disclosure.
+ * Suggestions, unverified answers and concrete source warnings stay visibly labelled.
  */
 export function Cites({ ids, sources }: { ids: string[]; sources: Source[] }) {
   const order = new Map(sources.map((s, i) => [s.source_id, i + 1]))
@@ -24,6 +25,22 @@ export function Cites({ ids, sources }: { ids: string[]; sources: Source[] }) {
   )
 }
 
+/** Render a small, safe text format; generated HTML is never interpreted. */
+function StatementText({ text }: { text: string }) {
+  const clean = text.replace(/&#(x[\da-f]+|\d+);|&nbsp;/gi, (entity, value: string | undefined) => {
+    if (!value) return ' '
+    const point = value[0].toLowerCase() === 'x' ? parseInt(value.slice(1), 16) : parseInt(value, 10)
+    return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff)
+      ? String.fromCodePoint(point) : entity
+  }).replace(/^\s*(?:\d+[.)]|[-*])\s*$/gm, '').trim()
+  return <>{clean.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index}>
+    {paragraph.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/g).map((part, i) =>
+      part.startsWith('`') && part.endsWith('`') ? <code key={i}>{part.slice(1, -1)}</code>
+        : part.startsWith('**') && part.endsWith('**') ? <strong key={i}>{part.slice(2, -2)} </strong>
+        : part)}
+  </p>)}</>
+}
+
 export function Said({ statement, sources, citations = true, showContextMark = true }:
   { statement: Statement; sources: Source[]; citations?: boolean; showContextMark?: boolean }) {
   const tone = SUPPORT_TONE[statement.support]
@@ -36,18 +53,19 @@ export function Said({ statement, sources, citations = true, showContextMark = t
     reason: 'This saved answer predates behaviour labels. Inspect its sources or generate a fresh answer.' }
   return (
     <li className={'said' + (tone === 'bad' || unread.length ? ' said-bad' : '')}>
-      <p className="said-text">
-        {statement.text.split(/(`[^`\n]+`)/g).map((part, i) =>
-          part.startsWith('`') && part.endsWith('`')
-            ? <code key={i}>{part.slice(1, -1)}</code> : part)}
+      <div className="said-text">
+        <StatementText text={statement.text} />
         {citations && <Cites ids={statement.source_ids} sources={sources} />}
-      </p>
-      <div className="said-evidence">
-        <Chip tone={evidence.kind === 'verified_code' ? 'ok' : ['suggestion', 'mixed', 'unverified'].includes(evidence.kind) ? 'warn' : 'info'}>
-          {EVIDENCE_LABELS[evidence.kind] ?? EVIDENCE_LABELS.unverified}
-        </Chip>
-        <span className="said-says">{evidence.reason}</span>
       </div>
+      {!['code', 'mixed', 'documentation', 'discussion'].includes(evidence.kind) &&
+        <div className="said-evidence"><Chip tone={evidence.kind === 'verified_code' ? 'ok' : 'warn'}>
+          {EVIDENCE_LABELS[evidence.kind] ?? EVIDENCE_LABELS.unverified}
+        </Chip></div>}
+      <details className="said-source-details">
+        <summary>Source details</summary>
+        <p>{EVIDENCE_LABELS[evidence.kind] ?? EVIDENCE_LABELS.unverified}: {evidence.reason}</p>
+        {(tone === 'bad' || tone === 'warn') && <p>{SUPPORT_SAYS[statement.support]}</p>}
+      </details>
       {(tone === 'bad' || tone === 'warn' || generic || unread.length > 0) && (
         <p className="said-mark">
           {tone !== 'ok' && tone !== 'quiet' && <Chip tone={tone}>{SUPPORT_LABELS[statement.support]}</Chip>}
@@ -58,7 +76,6 @@ export function Said({ statement, sources, citations = true, showContextMark = t
               {unread.join(', ')}
             </Chip>
           )}
-          <span className="said-says">{SUPPORT_SAYS[statement.support]}</span>
         </p>
       )}
     </li>

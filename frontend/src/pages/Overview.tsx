@@ -108,6 +108,7 @@ export function Overview() {
             {reply.data?.progress?.total ?? body?.topics_total ?? '?'} done. Finished sections are
             readable below while the rest are still being written.
           </div>
+          {reply.data?.progress?.topics && <ul>{Object.entries(reply.data.progress.topics).map(([key,topic])=><li key={key}>{topic.title}: {topic.state}</li>)}</ul>}
         </Card>
       )}
 
@@ -126,6 +127,9 @@ export function Overview() {
       )}
 
       {body && <>
+        {body.routing_changed && <p role="status">AI routing or explanation settings changed since this overview was saved. Rebuild to apply the latest settings.</p>}
+        {body.partial && <p role="status">Partial coverage: {body.successful_topics ?? body.topics_done} topics completed; {body.failed_topics ?? 0} failed. Review each topic's missing information. Rebuilding reuses saved topics and retries failures.</p>}
+        {!!body.failed_topics&&<Button icon="refresh" disabled={building||busy} onClick={build}>Retry failed topics</Button>}
         <div className="ov-view-bar">
           <div><span className="ov-eyebrow">Choose your level of detail</span>
             <p>Every view uses the same saved evidence.</p></div>
@@ -137,7 +141,7 @@ export function Overview() {
       </>}
       <details className="ov-refresh-help">
         <summary>How refreshing works</summary>
-        <p>Switching pages keeps your overview and reading position. Rebuild overview generates it again from saved information.
+        <p>Switching pages keeps your overview and reading position. Rebuild overview reuses validated topics for the same sources and routing configuration and retries failed topics.
           To get source changes, use <Link to="/connections">Connections</Link> first.
           Source refreshes clear the saved overview. Earlier chat replies remain visible and are marked as older.</p>
       </details>
