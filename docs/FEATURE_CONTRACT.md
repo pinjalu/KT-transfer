@@ -26,9 +26,23 @@ Test imports do not establish coverage or passing tests. Jira key references are
 references; name matches are marked possible. Slack discussions are available through Ask
 assistant, not automatically attached to this feature map.
 
-Generated feature prose, scenarios, suggested tests and runtime-problem analysis are **not
-implemented**. The backend returns empty prose/statements, outcomes, suggested tests and
-known-problem items. The UI explicitly explains these limits and displays evidence gaps.
+Feature prose is now available through the separate **KT walkthrough** tab (27 October
+2026). The detail endpoint lists six `walkthrough_sections`; explicitly building one calls
+`POST /api/features/{id}/walkthrough/{key}`. It returns checked statements, exact excerpts,
+knowledge gaps, generation time and source revision. Sections use related code and tests,
+confirmed Jira references and matching documentation. Every request revalidates access
+before and after generation. Source changes discard in-flight results. The browser retains
+sections only for the current feature/revision; there is no persistent KT cache yet.
+
+Generated sections withhold statements with insufficient text matches, unread-file
+claims, and explicit method/path claims absent from their own cited excerpts. The
+gap message reports withheld statements. These conservative checks can omit a valid
+paraphrase; passing them does not establish factual correctness or runtime behavior.
+The example section asks for one evidenced route and its validation conditions.
+
+The deterministic detail's `overview`, outcomes, suggested tests and known-problem items
+remain empty. Generated examples and explanations are drafts, not observed runtime behavior
+or test results. Runtime-problem analysis is not implemented. Keep those limits visible.
 
 The JSON examples below preserve the original richer design proposal. Fields such as
 `built`, generated `plain` text, scenarios, inputs/outputs and suggested tests are illustrative,
@@ -171,4 +185,5 @@ and empty rather than absent, so the screen can say "nothing found" instead of h
    and two of them are scenarios, not facts. Phase 03 requires illustrative scenarios be labelled
    separately, so the screen labels them.
 4. Empty is reported, never hidden. An empty list plus a `note` saying what was checked.
-5. Neither endpoint calls a model. Generated prose is reserved for a later implementation.
+5. Neither GET endpoint calls a model. The separate explicit KT POST endpoint generates
+   draft prose with its own sources, checks and knowledge gaps.

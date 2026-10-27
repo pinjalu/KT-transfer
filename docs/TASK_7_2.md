@@ -53,3 +53,13 @@ Connections interface. Its active scan, 1,134 chunks, two supplemental imports a
 revision were unchanged. Existing saved scans have no file checkpoints until their first
 refresh with this version. No live browser interaction or external-source refresh was used
 for this verification.
+
+## Live closeout, 27 October 2026
+
+GitHub/local incremental and resumable imports passed 112 focused import/freshness
+tests and the full backend regression run. In the signed-in BSA project, refresh
+read 57 files with 0 failures. Retry then reused all 57 files and fetched 0. Seven
+documented exclusions remained; retry did not misreport those gaps as complete
+coverage. Jira and Slack were successfully re-read after repository replacement.
+Task 7.2 is Done for this scope. Scheduled imports and Jira/Slack resume remain
+outside this implementation.

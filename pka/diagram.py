@@ -234,20 +234,25 @@ def import_bindings(path: str, lines, table: dict) -> list[tuple[str, str, int]]
                 base = ('.' * len(dots) if dots else '') + module.replace('.', '/')
                 tail = line.split(' import ', 1)[1] if ' import ' in line else ''
                 for piece in tail.split('#')[0].split(','):
-                    name = piece.strip().strip('()').split(' as ')[-1].strip()
-                    if not name or not name.isidentifier():
+                    imported, _, alias = piece.strip().strip('()').partition(' as ')
+                    name = (alias or imported).strip()
+                    imported = imported.strip()
+                    if not name.isidentifier() or not imported.isidentifier():
                         continue
                     # The submodule if the scan has one, otherwise the package itself.
-                    landed = bind(name, base.rstrip('/') + '/' + name) or bind(name, base)
+                    landed = bind(name, base.rstrip('/') + '/' + imported) or bind(name, base)
                     if landed:
                         found.append((name, landed, number))
                 continue
             plain = PY_IMPORT.match(line)
             if plain:
                 dotted = plain.group(1)
-                landed = bind(dotted.split('.')[0], dotted.replace('.', '/'))
+                tail = line[plain.end():].split('#')[0].strip()
+                alias = re.fullmatch(r'as\s+([A-Za-z_]\w*)', tail)
+                name = alias.group(1) if alias else dotted.split('.')[0]
+                landed = bind(name, dotted.replace('.', '/'))
                 if landed:
-                    found.append((dotted.split('.')[0], landed, number))
+                    found.append((name, landed, number))
                 continue
         else:
             for pattern in (JS_FROM, JS_REQUIRE):

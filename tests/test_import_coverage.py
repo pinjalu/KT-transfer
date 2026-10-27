@@ -224,6 +224,7 @@ def test_failed_refresh_shows_previous_saved_read_separately(state):
     run(work())
     report = coverage.describe(svc)['sources']['jira']
     assert report['read_at'] == saved_at and report['available']
+    assert report['snapshot_read_at'] == saved_at
     assert report['attempt']['state'] == 'failed'
     assert report['state'] == 'partial'
 
@@ -235,6 +236,17 @@ def test_repository_coverage_preserves_policy_exclusions_and_unknown_tree_size()
     assert any('unknown' in n for n in result['notes'])
     assert metric_value(result, 'Not processed') == 2
     assert any(d['name'] == 'potential secret file' for d in result['details'])
+
+
+def test_snapshot_time_does_not_advance_with_a_new_attempt(state):
+    svc, _, _ = state
+    saved = svc.index.active_scan()['finished']
+    svc.progress = {'status': 'running', 'started': '2099-01-01T00:00:00Z', 'finished': None}
+    report = coverage.describe(svc)['sources']['github']
+    assert report['read_at'] is None
+    assert report['snapshot_read_at'] == saved
+    svc.index.invalidate()
+    assert coverage.describe(svc)['sources']['github']['snapshot_read_at'] is None
 
 
 def metric_value(report, label):

@@ -96,9 +96,14 @@ def external(index, name, available):
 
 def describe(service):
     index = service.index
-    available = index.active_scan() is not None
+    active = index.active_scan()
+    available = active is not None
     sources = {'github':repository(service.progress or index.latest(), available),
                **{name:external(index, name, available) for name in ('jira','slack')}}
+    # A newer failed attempt is not the snapshot still used by answers.
+    sources['github']['snapshot_read_at'] = active.get('finished') if active else None
+    for name in ('jira', 'slack'):
+        sources[name]['snapshot_read_at'] = sources[name]['read_at'] if sources[name]['available'] else None
     if (index.settings() or {}).get('local'):
         saved = index.source_import('local')
         report = (saved or {}).get('report') or {}
@@ -106,6 +111,7 @@ def describe(service):
                   'processed':report.get('total', 0), **report}
         sources['local'] = repository(detail, bool(saved) and available)
         sources['local']['source'] = 'local'
+        sources['local']['snapshot_read_at'] = report.get('read_at') if saved and available else None
         sources['local']['notes'].append('Local files supplement the GitHub repository. GitHub, Jira and Slack imports are kept when this folder is read again.')
     job = service.job_status()
     if job and job['kind'] in {'scan','jira','slack','local'} and service.job['scope'] == service.job_scope(job['kind']):
