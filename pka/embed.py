@@ -84,7 +84,7 @@ def query_texts(texts):
 
 
 def document_texts(texts):
-    return ['search_document: ' + text for text in texts] if model().split(':')[0] == 'nomic-embed-text' else texts
+    return ['search_document:     ' + text for text in texts] if model().split(':')[0] == 'nomic-embed-text' else texts
 
 
 def pack(vector) -> bytes:
