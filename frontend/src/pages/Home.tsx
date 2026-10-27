@@ -29,7 +29,10 @@ export function Home() {
   if (status.loading) return <Loading what="the project" />
   if (status.error) return <Failed message={status.error} onRetry={status.reload} />
   if (status.data?.awaiting_project) {
-    return <><PageHead title="KT Assistant" /><NoProject what="everything this project knows" /></>
+    return <><PageHead title="KT Assistant" lead="Start by connecting sources to your own workspace." />
+      <Card title="First: add your connection tokens"><p>Open Connections to add your GitHub token, Jira site/email/API token, and Slack user token. Each account keeps its own credentials and imported content.</p>
+        <Link className="btn btn-primary" to="/connections">Set up my connections</Link></Card>
+      <NoProject what="everything this project knows" /></>
   }
 
   const project = projectName(status.data?.settings)

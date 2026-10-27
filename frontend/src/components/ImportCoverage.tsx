@@ -5,6 +5,7 @@ export type Coverage = {
   state: string
   available: boolean
   read_at: string | null
+  snapshot_read_at?: string | null
   summary: string
   counts: { label: string; value: number }[]
   notes: string[]
@@ -32,7 +33,8 @@ export function ImportCoverage({ coverage }: { coverage?: Coverage }) {
     <p>{coverage.summary}</p>
     {!coverage.available && coverage.read_at && <p className="coverage-warning">This saved read is unavailable for answers.</p>}
     {attempt && <p className="coverage-warning" role="status">
-      Latest attempt: {attempt.state}. {attempt.error || 'The coverage below describes the last saved read.'}
+      Latest attempt: {attempt.state}. {attempt.error || (['github', 'local'].includes(coverage.source)
+        ? 'Counts below describe this scan attempt.' : 'The coverage below describes the last saved read.')}
       {!['github', 'local'].includes(coverage.source) && coverage.read_at && ' The previous saved read is shown below.'}
     </p>}
     {coverage.counts.length > 0 && <dl className="coverage-counts">

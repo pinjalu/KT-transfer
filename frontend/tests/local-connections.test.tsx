@@ -22,14 +22,14 @@ function button(text: string) { return Array.from(container.querySelectorAll('bu
 async function click(text: string) { await act(async () => button(text).click()) }
 async function select(value: string) {
   await act(async () => {
-    const field = container.querySelector<HTMLSelectElement>('select')!
+    const field = container.querySelector<HTMLSelectElement>('select[aria-label="Connection"]')!
     field.value = value
     field.dispatchEvent(new Event('change', {bubbles:true}))
   })
 }
 async function input(value: string) {
   await act(async () => {
-    const field = container.querySelector<HTMLInputElement>('input')!
+    const field = container.querySelector<HTMLInputElement>('.conn-fields input')!
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value)
     field.dispatchEvent(new Event('input', { bubbles:true }))
   })
@@ -62,15 +62,15 @@ it('keeps a typed local path across polls and saves the folder without a branch 
   await input('file:///D:/Projects/my%20app')
   status = { ...status, settings: { repo:'acme/shop', branch:'main', platforms:['github'] } }
   await act(async () => vi.advanceTimersByTimeAsync(2000))
-  expect(container.querySelector('input')!.value).toBe('file:///D:/Projects/my%20app')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('file:///D:/Projects/my%20app')
   await click('Save and read files')
   expect(post).toHaveBeenCalledWith('/api/config', expect.objectContaining({ source_kind:'local', repo:'', local_path:'file:///D:/Projects/my%20app' }))
   expect(post).toHaveBeenCalledWith('/api/local/read')
   expect(post).not.toHaveBeenCalledWith('/api/scan')
   await select('github')
-  expect(container.querySelector('input')!.value).toBe('acme/shop')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('acme/shop')
   await select('local')
-  expect(container.querySelector('input')!.value).toBe('file:///D:/Projects/my%20app')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('file:///D:/Projects/my%20app')
 })
 
 it('does not scan when folder validation fails and shows the API error', async () => {
@@ -105,7 +105,7 @@ it('offers the saved workspace name while reconnecting its actual repository', a
   await render()
   expect(container.querySelector('.conn-resume-text')?.textContent).toContain('Saved project: functionalAI')
   await click('Use it again')
-  expect(container.querySelector('input')!.value).toBe('acme/shop')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('acme/shop')
 })
 
 it.each([
@@ -114,16 +114,16 @@ it.each([
 ])('restores the saved local form on navigation without overwriting a later form choice', async saved => {
   status = { settings:{ ...saved, platforms:['local'] }, knowledge_revision:1 }
   await render()
-  expect(container.querySelector('select')!.value).toBe('local')
-  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('local')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('D:/Projects/functionalAI')
   await select('github')
   await act(async () => vi.advanceTimersByTimeAsync(2000))
-  expect(container.querySelector('select')!.value).toBe('github')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('github')
   await act(async () => root.unmount())
   root = createRoot(container)
   await render()
-  expect(container.querySelector('select')!.value).toBe('local')
-  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('local')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('D:/Projects/functionalAI')
 })
 
 it('restores and submits the saved folder when the workspace also has a GitHub repository', async () => {
@@ -133,8 +133,8 @@ it('restores and submits the saved folder when the workspace also has a GitHub r
   } }
   await render()
   await click('Use it again')
-  expect(container.querySelector('select')!.value).toBe('local')
-  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('local')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('D:/Projects/functionalAI')
   await click('Save and read files')
   expect(post).toHaveBeenCalledWith('/api/config', expect.objectContaining({
     source_kind:'local', repo:'', local_path:'D:/Projects/functionalAI',
@@ -149,16 +149,16 @@ it.each([
 ])('restores the saved local form on navigation without overwriting a later form choice', async saved => {
   status = { settings:{ ...saved, platforms:['local'] }, knowledge_revision:1 }
   await render()
-  expect(container.querySelector('select')!.value).toBe('local')
-  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('local')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('D:/Projects/functionalAI')
   await select('github')
   await act(async () => vi.advanceTimersByTimeAsync(2000))
-  expect(container.querySelector('select')!.value).toBe('github')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('github')
   await act(async () => root.unmount())
   root = createRoot(container)
   await render()
-  expect(container.querySelector('select')!.value).toBe('local')
-  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('local')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('D:/Projects/functionalAI')
 })
 
 it('restores and submits the saved folder when the workspace also has a GitHub repository', async () => {
@@ -168,8 +168,8 @@ it('restores and submits the saved folder when the workspace also has a GitHub r
   } }
   await render()
   await click('Use it again')
-  expect(container.querySelector('select')!.value).toBe('local')
-  expect(container.querySelector('input')!.value).toBe('D:/Projects/functionalAI')
+  expect(container.querySelector('select[aria-label="Connection"]')!.value).toBe('local')
+  expect(container.querySelector('.conn-fields input')!.value).toBe('D:/Projects/functionalAI')
   await click('Save and read files')
   expect(post).toHaveBeenCalledWith('/api/config', expect.objectContaining({
     source_kind:'local', repo:'', local_path:'D:/Projects/functionalAI',

@@ -27,7 +27,7 @@ export function SlackPanel({ status, onChanged, coverage }: { status: Status | n
 
   const picked = chosen ?? {}
   const limit = slack.data?.limits?.channels ?? 20
-  const connected = slack.data?.connected ?? false
+  const connected = !!slack.data?.connected && !slack.data?.reason && !slack.error
   // Messages are stored against a scan, exactly as Jira issues are.
   const scanned = status?.ready ?? false
 
@@ -124,7 +124,7 @@ export function SlackPanel({ status, onChanged, coverage }: { status: Status | n
               </Button>
             </>
           ) : (
-            <Button kind="primary" onClick={connect}>Connect Slack</Button>
+            <div><p className="conn-plain">Add your Slack user token in step 1 above.</p><Button disabled={busy||!!status?.demo} onClick={connect}>Connect Slack in browser</Button></div>
           )}
           <p className="conn-last">
             {!scanned
@@ -168,9 +168,11 @@ export function SlackPanel({ status, onChanged, coverage }: { status: Status | n
 
       {slack.data?.reason && (
         <div className="conn-warn">
-          <Missing what={slack.data.reason} checked="SLACK_USER_TOKEN in your local .env file" />
+          <Missing what={slack.data.reason} checked="Your account's Slack user token. Add or update it in step 1 above." />
         </div>
       )}
+
+      {slack.error && <div className="conn-warn"><Missing what={slack.error} checked="Your account's Slack connection" /></div>}
 
       <ImportCoverage coverage={coverage} />
       <p className="conn-caveat">

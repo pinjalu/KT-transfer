@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Chip, Dot, Missing } from './ui'
 import { Icon } from './Icon'
-import { JiraCredentials } from './JiraCredentials'
 import { useApi } from '../lib/useApi'
 import { ApiError, post } from '../lib/api'
 import type { JiraReply } from '../lib/sources'
@@ -39,7 +38,7 @@ export function JiraPanel({ status, onChanged, coverage }: { status: Status | nu
     }
   }
 
-  const connected = jira.data?.connected ?? false
+  const connected = !!jira.data?.connected && !jira.data?.reason && !jira.error
   // Jira issues are stored against a scan, so there is nowhere to put them until one exists.
   // Offering the button anyway failed in the background with nothing shown on the page.
   const scanned = status?.ready ?? false
@@ -54,7 +53,7 @@ export function JiraPanel({ status, onChanged, coverage }: { status: Status | nu
               Jira
               <Chip tone={connected ? 'ok' : 'quiet'}>
                 <Dot tone={connected ? 'ok' : 'quiet'} />
-                {connected ? 'Credentials found' : 'Not connected'}
+                {connected ? 'Access checked' : 'Setup needed'}
               </Chip>
             </div>
             <p className="conn-plain">
@@ -113,12 +112,11 @@ export function JiraPanel({ status, onChanged, coverage }: { status: Status | nu
       {jira.data?.reason && (
         <div className="conn-warn">
           <Missing what={jira.data.reason}
-                   checked="JIRA_SITE, JIRA_EMAIL and JIRA_API_TOKEN in your local .env file" />
+                   checked="Your account's saved Jira connection details. Add or update them in step 1 above." />
         </div>
       )}
 
-      <JiraCredentials disabled={busy || !!status?.demo}
-                       onSaved={() => { jira.reload(); onChanged() }} />
+      {jira.error && <div className="conn-warn"><Missing what={jira.error} checked="Your account's Jira connection" /></div>}
       <ImportCoverage coverage={coverage} />
       <p className="conn-caveat">Reading again replaces saved issues, including edits and deletions,
         and clears previous answers and the overview. Build the overview again after reading.</p>

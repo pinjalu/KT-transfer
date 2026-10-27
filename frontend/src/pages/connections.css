@@ -167,3 +167,8 @@
 .conn-picker p,.conn-picker-help { color:var(--ink-soft); font-size:13px; }
 .conn-saved { display:flex; gap:10px; flex-wrap:wrap; margin:20px 0 12px; }
 @media(max-width:800px) { .conn-picker { grid-template-columns:minmax(0,1fr); } }
+.source-freshness { display: grid; gap: 12px; margin: 0; }
+.source-freshness > div { display: grid; grid-template-columns: minmax(85px, 1fr) 3fr; gap: 12px; }
+.source-freshness dt { font-weight: 600; }
+.source-freshness dd { margin: 0; display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px 12px; }
+.source-freshness dd > span:last-child { flex-basis: 100%; }

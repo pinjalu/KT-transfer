@@ -6,6 +6,9 @@ import { JiraPanel } from '../components/JiraPanel'
 import { SlackPanel } from '../components/SlackPanel'
 import { ImportHistory } from '../components/ImportHistory'
 import { ImportCoverage } from '../components/ImportCoverage'
+import { SourceFreshness } from '../components/SourceFreshness'
+import { SourceCredentials } from '../components/SourceCredentials'
+import type { CredentialSource } from '../components/SourceCredentials'
 import type { CoverageReply } from '../components/ImportCoverage'
 import { useApi } from '../lib/useApi'
 import { projectName } from '../lib/project'
@@ -30,6 +33,11 @@ export function Connections() {
   const [seeded, setSeeded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
+  const [credentialRevision,setCredentialRevision] = useState({github:0,jira:0,slack:0})
+  const credentialsSaved = (source:CredentialSource) => {
+    setCredentialRevision(previous=>({...previous,[source]:previous[source]+1}))
+    status.reload(); coverage.reload()
+  }
   useEffect(() => {
     if (!settings || seeded) return
     setRepo(settings.repo.startsWith('local:') ? '' : settings.repo)
@@ -83,11 +91,13 @@ export function Connections() {
       {status.data?.demo && <Chip tone="violet">Example mode, fixture data</Chip>}</div>
     <Tabs items={['Connections','Import history']} active={tab} onPick={setTab} />
     {tab === 'Connections' ? <div className="stack conn-stack">
+      {connection !== 'local' && <SourceCredentials source={connection} onSourceChange={setConnection}
+        onSaved={credentialsSaved} disabled={busy||!!status.data?.demo} title="1. Add your connection tokens" />}
       <Card>
         <div className="conn-picker">
-          <div><h2>Your project sources</h2><p>Add each connection to the same project. Answers can use relevant evidence from all saved sources.</p></div>
+          <div><h2>{connection==='local'?'Your project sources':'2. Choose what to read'}</h2><p>Add each connection to the same project. Read the repository first, then add Jira issues and Slack messages.</p></div>
           <label className="field"><span className="field-label">Connection</span>
-            <select value={connection} onChange={e => { setConnection(e.target.value as Connection); setNote('') }}>
+            <select aria-label="Connection" value={connection} onChange={e => { setConnection(e.target.value as Connection); setNote('') }}>
               {choices.map(key => <option key={key} value={key}>{names[key]}</option>)}
             </select></label>
         </div>
@@ -102,6 +112,7 @@ export function Connections() {
       </Card>
       {note && <p className="conn-note" role="status">{note}</p>}
       {coverage.error && <Failed message={coverage.error} onRetry={coverage.reload} />}
+      {!awaiting && <SourceFreshness coverage={coverage.data ?? undefined} warning={status.data?.warning} />}
       {(connection === 'github' || connection === 'local') && <Card>
         <div className="conn-row">
           <div className="conn-id"><span className="conn-logo"><Icon name="doc" size={20} /></span><div>
@@ -136,13 +147,13 @@ export function Connections() {
           Local files are added beside your GitHub code, Jira issues and Slack messages. Read this folder again after editing files.
           Built-in rules exclude secret filenames, dependencies, generated files and linked folders; custom .gitignore rules are not applied.</p>
           : <><p className="conn-local-note">Refreshing the repository replaces the project scan. Read the local folder, Jira issues and Slack messages again afterward, then rebuild the overview.</p>
-            {!status.data?.token_configured && !status.data?.demo && <p className="conn-local-note">No GitHub token saved. Add one in Account settings for a private repository.</p>}</>}
+            {!status.data?.token_configured && !status.data?.demo && <p className="conn-local-note">No GitHub token saved for your account. Add it in step 1 above for a private repository.</p>}</>}
         {primaryForm && scan && <div className="conn-counts"><span><b>{scan.read}</b> read</span>{scan.reused !== undefined && <span><b>{scan.reused}</b> reused</span>}{scan.fetched !== undefined && <span><b>{scan.fetched}</b> fetched</span>}<span><b>{scan.skipped}</b> skipped</span><span><b>{scan.failed}</b> failed</span><Chip tone={scan.status === 'complete' ? 'ok' : 'quiet'}>{scan.status}</Chip></div>}
         {primaryForm && scan?.error && <Failed message={scan.error} />}
         <ImportCoverage coverage={coverage.data?.sources[connection]} />
       </Card>}
-      <div hidden={connection !== 'jira'}><JiraPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.jira} /></div>
-      <div hidden={connection !== 'slack'}><SlackPanel status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.slack} /></div>
+      <div hidden={connection !== 'jira'}><JiraPanel key={credentialRevision.jira} status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.jira} /></div>
+      <div hidden={connection !== 'slack'}><SlackPanel key={credentialRevision.slack} status={status.data ?? null} onChanged={status.reload} coverage={coverage.data?.sources.slack} /></div>
     </div> : <div className="conn-stack"><ImportHistory /></div>}
   </>
 }
