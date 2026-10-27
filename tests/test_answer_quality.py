@@ -80,6 +80,8 @@ def test_ollama_can_refuse_when_retrieved_excerpts_do_not_answer(monkeypatch):
     from pka import service
     real_client = httpx.AsyncClient
     def handler(request):
+        if request.url.path=='/api/show':
+            return httpx.Response(200,json={'model_info':{'general.architecture':'qwen3'},'details':{'format':'gguf'}})
         body = json.loads(request.content)
         assert 'vector-alpha' not in body['messages'][0]['content']
         return httpx.Response(200, json={'message': {'content': json.dumps({
@@ -112,10 +114,38 @@ def test_focused_schema_cannot_combine_an_answer_with_a_missing_message(question
 
 @pytest.mark.parametrize('question', ['Explain how requests are authenticated',
                                     'Compare the two storage implementations',
+                                    'What is this project? Give all details and an example.',
                                     'How does the pipeline work?'])
 def test_explanations_keep_room_for_partial_evidence_and_details(question):
     assert not focused_question(question)
     assert answer_schema(question)['properties']['statements']['maxItems'] == 6
+
+
+def test_overview_uses_explanation_contract_even_for_a_factual_sounding_topic(monkeypatch):
+    from pka.llm import router
+    captured = []
+    sources = [{'source_id': 'S1', 'path': 'app.py', 'start': 1, 'end': 2,
+                'text': 'def respond(question):\n    return search(question)'}]
+    async def generate(request, validator, **kwargs):
+        captured.append(request)
+        return validator({'statements': [{'text': f'Explanation paragraph {i}.', 'source_ids': ['S1']} for i in range(7)],
+                          'missing_information': 'The excerpts do not show the final response format.'})
+    monkeypatch.setattr(router, 'generate', generate)
+    with router.using(None, 'overview', None):
+        answer = asyncio.run(ollama_answer('What is this project for?', sources))
+    request = captured[0]
+    assert 'anyOf' not in request.schema
+    assert request.schema['properties']['statements']['maxItems'] == 8
+    assert 'project handover topic' in request.messages[0]['content']
+    assert 'illustrative example' in request.messages[0]['content']
+    assert 'A dependency declaration proves only that a package is listed' in request.messages[0]['content']
+    assert 'EACH paragraph in a SEPARATE object' in request.messages[0]['content']
+    assert request.max_output_tokens == 2000
+    assert answer['missing_information']
+    assert len(answer['statements']) == 7
+    assert router.current_feature() == 'ask'
+    with pytest.raises(ValueError):
+        asyncio.run(ollama_answer('What is this project for?', sources))
 
 
 @pytest.mark.parametrize('question', [

@@ -267,6 +267,9 @@ def test_ollama_contract_and_citation_validation(monkeypatch,bad):
     real_client=httpx.AsyncClient
     def handler(request):
         payload=json.loads(request.content)
+        if request.url.path=='/api/show':
+            assert set(payload)=={'model'}
+            return httpx.Response(200,json={'model_info':{'general.architecture':'qwen3'},'details':{'format':'gguf'}})
         assert request.url.host=='127.0.0.1' and request.url.path=='/api/chat'
         assert payload['think'] is False and 'tools' not in payload and 'untrusted' in payload['messages'][0]['content']
         answer={'statements':[{'text':'Sign-in checks the password.','source_ids':['S999' if bad else 'S1']}],'missing_information':'Expiry unknown.'}
@@ -2897,6 +2900,8 @@ def test_a_model_still_loading_is_retried_rather_than_reported_as_broken(monkeyp
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
         async def post(self, url, json=None):
+            if url.endswith('/api/show'):
+                return httpx.Response(200,json={'model_info':{'general.architecture':'qwen3'},'details':{'format':'gguf'}})
             tries.append(url)
             if len(tries) == 1:
                 raise _httpx.ConnectError('connection refused')

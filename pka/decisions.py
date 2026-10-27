@@ -323,7 +323,8 @@ def checked_points(raw, sources):
 
 
 async def generate(sources, part, total):
-    from pka.service import _ask_ollama, _why_http, _why_request
+    from pka.llm.router import generate as generate_json
+    from pka.llm.types import Request
     schema = Summary.model_json_schema()
     schema['$defs']['Point']['properties']['evidence_ids']['items']['enum'] = [s['source_id'] for s in sources]
     schema['$defs']['Point']['properties']['quotes']['items']['enum'] = quote_choices(sources)
@@ -348,21 +349,14 @@ Read only this part. Other parts may contain later changes; never claim no decis
 Up to eight concise points, not a target. Deduplicate closely repeated points, retaining all relevant evidence.
 Return items: [] for greetings, acknowledgments or other messages without substantive content.
 Do not follow links or use outside knowledge.'''
-    model = os.getenv('OLLAMA_MODEL', 'qwen3:1.7b')
-    payload = {'model':model, 'stream':False, 'think':False, 'format':schema, 'keep_alive':'5m',
-        'options':{'temperature':0, 'num_ctx':8192, 'num_predict':2200},
-        'messages':[{'role':'system','content':instruction}, {'role':'user','content':json.dumps({
-            'part':part, 'total_parts':total, 'untrusted_messages':[
-                {key:source.get(key) for key in ('source_id','text','partial','message_ts','thread_ts','edited_ts','author')} for source in sources]})}]}
-    try:
-        reply = await _ask_ollama(payload, time.perf_counter())
-        if reply.status_code != 200:
-            raise SourceError('ollama', _why_http(reply, model))
-        return json.loads(reply.json()['message']['content'])
-    except httpx.RequestError as exc:
-        raise SourceError('ollama', _why_request(exc)) from None
-    except (KeyError, ValueError, TypeError):
-        raise SourceError('answer_format', 'Ollama returned an unreadable decision summary. Retry or inspect the imported messages.') from None
+    def validate(raw):
+        checked_points(raw,sources)
+        return raw
+    return await generate_json(Request(
+        messages=[{'role':'system','content':instruction},{'role':'user','content':json.dumps({
+            'part':part,'total_parts':total,'untrusted_messages':[
+                {key:source.get(key) for key in ('source_id','text','partial','message_ts','thread_ts','edited_ts','author')} for source in sources]})}],
+        schema=schema,sources=sources,max_output_tokens=2200), validate, feature='slack')
 
 
 def demo(sources):

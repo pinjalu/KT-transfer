@@ -151,8 +151,8 @@ def prepare(raw, question, sources):
 
 
 async def generate(question, sources, history=()):
-    from pka.service import _ask_ollama, _why_http, _why_request
-    from pka import applog
+    from pka.llm.router import generate as generate_json
+    from pka.llm.types import Request
     target, _ = count(question)
     instruction = f'''Suggest {target} distinct, useful tests for the user's project question.
 Return the JSON schema, not a summary of the source material. Every test needs:
@@ -190,24 +190,14 @@ grounded in the supplied excerpts, return tests: [] and the specific missing inf
     request = {'question': question, 'untrusted_evidence': evidence_context(sources, choices)}
     if history:
         request['untrusted_conversation'] = list(history)
-    model = os.getenv('OLLAMA_MODEL', 'qwen3:1.7b')
     shape = schema(question, choices)
     if not choices:
         return {'tests': [], 'missing_information': 'The retrieved excerpts contain too little source text to ground a test suggestion.'}
-    payload = {'model': model, 'stream': False, 'think': False, 'format': shape,
-        'keep_alive': '5m', 'options': {'temperature': 0, 'num_ctx': 8192, 'num_predict': min(3200, 800 * target + 400)},
-        'messages': [{'role': 'system', 'content': instruction}, {'role': 'user', 'content': json.dumps(request)}]}
-    started = time.perf_counter()
-    applog.event('ollama.test_plan.request', model=model, sources=len(sources),
-                 payload_bytes=len(json.dumps(payload)), tests=target)
-    try:
-        reply = await _ask_ollama(payload, started)
-        if reply.status_code != 200:
-            raise SourceError('ollama', _why_http(reply, model))
-        result = json.loads(reply.json()['message']['content'])
-        applog.event('ollama.test_plan.response', status=200, secs=round(time.perf_counter()-started, 2))
-        return resolve_evidence(result, choices)
-    except httpx.RequestError as exc:
-        raise SourceError('ollama', _why_request(exc)) from None
-    except (KeyError, ValueError, TypeError):
-        raise SourceError('test_plan_format', 'The model returned an unreadable test plan. Inspect the evidence and try a narrower test request.') from None
+    def validate(raw):
+        resolved = resolve_evidence(raw, choices)
+        prepare(resolved, question, sources)
+        return resolved
+    return await generate_json(Request(
+        messages=[{'role':'system','content':instruction},{'role':'user','content':json.dumps(request)}],
+        schema=shape, sources=sources, max_output_tokens=min(3200,800*target+400),
+        has_history=bool(history)), validate, feature='tests')

@@ -54,6 +54,7 @@ def writable() -> set:
     names = {name for p in registry.PLATFORMS for name in p['credentials']}
     # a token obtained by clicking Connect is stored the same way a typed one is
     names |= {p['oauth']['token_name'] for p in registry.PLATFORMS if p.get('oauth')}
+    names |= {'GEMINI_API_KEY', 'GROQ_API_KEY'}
     return names
 
 
@@ -151,6 +152,8 @@ def save(values: dict) -> list:
     checked = {name: _check(name, str(value)) for name, value in values.items()}
     if not checked:
         return []
+    if {'GEMINI_API_KEY','GROQ_API_KEY'} & checked.keys() and active_vault.get() is None:
+        raise ValueError('AI API keys require the signed-in account\'s secure credential vault.')
     _reject_duplicates(checked)
     if active_vault.get() is not None:
         active_vault.get().save(checked)

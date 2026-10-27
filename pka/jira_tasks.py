@@ -136,8 +136,8 @@ def checked_points(raw, sources, allow_questions=True, metadata=()):
 
 
 async def generate(sources, part, total):
-    # Reuse the app's fixed local transport, timeout and startup retry handling.
-    from pka.service import _ask_ollama, _why_http, _why_request
+    from pka.llm.router import generate as generate_json
+    from pka.llm.types import Request
     schema = Explanation.model_json_schema()
     schema['$defs']['Point']['properties']['source_id']['enum'] = [s['source_id'] for s in sources]
     schema['$defs']['Point']['properties']['quote']['enum'] = quote_choices(sources)
@@ -167,20 +167,13 @@ The summary may mention the same work; still list its concrete details under req
 Avoid duplicate points within each list. Leave a list empty when this excerpt does not support it.
 When total_parts is greater than one, describe only this part and return questions: []:
 missing details may be supplied in another part. Do not declare anything absent from the full task.'''
-    model = os.getenv('OLLAMA_MODEL', 'qwen3:1.7b')
-    payload = {'model':model, 'stream':False, 'think':False, 'format':schema, 'keep_alive':'5m',
-        'options':{'temperature':0, 'num_ctx':8192, 'num_predict':2400},
-        'messages':[{'role':'system','content':instruction}, {'role':'user','content':json.dumps({
-            'part':part, 'total_parts':total, 'untrusted_excerpts':sources})}]}
-    try:
-        reply = await _ask_ollama(payload, time.perf_counter())
-        if reply.status_code != 200:
-            raise SourceError('ollama', _why_http(reply, model))
-        return json.loads(reply.json()['message']['content'])
-    except httpx.RequestError as exc:
-        raise SourceError('ollama', _why_request(exc)) from None
-    except (KeyError, ValueError, TypeError):
-        raise SourceError('answer_format', 'Ollama returned an unreadable task explanation. Retry or inspect the imported excerpts.') from None
+    def validate(raw):
+        checked_points(raw, sources, allow_questions=total==1)
+        return raw
+    return await generate_json(Request(
+        messages=[{'role':'system','content':instruction},{'role':'user','content':json.dumps({
+            'part':part,'total_parts':total,'untrusted_excerpts':sources})}],
+        schema=schema,sources=sources,max_output_tokens=2400), validate, feature='jira')
 
 
 def demo(sources):

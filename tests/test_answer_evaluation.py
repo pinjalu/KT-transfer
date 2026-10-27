@@ -65,6 +65,23 @@ def test_reference_phrase_must_occur_in_statement_citing_reference_excerpt():
     assert row['reference_phrase_checks'][0]['cited_reference_phrase_match'] is False
 
 
+def test_bsa_database_accepts_the_other_verified_reference_locations():
+    from pka.quality import spec_for
+    spec = spec_for('bsa_basics')
+    case = next(c for c in spec['cases'] if c['id'] == 'database')
+    body = answer()
+    body.update(repo=spec['repo'], commit=spec['commit'], statements=[
+        {'text':'The admin panel uses PostgreSQL.', 'source_ids':['S1']},
+        {'text':'The Python database driver is asyncpg.', 'source_ids':['S2']}])
+    body['sources'] = [{'source_id':sid, 'path':path, 'start':start, 'end':end,
+        'url':source_url(spec['repo'],spec['commit'],path,start,end), 'text':'Reference fixture'}
+        for sid,path,start,end in [('S1','README.md',91,138),('S2','admin-panel/database.py',1,52)]]
+    assert evaluation.score_answer(case, body, spec)['status'] == 'passed_checks'
+    # The phrases still must be attached to an accepted source range.
+    body['sources'][0].update(start=150,end=160,url=source_url(spec['repo'],spec['commit'],'README.md',150,160))
+    assert evaluation.score_answer(case, body, spec)['status'] == 'failed_checks'
+
+
 def test_refusal_is_not_credited_for_generation_failure():
     case = {'id': 'reject', 'behavior': 'abstain', 'facts': []}
     body = answer()

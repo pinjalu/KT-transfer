@@ -279,6 +279,8 @@ class Index:
                 floor REAL, probes INTEGER, created TEXT, PRIMARY KEY (scan_id, model));
             CREATE TABLE IF NOT EXISTS overviews (commit_sha TEXT PRIMARY KEY, scan_id INTEGER,
                 payload TEXT, created TEXT);
+            CREATE TABLE IF NOT EXISTS ai_topic_cache (cache_key TEXT, provider TEXT, model TEXT,
+                payload TEXT NOT NULL, created TEXT NOT NULL, PRIMARY KEY(cache_key,provider,model));
             CREATE TABLE IF NOT EXISTS source_imports (name TEXT PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS file_checkpoints (slot TEXT, scope TEXT, path TEXT, sha TEXT,
                 payload TEXT NOT NULL, PRIMARY KEY(slot,path));
@@ -342,7 +344,7 @@ class Index:
                 for key in ('read_at', 'import_report'):
                     (merged.get(name) or {}).pop(key, None)
             db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(merged),))
-            for table in ('chunks','search','answers','overviews','scans','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','file_checkpoints','evaluation_runs'):
+            for table in ('chunks','search','answers','overviews','ai_topic_cache','scans','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','file_checkpoints','evaluation_runs'):
                 db.execute('DELETE FROM '+table)
             db.execute('UPDATE active SET scan_id=NULL')
     @staticmethod
@@ -362,6 +364,7 @@ class Index:
         db.execute('DELETE FROM answers')
         db.execute('DELETE FROM evaluation_runs')
         db.execute('DELETE FROM overviews')
+        db.execute('DELETE FROM ai_topic_cache')
         db.execute('DELETE FROM calibration')
         db.execute('DELETE FROM jira_explanations')
         db.execute('DELETE FROM decision_summaries')
@@ -589,7 +592,7 @@ class Index:
                 db.execute('DELETE FROM file_checkpoints')
             self._advance_revision(db)
             db.execute('UPDATE active SET scan_id=NULL')
-            for table in ('chunks','search','answers','overviews','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','evaluation_runs'):
+            for table in ('chunks','search','answers','overviews','ai_topic_cache','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','evaluation_runs'):
                 db.execute('DELETE FROM '+table)
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             if row:

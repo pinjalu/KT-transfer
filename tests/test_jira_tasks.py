@@ -337,7 +337,7 @@ def test_ollama_prompt_and_schema_restrict_citations_and_request_all_parts(monke
         captured.append(payload)
         return httpx.Response(200, json={'message':{'content':json.dumps(answer({'text':'Selected task text', 'source_id':'J7'}))}})
     monkeypatch.setattr('pka.service._ask_ollama', request)
-    sources = [{'source_id':'J7','text':'Selected task text'}]
+    sources = [{'source_id':'J7','text':'Selected task text','path':'jira/ENG-1','start':1,'end':1}]
     run(jira_tasks.generate(sources, 2, 3))
     payload = captured[0]
     assert payload['format']['$defs']['Point']['properties']['source_id']['enum'] == ['J7']

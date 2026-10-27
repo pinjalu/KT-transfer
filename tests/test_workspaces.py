@@ -110,6 +110,22 @@ def test_member_does_not_inherit_host_credentials_and_logs(team):
     assert owner.get('/api/import-history/scan-0001-complete-secret.log').status_code == 200
 
 
+def test_member_saves_all_source_tokens_only_in_their_own_workspace(team):
+    _, (owner,alice,bob), _, _ = team
+    values={'GITHUB_TOKEN':'alice-github-fixture','JIRA_SITE':'https://example.atlassian.net',
+            'JIRA_EMAIL':'alice@example.test','JIRA_API_TOKEN':'alice-jira-fixture',
+            'SLACK_USER_TOKEN':'alice-slack-fixture'}
+    response=alice.post('/api/credentials',json={'values':values})
+    assert response.status_code==200
+    for value in values.values(): assert value not in response.text
+    assert all(response.json()['status'][name] is True for name in values)
+    for client in (owner,bob):
+        status=client.get('/api/platforms').json()
+        assert status['credentials']['JIRA_API_TOKEN'] is False
+        assert status['credentials']['SLACK_USER_TOKEN'] is False
+        assert not any(value in str(status) for value in values.values())
+
+
 def test_existing_test_definitions_stay_inside_the_authenticated_workspace(team):
     app, (owner, alice, bob), _, _ = team
     for ident, client, marker in [(1, owner, 'owner-restricted'), (2, alice, 'alice-restricted')]:

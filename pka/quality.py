@@ -1,10 +1,10 @@
 """Saved answer evaluations, scoped to one workspace and exact source revision."""
 import json
-import os
 
 from pka import answer_evaluation as evaluation
 from pka.config import ROOT, now
 from pka.connectors.base import SourceError
+from pka.llm.config import PROMPT_VERSION
 
 
 SETS = {
@@ -120,22 +120,30 @@ async def run(service, set_id):
     service.begin_work()
     spec = validate_target(service, set_id)
     scan, revision = service.index.active_scan(), service.index.revision
+    routing_signature = service.llm.signature()
     report = {'task_id': '5.2', 'version': 1, 'set_id': set_id, 'title': SETS[set_id][0],
               'started_at': now(), 'repo': spec['repo'], 'commit': spec['commit'],
               'dataset_hash': evaluation.digest(spec), 'cases_planned': len(spec['cases']),
               'label_provenance': spec.get('label_provenance', 'unspecified'),
-              'model': os.getenv('OLLAMA_MODEL', 'qwen3:1.7b'), 'scan_id': scan['id'], 'scan_status': scan['status'],
+              'model': 'No generation recorded yet', 'routing_signature':routing_signature,'prompt_version':PROMPT_VERSION,
+              'routing_config':service.llm.store.config().model_dump(),
+              'scan_id': scan['id'], 'scan_status': scan['status'],
               'knowledge_revision': revision, 'results': []}
     run_id = service.job['id']
     save(service.index, run_id, report)
     for case in spec['cases']:
         service.check_cancelled()
+        if service.llm.signature() != routing_signature:
+            raise SourceError('stale','AI settings changed during evaluation. Start a fresh comparison run.')
         service.evaluation_progress = {'phase': 'Checking ' + case['id'], 'done': len(report['results']), 'total': len(spec['cases'])}
         answer = await service.ask(case['question'])
         if answer.get('knowledge_revision') != revision:
             raise SourceError('stale', 'Sources changed during this evaluation. Run the questions again.')
         row = evaluation.score_answer(case, answer, spec)
         report['results'].append(row)
+        models = sorted({r['generation']['provider']+'/'+r['generation']['model'] for r in report['results']
+                         if r.get('generation',{}).get('model')})
+        report['model'] = ', '.join(models) or 'No model used / metadata unavailable'
         save(service.index, run_id, report)
         service.check_cancelled()
         if row['generation_error'] or not row['scope_matches']:
@@ -144,3 +152,36 @@ async def run(service, set_id):
     report['finished_at'] = now()
     save(service.index, run_id, report)
     return report
+
+
+def comparison(left, right):
+    """Reject mismatched conditions before presenting provider comparisons."""
+    reasons = []
+    for key in ('dataset_hash','repo','commit','scan_id','knowledge_revision','prompt_version'):
+        if left.get(key) is None or left.get(key) != right.get(key): reasons.append(key+' differs or was not recorded')
+    for report in (left,right):
+        if not report.get('run_complete'): reasons.append('Both runs must finish every case')
+        config = report.get('routing_config',{})
+        if config.get('mode') != 'manual' or config.get('manual_fallback'):
+            reasons.append('Use manual mode with fallback disabled for controlled comparisons')
+    left_sources = [(r['case_id'],r.get('source_digest')) for r in left.get('results',[])]
+    right_sources = [(r['case_id'],r.get('source_digest')) for r in right.get('results',[])]
+    if left_sources != right_sources or any(not digest for _,digest in left_sources):
+        reasons.append('Questions or retrieved excerpts differ or were not recorded')
+    return {'comparable':not reasons,'reasons':list(dict.fromkeys(reasons)),
+            'runs':[{'id':r.get('id'),'model':r.get('model'),'performance':r.get('performance'),
+                     'summary':r.get('summary')} for r in (left,right)],
+            'note':'Matched conditions do not prove accuracy. Human correctness and evidence-sufficiency ratings are required; automatic checks are reported separately.'}
+
+
+async def compare(service,left_id,right_id):
+    if left_id == right_id: raise SourceError('evaluation','Choose two different evaluation runs.')
+    scan = service.index.active_scan()
+    if not scan: raise SourceError('scan','Select and scan a project first.')
+    checked = await service.check_external_access(scan)
+    left,right = runs(service.index,left_id),runs(service.index,right_id)
+    if not left or not right: raise SourceError('evaluation','Both saved evaluations must still be available.')
+    if any(r[0]['knowledge_revision'] != service.index.revision for r in (left,right)):
+        raise SourceError('stale','These evaluations belong to older sources.')
+    service.ensure_current(checked)
+    return comparison(left[0],right[0])

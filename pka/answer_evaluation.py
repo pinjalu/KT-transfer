@@ -121,6 +121,7 @@ def score_answer(case, answer, spec):
     passed = scope_ok and not error and behavior and not (duplicate_ids or invalid or uncited or bad_links)
     passed = passed and all(c['cited_reference_phrase_match'] for c in checks)
     return {'case_id': case['id'], 'behavior': case['behavior'], 'response_hash': digest(answer),
+            'source_digest':digest(sources),
             'answer_id': answer.get('answer_id'), 'status': 'passed_checks' if passed else 'failed_checks',
             'scope_matches': scope_ok, 'generation_error': error, 'behavior_check': behavior,
             'retrieval': {'reference_excerpt_found': retrieved, 'sources_returned': len(sources)},
@@ -129,6 +130,7 @@ def score_answer(case, answer, spec):
                           'external_links_not_checked': len(sources) - len(github)},
             'reference_phrase_checks': checks, 'statements': len(statements),
             'missing_information_present': missing, 'elapsed_seconds': answer.get('elapsed_seconds'),
+            'generation': answer.get('generation') or {},
             'human_review': None}
 
 
@@ -154,6 +156,19 @@ def summarize(report):
     report['run_complete'] = len(rows) == report['cases_planned']
     report['automatic_checks_passed'] = report['run_complete'] and all(r['status'] == 'passed_checks' for r in rows)
     report['quality_acceptance'] = 'human_review_complete' if report['summary']['human_review_complete'] else 'pending_human_review'
+    generations = [r['generation'] for r in rows if r.get('generation')]
+    attempts = [a for g in generations for a in g.get('attempts',[]) if a.get('status') != 'skipped']
+    elapsed = [r['elapsed_seconds'] for r in rows if isinstance(r.get('elapsed_seconds'),(int,float))]
+    report['performance'] = {
+        'answers_with_metadata':len(generations), 'generation_attempts':len(attempts),
+        'average_response_seconds':round(sum(elapsed)/len(elapsed),3) if elapsed else None,
+        'timeout_rate':rate(sum(a.get('error')=='timeout' for a in attempts),len(attempts)),
+        'validated_response_rate':rate(sum(a.get('status')=='succeeded' for a in attempts),len(attempts)),
+        'invalid_response_attempts':sum(a.get('error') in {'invalid_response','incomplete_response'} for a in attempts),
+        'input_tokens':sum(a.get('input_tokens') or 0 for a in attempts),
+        'output_tokens':sum(a.get('output_tokens') or 0 for a in attempts),
+        'usage_reported_answers':sum(g.get('usage_source')=='provider' for g in generations),
+        'note':'These are transport, schema and evidence checks, not factual accuracy. Missing usage is not zero consumption.'}
     return report
 
 

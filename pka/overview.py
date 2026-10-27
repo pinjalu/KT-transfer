@@ -44,7 +44,7 @@ TOPICS = [
             'language runtime build tool compiler bundler',
         ],
         'test_cap': 0,
-        'ask': 'Explain what the important technologies here are used FOR in this project. The reader already has the exact dependency list with versions, so never recite names and numbers. For each one that matters, say in one sentence what would break without it and which part of this project leans on it.',
+        'ask': 'Explain what the important technologies here are used FOR in this project. The reader already has the exact dependency list with versions, so never just recite names and numbers. For each important technology, explain its role, which part uses it and how it fits with the other components. Include a simple example of a supported use where helpful.',
     },
     {
         'key': 'architecture',

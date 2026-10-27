@@ -2,7 +2,7 @@
   "version": 1,
   "repo": "pinjalu/BSA_chatbot",
   "commit": "0cc9ce981956e6e3c352836e8112a06700360947",
-  "label_provenance": "Agent-authored references checked against indexed source lines on 22 October 2026. Human review pending. These are a small baseline, not a production accuracy benchmark.",
+  "label_provenance": "Agent-authored references checked against indexed source lines on 22 October 2026. Additional database references verified on 27 October 2026. Human review pending. These are a small baseline, not a production accuracy benchmark.",
   "cases": [
     {
       "id": "purpose",
@@ -14,7 +14,7 @@
       "id": "database",
       "question": "Which database and Python database driver does the admin panel use?",
       "behavior": "answer",
-      "facts": [{"id": "postgres_asyncpg", "description": "PostgreSQL with asyncpg.", "phrases": [["PostgreSQL", "Postgres"], ["asyncpg"]], "references": [{"path": "admin-panel/database.py", "start": 1, "end": 20}, {"path": "README.md", "start": 7, "end": 13}]}]
+      "facts": [{"id": "postgres_asyncpg", "description": "PostgreSQL with asyncpg.", "phrases": [["PostgreSQL", "Postgres"], ["asyncpg"]], "references": [{"path": "admin-panel/database.py", "start": 1, "end": 20}, {"path": "README.md", "start": 7, "end": 13}, {"path": "README.md", "start": 132, "end": 132}, {"path": "admin-panel/main.py", "start": 6, "end": 6}]}]
     },
     {
       "id": "rag_startup",

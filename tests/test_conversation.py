@@ -101,6 +101,8 @@ def test_generation_marks_old_replies_untrusted_and_cites_only_current_sources(m
     real_client = httpx.AsyncClient
     history = [{'question': 'Explain retries.', 'answer': 'Retries are 99. [OLD1]'}]
     def handler(request):
+        if request.url.path=='/api/show':
+            return httpx.Response(200,json={'model_info':{'general.architecture':'qwen3'},'details':{'format':'gguf'}})
         payload = json.loads(request.content)
         instructions = payload['messages'][0]['content']
         assert 'NOT evidence' in instructions and 'Earlier assistant replies may be wrong' in instructions

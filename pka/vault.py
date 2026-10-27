@@ -81,9 +81,13 @@ class Vault:
         from io import StringIO
         env_path = Path(env_path)
         original = env_path.read_bytes() if env_path.exists() else b''
+        # Saved account credentials are authoritative. A stale parent-process
+        # environment must never rotate a user's key on restart (including an
+        # explicitly cleared key). Migration only fills names not yet stored.
+        existing = self.read()
         values = dotenv_values(env_path) if env_path.exists() else {}
         values = {name: str(values.get(name) or os.getenv(name, '')) for name in names
-                  if values.get(name) or os.getenv(name)}
+                  if name not in existing and (values.get(name) or os.getenv(name))}
         if values:
             self.save(values)
         elif not self.path.exists():

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
-from pka import applog
+from pka import applog, monitoring
 from pka.config import ROOT, KEEP_LOGS, LIMITS, data_dir, log_dir, validate_selection, project_name, selected_source
 from pka import credentials, oauth
 from pka.auth import AuthStore, digest
@@ -20,11 +20,12 @@ from pka import auth_web
 from pka.connectors import registry
 from pka.connectors.base import SourceError
 from pka.connectors.local import is_local, local_selection
-from pka import facts, features, coverage, quality, existing_tests
+from pka import facts, features, coverage, quality, existing_tests, feature_kt
 from pka.index import Index
 from pka.overview import reading_order, topics_for
 from pka.service import Service
 from pka.conversation import Conversation
+from pka.deployment import Hosting
 
 class Selection(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -61,6 +62,11 @@ class EvaluationStart(BaseModel):
     model_config = ConfigDict(extra='forbid')
     set_id: str = Field(min_length=1, max_length=80)
 
+class EvaluationCompare(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    left: int = Field(gt=0)
+    right: int = Field(gt=0)
+
 class EvaluationReview(BaseModel):
     model_config = ConfigDict(extra='forbid')
     dataset_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
@@ -70,7 +76,8 @@ class EvaluationReview(BaseModel):
 
 
 def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=None,
-               credential_store=None, _workspace_id=1):
+               credential_store=None, _workspace_id=1, hosting=None):
+    hosting = hosting or Hosting()
     # A listing is fetched from the platform and then reused for a short while. Without this the
     # browser's status poll asks Slack and Jira for the same list every few seconds, which earns
     # a rate limit and makes the page look broken.
@@ -140,7 +147,12 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
     app = FastAPI(title='Project Knowledge Assistant',docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
     app.state.service = service
     auth = auth_store or AuthStore(index.path)
+    from pka.llm.store import Store as LLMStore
+    service.llm.ledger = LLMStore(auth.path)
+    from pka.llm.api import install as install_ai
+    install_ai(app, service)
     app.state.auth = auth
+    app.state.hosting = hosting
     auth_web.install(app, auth)
     if credential_store is None and db_path is None and not demo:
         from pka.vault import Vault
@@ -150,10 +162,9 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
     callbacks = {p['oauth']['redirect_path'] for p in registry.PLATFORMS if p.get('oauth')}
 
     async def local_only(request: Request, call_next):
-        host = request.headers.get('host','').split(':')[0].lower()
         origin = request.headers.get('origin')
-        if host not in {'localhost','127.0.0.1'}:
-            return JSONResponse({'detail':'Local host required.'},status_code=403)
+        if len(request.headers.getlist('host')) != 1 or not hosting.allows(str(request.base_url)):
+            return JSONResponse({'detail':'Configured host and transport required.'},status_code=403)
         if origin and origin != str(request.base_url).rstrip('/'):
             return JSONResponse({'detail':'Same-origin requests only.'},status_code=403)
         # An OAuth redirect comes back from the platform, so it is cross-site by nature and
@@ -192,7 +203,6 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                 return JSONResponse({'detail':'Your session ended. Sign in again.', 'code':'session_required'}, status_code=401)
         return result
 
-    @app.middleware('http')
     async def security_headers(request: Request, call_next):
         result = await local_only(request, call_next)
         if request.url.path.startswith('/api/') and (
@@ -208,7 +218,38 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         result.headers['X-Content-Type-Options'] = 'nosniff'
         result.headers['Referrer-Policy'] = 'no-referrer'
         result.headers['Cache-Control'] = 'no-store'
+        if request.url.scheme == 'https':
+            result.headers['Strict-Transport-Security'] = 'max-age=86400'
         return result
+
+    @app.middleware('http')
+    async def monitored_request(request: Request, call_next):
+        started, status = time.perf_counter(), 500
+        with monitoring.request_scope(index.path):
+            try:
+                result = await security_headers(request, call_next)
+                status = result.status_code
+                return result
+            finally:
+                # Route names come from application code, never the URL/query/body.
+                route = getattr(request.scope.get('route'), 'name', None) or 'unmatched_or_denied'
+                actor = (getattr(request.state, 'owner', None) or {}).get('id')
+                monitoring.event('http.completed', method=request.method, route=route,
+                    http_status=status, actor_id=actor,
+                    elapsed_seconds=round(time.perf_counter()-started, 3))
+
+    @app.get('/healthz')
+    async def health():
+        # Reachability and local storage readiness only. No account, source,
+        # job or model details are disclosed to an unauthenticated monitor.
+        try:
+            with index.db() as db:
+                db.execute('SELECT revision FROM knowledge_state WHERE id=1').fetchone()
+            with auth.db() as db:
+                db.execute('SELECT count(*) FROM owner').fetchone()
+        except Exception:
+            return JSONResponse({'status': 'unavailable'}, status_code=503)
+        return {'status': 'ok'}
 
     @app.exception_handler(SourceError)
     async def source_error(request, exc):
@@ -706,6 +747,7 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
             # being offered as files to read, the stale list kept offering them. Derived at the
             # moment it is asked for instead, which is one query and a sort.
             cached = {**cached,
+                      'routing_changed':bool(cached.get('routing_signature') and cached['routing_signature'] != service.llm.cache_signature()),
                       'reading_order':reading_order(index.code_paths(scan['id']),
                                                     repo='' if demo else scan['repo'],
                                                     commit='' if demo else scan['commit'])}
@@ -743,6 +785,11 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
     async def quality_start(item: EvaluationStart):
         quality_selected()
         return {'started': True, 'job_id': service.start_job('evaluation', target=item.set_id)}
+
+    @app.post('/api/quality/compare')
+    async def quality_compare(item: EvaluationCompare):
+        quality_selected()
+        return await quality.compare(service,item.left,item.right)
 
     @app.get('/api/quality/runs/{run_id}/cases/{case_id}')
     async def quality_case(run_id: int, case_id: str):
@@ -835,7 +882,15 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         found = next((f for f in payload['features'] if f['id'] == feature_id),None)
         if not found:
             raise HTTPException(404,'No feature by that name was derived from this scan.')
-        return features.detail(found)
+        return {**features.detail(found), 'walkthrough_sections': [
+            {'key':item['key'], 'title':item['title']} for item in feature_kt.SECTIONS]}
+
+    @app.post('/api/features/{feature_id}/walkthrough/{section_key}')
+    async def feature_walkthrough(feature_id: str, section_key: str):
+        idle()
+        if not chosen['this_run']:
+            raise HTTPException(409, 'Choose your saved project first.')
+        return await feature_kt.build(service, feature_id, section_key)
 
     @app.post('/api/feedback')
     async def feedback(item: Feedback):
@@ -859,7 +914,7 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         app.state.workspaces = children
         def member_app(path, vault):
             return create_app(demo, path, connector_factory, auth_store=auth,
-                              credential_store=vault, _workspace_id=2)
+                              credential_store=vault, _workspace_id=2, hosting=hosting)
         app.add_middleware(WorkspaceDispatch, store=auth, root_path=index.path,
                            owner_vault=credential_store, children=children, factory=member_app)
     return app
