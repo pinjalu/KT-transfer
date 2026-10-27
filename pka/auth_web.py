@@ -27,7 +27,8 @@ def clear_cookie(response, request, store):
 
 def signed_in(request, store, value):
     response = JSONResponse({'authenticated':True})
-    # HTTP is supported ONLY on loopback. HTTPS gets Secure; LAN/proxy deployment is not supported.
+    # HTTP is supported only on loopback. Explicit private hosting requires direct
+    # TLS and receives Secure cookies; forwarded headers remain disabled.
     response.set_cookie(cookie_name(store), value, httponly=True, samesite='lax',
                         secure=request.url.scheme == 'https', path='/')
     return response
