@@ -61,3 +61,6 @@
 @media (max-width:1150px) { .feature-layout { grid-template-columns:235px minmax(0,1fr); gap:16px; } .feature-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .feature-files { grid-template-columns:minmax(0,1fr); } .feature-tabs { gap:16px; } }
 @media (max-width:900px) { .feature-layout { grid-template-columns:minmax(0,1fr); } .feature-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); max-height:240px; } .feature-hero,.feature-panel { padding:20px; } }
 @media (max-width:480px) { .feature-list { grid-template-columns:minmax(0,1fr); } .feature-metrics { gap:8px; } }
+.feature-kt-section { border-top: 1px solid var(--border); padding: 18px 0; }
+.feature-kt-section details { margin-top: 10px; }
+.feature-kt-section pre { max-height: 340px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

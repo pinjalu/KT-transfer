@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Confidence, Empty, Failed, Loading, NoProject, PageHead, SourceLink } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { FeatureWalkthrough } from '../components/FeatureWalkthrough'
 import { sourcePath } from '../lib/answer'
 import { useApi } from '../lib/useApi'
 import { useStatus } from '../lib/useStatus'
@@ -9,7 +10,7 @@ import { useRememberedParam } from '../lib/pageState'
 import type { FeatureDetail, FeatureList, FeatureSummary } from '../lib/features'
 import './features.css'
 
-const VIEWS = ['Overview', 'Code flow', 'APIs and data', 'Tests', 'Known problems'] as const
+const VIEWS = ['Overview', 'Code flow', 'APIs and data', 'Tests', 'Known problems', 'KT walkthrough'] as const
 type View = typeof VIEWS[number]
 
 function Feature({ summary, revision }: { summary: FeatureSummary; revision: number }) {
@@ -53,9 +54,11 @@ function Feature({ summary, revision }: { summary: FeatureSummary; revision: num
           }}>{name}</button>)}
       </div>
       <div id="feature-panel" role="tabpanel" aria-labelledby={`feature-tab-${VIEWS.indexOf(view)}`} tabIndex={0} className="feature-panel">
+        <div hidden={view !== 'KT walkthrough'}><FeatureWalkthrough key={`${body.id}:${revision}`} featureId={body.id}
+          sections={body.walkthrough_sections ?? []} revision={revision} /></div>
         {view === 'Overview' && <>
           <div className="feature-section-heading"><h3>Start with the code</h3><span>{body.related.length} file{body.related.length === 1 ? '' : 's'}</span></div>
-          <p className="feature-muted">Features are grouped by route address and followed through imports up to two steps away. Shared files can appear in several features. A business-purpose explanation has not been generated.</p>
+          <p className="feature-muted">Features are grouped by route address and followed through imports up to two steps away. Shared files can appear in several features. Open KT walkthrough to build evidence-linked explanations.</p>
           <div className="feature-files">{body.related.map(file => <div className="feature-file" key={file.path}>
             <Icon name="doc" size={18} /><div><strong>{file.name}</strong><SourceLink {...file} /></div>
           </div>)}</div>

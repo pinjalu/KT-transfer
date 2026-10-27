@@ -9,6 +9,7 @@ export type FeatureList = {
 }
 export type FeatureDetail = {
   id: string; name: string; ticket_name: string
+  walkthrough_sections?: { key: string; title: string }[]
   flow: { title: string; steps: { n: number; label: string; plain: string; component: Evidence & { kind: string; name: string } }[] }
   apis_and_data: {
     routes: { method: string; path: string; declared_at: Evidence }[]
