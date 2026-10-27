@@ -12,6 +12,7 @@ counts, HTTP status codes, rate allowances and timings, is recorded in full.
 from logging.handlers import RotatingFileHandler
 import logging
 import os
+from pka import monitoring
 
 LOGGER = logging.getLogger('pka')
 LOGGER.addHandler(logging.NullHandler())
@@ -52,19 +53,23 @@ def _format(name: str, fields: dict) -> str:
 
 def event(name: str, **fields) -> None:
     LOGGER.info(_format(name, fields))
+    monitoring.event(name, **fields)
 
 
 def warn(name: str, **fields) -> None:
     LOGGER.warning(_format(name, fields))
+    monitoring.event(name, level='warning', **fields)
 
 
 def failure(name: str, **fields) -> None:
     LOGGER.error(_format(name, fields))
+    monitoring.event(name, level='error', **fields)
 
 
 def exception(name: str, exc: BaseException, **fields) -> None:
     """Record an unexpected error with its traceback, which is ours and holds no user data."""
     LOGGER.error(_format(name, {**fields, 'type': type(exc).__name__, 'msg': exc}), exc_info=exc)
+    monitoring.event(name, level='error', **fields)
 
 
 def question_fields(question: str) -> dict:
