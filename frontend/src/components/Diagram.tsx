@@ -8,6 +8,7 @@
  *
  * Columns and rows are decided on the server. Only pixels are decided here.
  */
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 
 export type DiagramNode = {
@@ -162,13 +163,17 @@ function Graph({ d, selected, onPick }:
  */
 function Bands({ d, selected, onPick }:
   { d: DiagramPayload; selected: string; onPick?: (n: DiagramNode) => void }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   // A band names no members. It carries a column, and the files in it are the nodes sitting
   // in that column, which is the same arrangement the graph layout uses.
   const inColumn = (c: number) => d.nodes.filter((n) => n.column === c)
   return (
     <div className="dg-bands">
       {(d.bands ?? []).map((band) => {
-        const members = inColumn(band.column)
+        const members = inColumn(band.column).filter((item) => item.kind !== 'more')
+        const oldCount = inColumn(band.column).find((item) => item.kind === 'more')
+        const hiddenCount = Math.max(0, members.length - 7)
+        const open = !!expanded[band.key]
         return (
           <div className="dg-band" key={band.key}>
             <div className="dg-band-head">
@@ -180,7 +185,7 @@ function Bands({ d, selected, onPick }:
               <span className="badge">{band.count} {band.count === 1 ? 'file' : 'files'}</span>
             </div>
             <div className="dg-band-boxes">
-              {members.map((item) => (
+              {(open ? members : members.slice(0, 7)).map((item) => (
                 <button type="button" key={item.id}
                         className={'dg-band-box' + (selected === item.path ? ' dg-band-box-on' : '')}
                         onClick={onPick && item.path ? () => onPick(item) : undefined}
@@ -189,9 +194,16 @@ function Bands({ d, selected, onPick }:
                   {item.sublabel && <span className="dg-band-box-sub">{item.sublabel}</span>}
                 </button>
               ))}
-              {/* No "and N more" is added here. The server already puts a node of kind `more`
-                  in the column when it caps one, and counting the remainder again from this
-                  side double-counted that node and printed a second, different number. */}
+              {hiddenCount > 0 && <button type="button" className="dg-band-box dg-band-more"
+                aria-expanded={open}
+                aria-label={open ? `Show fewer files in ${band.title}` : `Show ${hiddenCount} more files in ${band.title}`}
+                onClick={() => setExpanded((current) => ({ ...current, [band.key]: !current[band.key] }))}>
+                {open ? 'Show fewer' : `and ${hiddenCount} more`}
+              </button>}
+              {oldCount && !hiddenCount && <span className="dg-band-box dg-band-more dg-band-more-static"
+                title="This saved diagram does not include the remaining file names. Refresh architecture to load them.">
+                {oldCount.label}
+              </span>}
             </div>
           </div>
         )

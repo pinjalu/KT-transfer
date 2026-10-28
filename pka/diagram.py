@@ -305,8 +305,8 @@ def _node(ident, label, path='', line=0, url='', sublabel='', kind='file'):
             'line': line, 'url': url, 'kind': kind, 'column': 0, 'row': 0}
 
 
-def _place(nodes, per_column=MAX_PER_COLUMN):
-    """Assign a row inside each column, keeping a column from growing without limit."""
+def _place(nodes):
+    """Assign a stable row inside each column."""
     counts = {}
     for item in nodes:
         column = item['column']
@@ -319,7 +319,8 @@ def stack_bands(files: dict, route_paths: set, link) -> dict:
     """The project as a stack of layers, read top to bottom.
 
     This is the diagram to look at first and the only one that is useful on a project with no
-    internal imports at all, which is most small projects and every single-file one.
+    internal imports at all, which is most small projects and every single-file one. Send
+    every file in each layer; the browser initially shows seven and can reveal the rest.
     """
     grouped = {}
     for path, lines in files.items():
@@ -332,14 +333,10 @@ def stack_bands(files: dict, route_paths: set, link) -> dict:
             continue
         bands.append({'key': key, 'title': title, 'plain': plain, 'column': position,
                       'count': len(held)})
-        for path in held[:MAX_PER_COLUMN]:
+        for path in held:
             nodes.append(_node('b:' + path, PurePosixPath(path).name, path, 1, link(path, 1),
                                str(PurePosixPath(path).parent) if '/' in path else '',
                                'file'))
-            nodes[-1]['column'] = position
-        if len(held) > MAX_PER_COLUMN:
-            nodes.append(_node('b:more:' + key,
-                               f'and {len(held) - MAX_PER_COLUMN} more', kind='more'))
             nodes[-1]['column'] = position
     if not bands:
         return {}

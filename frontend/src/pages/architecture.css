@@ -91,6 +91,7 @@
   .arch-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* The server's "and N more" node is a count, not a file, so it is not clickable-looking. */
-.dg-band-box.dg-band-more { border-style: dashed; cursor: default; color: var(--ink-dim); }
+.dg-band-box.dg-band-more { border-style: dashed; color: var(--accent-deep); font-weight: 650; }
+.dg-band-box.dg-band-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dg-band-box.dg-band-more-static { cursor: default; color: var(--ink-dim); }
 .arch-systems { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }

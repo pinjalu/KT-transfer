@@ -1870,6 +1870,19 @@ def test_a_file_is_banded_by_what_it_is(index):
         assert where[path] == 'support', path + ' is read to run the project, not to understand it'
 
 
+def test_stack_layers_send_every_file_for_expansion(index):
+    from pka.diagram import build, MAX_PER_COLUMN
+    from pka.facts import derive
+    files = {f'frontend/style{n}.css': f'/* style {n} */\n' for n in range(MAX_PER_COLUMN + 5)}
+    scan = diagram_index(index, files)
+    stack = next(d for d in build(index, scan, derive(index, scan)) if d['key'] == 'stack')
+    interface = next(b for b in stack['bands'] if b['key'] == 'interface')
+    members = [n for n in stack['nodes'] if n['column'] == interface['column']]
+    assert interface['count'] == len(files)
+    assert {n['path'] for n in members} == set(files)
+    assert all(n['kind'] == 'file' for n in members)
+
+
 def test_the_request_journey_only_draws_steps_it_can_prove(index):
     from pka.diagram import build
     from pka.facts import derive
