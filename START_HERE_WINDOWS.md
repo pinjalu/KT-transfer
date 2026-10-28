@@ -42,6 +42,31 @@ starting live mode on the same port.
 
 ## Configure live sources
 
+### Use a project ZIP
+
+In **Connections**, choose **ZIP file**, select a `.zip` from your computer, then
+click **Upload and read files**. When the scan finishes, use **Project overview**,
+**Ask assistant**, **Architecture**, **Feature explorer** and **Existing tests** as
+you would for a GitHub project. Citations open the saved source lines in the app.
+No GitHub token is required. Owner and member accounts can each upload a ZIP;
+uploads belong to the signed-in account, including when using another PC.
+
+Upload a new ZIP when the project changes. It replaces the current project scan
+and clears previous generated results. After an app restart, choose **Use saved
+ZIP** to reopen the retained snapshot without uploading again. ZIP source content
+uses the local model, as local folders do; GitHub cloud approval does not cover it.
+
+Limits: 25 MB compressed, 100 MB declared expanded size, 20,000 archive entries,
+500 supported text files, 256 KB per file and 5 MB retained text. A single outer
+folder (such as a GitHub ZIP's `repo-main/`) is removed. Secret filenames,
+dependencies, generated files, binaries and unsupported formats are excluded;
+**Import coverage** reports upload exclusions. Password-protected archives,
+links, conflicting filenames and unsafe paths are rejected. Project code is
+never installed or executed. Keep your original ZIP: database-only backups do
+not include the managed source snapshots in `index.uploads/`.
+
+### Configure source accounts
+
 Create .env only if it does not already exist:
 
 ```powershell
@@ -98,6 +123,11 @@ failed channels or missing replies. Credentials being present does not prove an 
 Older imports can show **Coverage unknown** until another read records coverage.
 
 ## Refresh and background work
+
+After an application update, stop the server with Ctrl+C and start it again using your
+usual command. Refresh the browser with Ctrl+F5. If Project overview says **Explanation
+update available**, select **Update saved explanation**. Restarting or refreshing alone
+does not rewrite the saved overview; the update rebuilds it from the already-read files.
 
 **Refresh repository** rereads code and clears saved Jira/Slack content and derived answers.
 Then use **Read issues**, **Read messages**, and **Build overview**. Reading an external source

@@ -5,21 +5,26 @@ Jira or Slack form. Changing this dropdown only changes the visible form. It doe
 disconnect a source or change the saved project. Saved-source badges show which imports
 are available. Forms retain their drafts while switching sources on the page.
 
-To add local code to an existing GitHub project:
+By default, saving a different folder or repository starts a new project. The previous
+project's indexed files, source selections, overview and conversation are cleared from
+the active workspace. Reconnecting the same project keeps its saved snapshot.
+
+To add local code to an existing GitHub project instead:
 
 1. Sign in as the installation owner and open Connections.
-2. Select **Local folder**.
+2. Read the GitHub repository, then select **Local folder**.
 3. Paste an absolute folder path such as `D:\Projects\shop`, or a link such as
    `file:///D:/Projects/shop`. Spaces in a file link may be encoded as `%20`.
-4. Select **Save and read files**. The folder is added to the existing code index.
+4. Check **Add this folder to the current project**, then select **Save and read files**.
+   The folder is added to the existing code index, and the project keeps its GitHub name.
 5. Build the Project overview or ask a question. Relevant evidence can come from
    GitHub, the local folder, Jira and Slack, with separate citations.
 
 Adding or rereading an additional local folder retains the existing GitHub scan, Jira
 issues and Slack messages. Derived answers and overviews are invalidated because their
 evidence changed. A local folder can also be the initial code source without GitHub.
-If GitHub is added later, its repository becomes the primary scan and the local folder
-selection is retained; read that folder again to include it beside the GitHub snapshot.
+Selecting GitHub later starts that repository's project. To include the folder too,
+read the repository and then explicitly add the folder as described above.
 One GitHub repository and one local folder are supported per workspace.
 
 The folder must be on the computer running KT Assistant. It need not be a Git clone.

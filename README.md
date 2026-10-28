@@ -1,6 +1,6 @@
 # Project Knowledge Assistant — local prototype
 
-Understand a project with a local assistant. Connect a GitHub repository, add a local project folder, read relevant Jira issues and Slack messages, and inspect the excerpts behind each answer. The Connections dropdown opens one source's form at a time; all saved sources can be used together. See [local folder setup and limits](docs/LOCAL_REPOSITORIES.md).
+Understand a project with a local assistant. Choose a GitHub repository, local project folder or ZIP, read relevant Jira issues and Slack messages, and inspect the excerpts behind each answer. Saving a different repository or folder starts a new project and clears the previous project's imported content, overview and conversation. To combine a folder with an already-read GitHub project, explicitly select **Add this folder to the current project**. See [local folder setup and limits](docs/LOCAL_REPOSITORIES.md).
 
 Private team release work and test results are in [TEAM_RELEASE.md](docs/TEAM_RELEASE.md).
 For the selected office Windows host, follow [TEAM_OFFICE_SETUP.md](docs/TEAM_OFFICE_SETUP.md).
@@ -10,6 +10,27 @@ saved refresh times for all sources. Generated explanations still require review
 The app reads one GitHub repository, one selected Jira project and selected Slack channels through a read-only MCP server. It provides project overviews, source-backed Ollama answers, selected Jira task explanations and related source links, Slack discussion summaries with evidence and status labels, derived architecture views, background jobs and import coverage. The backend chooses what to read; the model does not choose tools. Requirement implementation checks and other planned screens remain unfinished. See [Jira task explanations](docs/TASK_6_2.md), [related sources](docs/TASK_6_3.md), [Team decisions](docs/TASK_6_4.md), [baseline acceptance](docs/TASK_5_8.md) and [the roadmap](docs/ROADMAP.md).
 
 Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windows PowerShell in this project's folder. Python 3.10 or newer is required. Current target-machine checks are recorded in [task 5.8](docs/TASK_5_8.md); older platform checks remain in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+
+Have a project ZIP instead of a repository link? Choose **Connections → ZIP file →
+Upload and read files**. The uploaded snapshot supports the same overview, source
+citations and assistant workflow; see [ZIP setup and limits](START_HERE_WINDOWS.md#use-a-project-zip).
+
+All project sources share the same plain-language explanation style. Newly generated
+answers, overview topics, feature explanations, Jira explanations, team summaries and
+suggested tests use short sentences, explain technical terms, and keep exact commands
+and source links. **Project overview → Beginner** adds reading help and **Words made
+simple** for every topic. Developer and Architect views keep the technical detail.
+Step 1 summarizes the whole project and follows an illustrative input through to its
+supported output. Step 3 explains the main components and their connections. Step 4
+uses that project's documented tools, settings and startup commands, with specific gaps
+when instructions are missing. These topics include README, entry-point and setup-file
+context alongside search results, with citations to the saved source lines.
+
+After updating the application, restart the server and refresh the browser. Choose
+**Update saved explanation** (or **Rebuild overview**) once to replace an older saved
+explanation. Reloading the page only loads saved text. Changed topic prompts and evidence
+prevent reuse of the old versions of these topics; compatible completed topics can still
+be reused. Generic word definitions stay in the optional **Words made simple** disclosure.
 
 ## What the first version does
 
@@ -27,7 +48,8 @@ Start with [START_HERE_WINDOWS.md](START_HERE_WINDOWS.md). Commands assume Windo
 - Explains stored Python test assertions, expected exceptions and skip conditions in **Existing tests**, with original source lines and **Definition / Not run** labels. See [existing tests](docs/TASK_16_1.md) for supported patterns and limits.
 - Rejects unknown citation IDs and preserves retrieved excerpts if Ollama fails. Valid IDs do not prove the model's statements are correct.
 - Replaces the index atomically after a completed collection. Deleted files do not survive a refresh. A failed, interrupted or cancelled scan disables answers until another usable scan.
-- Reuses unchanged GitHub/local files and compatible repository embeddings on refresh. **Retry job** continues from saved file reads after interruption, with current access and hash checks. See [incremental and resumable imports](docs/TASK_7_2.md) for scope and limits.
+- Reuses unchanged GitHub/local files and compatible search vectors on refresh, including additional local folders. Adding one file no longer discards the meaning-search work for unchanged local text. Deleted files are removed and citations point to the refreshed snapshot. **Retry job** continues from saved file reads after interruption, with current access and hash checks. See [incremental and resumable imports](docs/TASK_7_2.md) for scope and limits.
+- If **Preparing search index** takes too long, choose **Use basic search now** on the job banner. Imported files remain available with word matching, which can miss results phrased differently. **Connections → Search preparation** saves this choice for every source in your workspace, including GitHub, local folders and ZIP projects. **Use meaning search** turns the optional step back on; the next read, question or overview build prepares missing text. The first meaning-search import and a change of embedding model still require processing the text. Overview writing itself still needs the answer model.
 - Verifies GitHub read access and the branch head for every question. If the head changed, it disables old excerpts and requires a refresh. It does not answer offline from an unverified cache.
 
 ## The project overview and the questions page
