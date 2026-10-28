@@ -1155,7 +1155,7 @@ class Service:
                                       f"{scan.get('skipped')} skipped. The groups of facts are read straight "
                                       'out of those files; the written sections are explained by the selected '
                                       'model from the excerpts shown under each one.'),
-                        'walkthrough_note':('Laid out the way a handover goes: what it is, the shape of it, '
+                        'walkthrough_note':('Laid out the way a handover goes: the problem and solution, the shape of it, '
                                             'then getting it running, then one request followed through. '
                                             'The diagrams and the groups of facts are drawn from the files '
                                             'themselves, so they are complete before any section is written.'),

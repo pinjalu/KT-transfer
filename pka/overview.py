@@ -26,28 +26,32 @@ from pka.statement_evidence import describe as describe_evidence
 TOPICS = [
     {
         'key': 'purpose',
-        'title': 'Project summary and an example',
+        'title': 'The problem, the solution and what happens',
         'queries': [
             'readme introduction overview purpose project description what this does',
             'application product users feature goal problem solves',
             'title heading about summary intro',
         ],
         'test_cap': 0,
-        'ask': '''Explain the WHOLE selected project to someone seeing it for the first time.
-Use these headings, with each paragraph in its own statement object and its own citations:
-**Project summary:** Explain what the product does, who uses it and its main capabilities,
-using its real name when documented. Do not turn one helper function into the project summary.
-**Example input (illustrative):** Give one concrete, quoted example of what a person would
-type, upload or choose in THIS project. Choose the action from the supplied evidence.
-For a question-answering website, show a relevant example question; for other projects,
-use their actual kind of input instead of pretending every project is a chatbot.
-**How it works:** Follow that same example: First the person sends the input; Next explain
-the main supported processing steps; Finally explain what is returned. Use everyday words.
-**What the user gets:** Describe the supported output. Quote an example answer only if
-the sources support its content, and label invented sample wording illustrative, not a real
-run or guaranteed answer. Never invent facts, totals, search results or an unseen connection.
-If purpose, input, a processing link or output is not shown, describe the supported parts
-and identify the exact missing evidence in missing_information. Do not fill gaps with a generic flow.''',
+        'ask': '''Explain the WHOLE selected project to a first-time reader before naming its tools.
+Return up to five SHORT statements in this order. Start each statement's text with the exact
+bold heading shown below. Give each statement its own source_ids. One or two plain sentences
+after each heading are enough. Do not combine headings in one statement.
+**Problem:** Who has a need, and what difficulty are they trying to solve? Use the project's
+documentation when it says this. If it does not, explain the narrow need suggested by the
+main implemented behaviour and begin with "The code suggests...". Record the missing
+statement of intent in missing_information. Do not invent a business goal or audience.
+**Solution:** What does THIS project let that person do to address the problem? Use its real
+name when documented. Describe the main product, not a list of technologies.
+**You do (illustrative):** Give one concrete example of what a person types, selects or uploads.
+Use the actual kind of input for this project. Clearly say the example was not run.
+**Project does:** Follow that same input through only the main supported processing steps in
+order. Use everyday words; do not list every file or helper function.
+**You get:** Describe the supported result the person sees or receives. Give sample wording
+only when supported, and label invented wording illustrative, never a real run.
+If any of these five parts is not evidenced, OMIT that statement and name the exact gap in
+missing_information. Never invent users, results, numbers or a connection between imported
+systems. Each statement should be about this project, not general software advice.''',
     },
     {
         'key': 'technologies',
@@ -191,8 +195,8 @@ that are supported instead of replacing them with generic instructions.''',
 STEPS = [
     {
         'key': 'orientation',
-        'title': 'What this project is',
-        'kt': 'Start here. This is what a colleague would tell you before opening any file.',
+        'title': 'The problem and solution',
+        'kt': 'Start with the user need, the solution and one example from action to result.',
         'topics': ['purpose'],
         'facts': ['shape', 'documents'],
         'diagrams': [],
@@ -565,10 +569,22 @@ def section_from(topic: dict, sources: list[dict], answer: dict | None, error: s
                  measure: bool = True, facts=(), paths=()) -> dict:
     """Package one section, keeping its own sources and its own gaps attached to it."""
     statements, checks = tidy((answer or {}).get('statements', []), sources, measure, facts, paths)
+    story = {}
+    if topic['key'] == 'purpose':
+        labels = {'problem': 'problem', 'solution': 'solution',
+                  'you do (illustrative)': 'input', 'project does': 'process',
+                  'you get': 'output'}
+        for position, statement in enumerate(statements):
+            heading = re.match(r'^\s*\*{0,2}([^:\n]+):\*{0,2}\s+\S', statement['text'])
+            if heading:
+                key = labels.get(heading.group(1).strip().strip('*').lower())
+                if key and key not in story:
+                    story[key] = position
     return {
         'key': topic['key'],
         'title': topic['title'],
         'statements': statements,
+        'story': story,
         'checks': checks,
         'missing_information': (answer or {}).get('missing_information', ''),
         'error': error,

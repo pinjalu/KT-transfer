@@ -75,6 +75,58 @@ afterEach(async () => {
 })
 
 describe('interactive overview', () => {
+  it('puts the problem and solution before technical shortcuts and opens each step of the user flow', async () => {
+    const purpose = topic('purpose', 'The problem, the solution and what happens', 5)
+    const lines = [
+      '**Problem:** Customers need to find their parcel.',
+      '**Solution:** Parcel desk lets them look up a parcel number.',
+      '**You do (illustrative):** Enter a sample parcel number; this was not run.',
+      '**Project does:** Parcel desk looks up the saved status.',
+      '**You get:** The customer sees the parcel status.',
+    ]
+    purpose.statements.forEach((statement, index) => { statement.text = lines[index] })
+    purpose.story = { problem: 0, solution: 1, input: 2, process: 3, output: 4 }
+    body.sections[0] = purpose
+    await render()
+    const cards = container.querySelector('.ov-story-cards')!
+    expect(cards.textContent).toContain('Customers need to find their parcel')
+    expect(cards.textContent).toContain('Parcel desk lets them look up')
+    expect(cards.textContent).toContain('customer sees the parcel status')
+    expect(container.querySelector('.ov-story')!.compareDocumentPosition(container.querySelector('.ov-project-details')!)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const flow = container.querySelector('.ov-story-flow')!
+    expect(flow.querySelectorAll('button')).toHaveLength(3)
+    expect(flow.textContent).toContain('this was not run')
+    await act(async () => flow.querySelectorAll('button')[1].click())
+    expect(container.querySelector('[role="region"][aria-label="Project does details"]')?.textContent)
+      .toContain('looks up the saved status')
+    const source = container.querySelector<HTMLDetailsElement>('#src-source-1')!
+    expect(source.open).toBe(false)
+    await act(async () => container.querySelector('.ov-story-card a.cite')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(source.open).toBe(true)
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('keeps separate project stories separate and makes missing flow steps visible', async () => {
+    const first = { ...topic('purpose', 'Purpose', 1), system_id: 'github', system_name: 'BSA_chatbot',
+      story: { problem: 0 } }
+    first.statements[0].text = '**Problem:** A dealer needs an answer about a motorcycle.'
+    const second = { ...topic('purpose', 'Purpose', 1), system_id: 'local', system_name: 'famas_matching_square',
+      story: { solution: 0 } }
+    second.statements[0].text = '**Solution:** A matching tool compares saved profiles.'
+    body.sections = [{ ...first, system_sections: [first, second],
+      statements: [...first.statements, ...second.statements], sources: [...first.sources, ...second.sources] }]
+    await render()
+    const systems = panel().querySelectorAll('.ov-system')
+    expect(systems).toHaveLength(2)
+    expect(systems[0].querySelector('.ov-story')?.textContent).toContain('motorcycle')
+    expect(systems[0].querySelector('.ov-story')?.textContent).not.toContain('matching tool')
+    expect(systems[1].querySelector('.ov-story')?.textContent).toContain('matching tool')
+    expect(systems[1].querySelector('.ov-story')?.textContent).not.toContain('motorcycle')
+    expect(systems[1].querySelector('.ov-story-flow')?.textContent).toContain('A user action was not confirmed')
+    expect(panel().querySelectorAll('[id^="ov-story-step-detail-"]')).toHaveLength(2)
+  })
+
   it.each(['example/project', 'local:D:/Projects/shop', 'zip:D:/managed/source'])('shows simple reading help for every topic and source: %s', async repo => {
     body.repo = repo
     status.settings!.repo = repo
@@ -97,8 +149,8 @@ describe('interactive overview', () => {
   it('offers a rebuild for an older explanation without quietly generating new content', async () => {
     body.plain_language_update_available = true
     await render()
-    expect(container.textContent).toContain('project-specific setup commands in Step 4')
-    expect(container.textContent).toContain('input-to-result walkthrough in Step 5')
+    expect(container.textContent).toContain('problem, solution and example flow in Start here')
+    expect(container.textContent).toContain('Connected systems remain separate')
     expect(container.textContent).toContain('Refreshing the page only reloads the saved text')
     expect(container.querySelector('.ov-saved-state')?.textContent).toContain('Explanation update available')
     expect(post).not.toHaveBeenCalled()

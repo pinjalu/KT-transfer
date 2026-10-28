@@ -1,7 +1,7 @@
 /** Reading help, kept separate from claims generated about the selected project. */
 const GUIDES: Record<string, { intro: string; words: [string, string][] }> = {
   purpose: {
-    intro: 'Start with the job this project does. Look for who uses it, what they need, and how it helps them.',
+    intro: 'Start with the problem people have. Then see how this project helps and what result they get.',
     words: [['Project', 'A set of files that work together to do a job.'], ['Feature', 'Something the project lets a person do.']],
   },
   technologies: {

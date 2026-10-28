@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Icon } from './Icon'
-import { Statements } from './Statements'
+import { Said, Statements } from './Statements'
 import { GenerationDetails } from './GenerationDetails'
 import { PlainLanguageGuide } from './PlainLanguageGuide'
 import { Button, Chip, Empty, Failed, Loading, Missing, SourceLink } from './ui'
@@ -9,6 +9,7 @@ import { originOf, sourcePath } from '../lib/answer'
 import { factsOf } from '../lib/overview'
 import { projectName } from '../lib/project'
 import type { FactGroup, Overview, Section } from '../lib/overview'
+import type { Statement } from '../lib/answer'
 import type { Load } from '../lib/useApi'
 import type { FeatureList } from '../lib/features'
 
@@ -16,7 +17,7 @@ export type OverviewMode = 'Beginner' | 'Developer' | 'Architect'
 export type FeatureReply = FeatureList
 
 const TOPIC: Record<string, { label: string; icon: string; hint: string }> = {
-  purpose: { label: 'Start here', icon: 'home', hint: 'The whole project, with an example input, its journey and the result.' },
+  purpose: { label: 'Start here', icon: 'home', hint: 'The problem, the solution and one example from action to result.' },
   technologies: { label: 'Technology', icon: 'grid', hint: 'The tools it uses and the role of each one.' },
   architecture: { label: 'Code structure', icon: 'nodes', hint: 'The main parts, what each does and how they connect.' },
   setup: { label: 'Getting started', icon: 'wrench', hint: 'Tools, settings and startup commands from this project’s files.' },
@@ -66,6 +67,63 @@ function Explanation({ section, mode }: { section: Section; mode: OverviewMode }
   </>
 }
 
+const STORY_CARDS = [
+  { key: 'problem', label: 'The problem', number: '01', empty: 'The imported files do not clearly say who has this problem.' },
+  { key: 'solution', label: 'The solution', number: '02', empty: 'The imported files do not clearly explain the solution.' },
+  { key: 'output', label: 'What the user gets', number: '03', empty: 'The result is not clear from the imported files.' },
+] as const
+const FLOW_STEPS = [
+  { key: 'input', label: 'You do', empty: 'A user action was not confirmed.' },
+  { key: 'process', label: 'Project does', empty: 'The main processing steps were not confirmed.' },
+  { key: 'output', label: 'You get', empty: 'The visible result was not confirmed.' },
+] as const
+
+function storyStatement(section: Section, key: keyof NonNullable<Section['story']>): Statement | undefined {
+  const position = section.story?.[key]
+  return position === undefined ? undefined : section.statements[position]
+}
+
+function withoutStoryHeading(text: string) {
+  return text.replace(/^\s*\*{0,2}[^:\n]+:\*{0,2}\s*/, '').trim()
+}
+
+function StoryClaim({ section, statement }: { section: Section; statement: Statement }) {
+  return <ol className="ov-story-claim"><Said statement={{ ...statement, text: withoutStoryHeading(statement.text) }} sources={section.sources} /></ol>
+}
+
+function ProjectStory({ section }: { section: Section }) {
+  const [step, setStep] = useState<(typeof FLOW_STEPS)[number]['key']>('input')
+  if (!section.story || !Object.keys(section.story).length) return null
+  const detailId = `ov-story-step-detail-${section.system_id || 'primary'}`
+  const active = FLOW_STEPS.find(item => item.key === step)!
+  const chosen = storyStatement(section, step)
+  return <div className="ov-story">
+    <div className="ov-story-intro"><span className="ov-eyebrow">Understand it in one minute</span>
+      <h3>Why this project exists</h3><p>Start with the need it answers. Then follow one example from action to result.</p></div>
+    <div className="ov-story-cards">{STORY_CARDS.map(card => {
+      const statement = storyStatement(section, card.key)
+      return <article className={`ov-story-card ov-story-card-${card.key}`} key={card.key}>
+        <span className="ov-story-number">{card.number}</span><h4>{card.label}</h4>
+        {statement ? <StoryClaim section={section} statement={statement} /> : <p className="ov-story-unknown">{card.empty}</p>}
+      </article>
+    })}</div>
+    <div className="ov-story-flow-head"><span className="ov-eyebrow">Follow one example</span><h3>From action to result</h3>
+      <p>This example explains the saved files. It was not run here.</p></div>
+    <div className="ov-story-flow" role="group" aria-label="Example user journey">{FLOW_STEPS.map((item, index) => {
+      const statement = storyStatement(section, item.key)
+      return <button type="button" className={`ov-story-step ${step === item.key ? 'is-active' : ''} ${!statement ? 'is-missing' : ''}`}
+        key={item.key} aria-pressed={step === item.key} aria-controls={detailId} onClick={() => setStep(item.key)}>
+        <span className="ov-story-step-number">{index + 1}</span><strong>{item.label}</strong>
+        <span>{statement ? withoutStoryHeading(statement.text) : item.empty}</span>
+      </button>
+    })}</div>
+    <div id={detailId} className="ov-story-step-detail" role="region" aria-label={`${active.label} details`}>
+      <h4>{active.label}</h4>{chosen ? <StoryClaim section={section} statement={chosen} /> : <p className="ov-story-unknown">{active.empty}</p>}
+    </div>
+    {section.missing_information && <p className="ov-story-gap"><strong>Still unclear:</strong> {section.missing_information}</p>}
+  </div>
+}
+
 function TopicContent({ section, body, mode }: { section: Section; body: Overview; mode: OverviewMode }) {
   const content = useRef<HTMLDivElement>(null)
   const supportingFacts = section.key === 'setup' ? factsOf(body, 'commands')
@@ -80,8 +138,16 @@ function TopicContent({ section, body, mode }: { section: Section; body: Overvie
     if (excerpt) excerpt.open = true
   }}>
     {section.system_sections?.length ? section.system_sections.map(part => <section className="ov-system" key={part.system_id} aria-label={part.system_name}>
-      <h3>{part.system_name}</h3><Explanation section={part} mode={mode} />
-    </section>) : <Explanation section={section} mode={mode} />}
+      <h3>{part.system_name}</h3>{section.key === 'purpose' && <ProjectStory section={part} />}
+      {section.key === 'purpose' && mode === 'Beginner' && !!Object.keys(part.story ?? {}).length
+        ? <details className="ov-disclosure ov-story-more"><summary>Read the full explanation</summary><div className="ov-disclosure-body"><Explanation section={part} mode={mode} /></div></details>
+        : <Explanation section={part} mode={mode} />}
+    </section>) : <>
+      {section.key === 'purpose' && <ProjectStory section={section} />}
+      {section.key === 'purpose' && mode === 'Beginner' && !!Object.keys(section.story ?? {}).length
+        ? <details className="ov-disclosure ov-story-more"><summary>Read the full explanation</summary><div className="ov-disclosure-body"><Explanation section={section} mode={mode} /></div></details>
+        : <Explanation section={section} mode={mode} />}
+    </>}
     {section.key === 'setup' && <p className="ov-hint">These instructions come from the project documentation. Nothing here was run.</p>}
     {supportingFacts && <FactDetails group={supportingFacts} open={mode !== 'Beginner' || section.key === 'setup'} />}
     {section.key === 'setup' && factsOf(body, 'environment') && <FactDetails group={factsOf(body, 'environment')!} />}
@@ -164,7 +230,6 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
         <span className="ov-eyebrow">Your project at a glance</span>
         <h2>{project || projectName(null, body.repo)}</h2>
         {body.systems && body.systems.length > 1 && <p>Separate systems: {body.systems.map(system => system.name).join(' · ')}</p>}
-        <p>Start with what the project does. Then learn its parts, follow one action, and see how to use it. Open source links when you want to check a detail.</p>
         <div className="ov-hero-meta">{sourceKind === 'github' ? <>
           <span><Icon name="nodes" size={14} />{body.branch}</span>
           <span className="mono">{body.commit?.slice(0, 7)}</span><span>{body.repo}</span>
@@ -178,22 +243,6 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
         <Link to="/architecture" className="ov-hero-secondary">Explore architecture <Icon name="external" size={13} /></Link>
       </div>
     </section>
-
-    <div className="ov-metrics" aria-label="Overview shortcuts">
-      {[
-        { label: 'Topics written', value: `${written}/${body.topics_total}`, icon: 'doc', to: sections[0]?.id ?? '_facts', hint: 'Explore the overview', tone: 'teal' },
-        { label: 'Files indexed', value: body.files_indexed, icon: 'database', to: '_facts', hint: `${body.files_skipped} files skipped`, tone: 'blue' },
-        { label: 'Feature groups', value: features.loading ? '…' : featureError || !features.data?.available ? '—' : featureRows.length,
-          icon: 'grid', to: '_features', hint: featureError ? 'Read unavailable' : 'Explore grouped routes', tone: 'violet' },
-        { label: 'Review items', value: issueCount, icon: 'warn', to: '_review', hint: 'Topic flags & known gaps', tone: 'amber' },
-      ].map(metric => <button type="button" className={`ov-metric ov-metric-${metric.tone}`} key={metric.label}
-        onClick={() => select(metric.to)} aria-controls="ov-panel">
-        <span className="ov-metric-top"><span className="ov-metric-icon"><Icon name={metric.icon} size={19} /></span>
-          <Icon name="chevron" size={15} /></span>
-        <strong>{metric.value}</strong><span className="ov-metric-label">{metric.label}</span>
-        <span className="ov-metric-hint">{metric.hint}</span>
-      </button>)}
-    </div>
 
     <div className="ov-workspace">
       <nav className="ov-explorer" aria-label="Overview topics">
@@ -270,5 +319,23 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
         </footer>}
       </section>
     </div>
+    <details className="ov-project-details" open={mode !== 'Beginner' || undefined}>
+      <summary>Project facts and shortcuts</summary>
+      <div className="ov-metrics" aria-label="Overview shortcuts">
+        {[
+          { label: 'Topics written', value: `${written}/${body.topics_total}`, icon: 'doc', to: sections[0]?.id ?? '_facts', hint: 'Explore the overview', tone: 'teal' },
+          { label: 'Files indexed', value: body.files_indexed, icon: 'database', to: '_facts', hint: `${body.files_skipped} files skipped`, tone: 'blue' },
+          { label: 'Feature groups', value: features.loading ? '…' : featureError || !features.data?.available ? '—' : featureRows.length,
+            icon: 'grid', to: '_features', hint: featureError ? 'Read unavailable' : 'Explore grouped routes', tone: 'violet' },
+          { label: 'Review items', value: issueCount, icon: 'warn', to: '_review', hint: 'Topic flags & known gaps', tone: 'amber' },
+        ].map(metric => <button type="button" className={`ov-metric ov-metric-${metric.tone}`} key={metric.label}
+          onClick={() => select(metric.to)} aria-controls="ov-panel">
+          <span className="ov-metric-top"><span className="ov-metric-icon"><Icon name={metric.icon} size={19} /></span>
+            <Icon name="chevron" size={15} /></span>
+          <strong>{metric.value}</strong><span className="ov-metric-label">{metric.label}</span>
+          <span className="ov-metric-hint">{metric.hint}</span>
+        </button>)}
+      </div>
+    </details>
   </div>
 }

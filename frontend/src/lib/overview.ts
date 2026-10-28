@@ -11,6 +11,7 @@ export type Section = {
   key: string
   title: string
   statements: Statement[]
+  story?: Partial<Record<'problem' | 'solution' | 'input' | 'process' | 'output', number>>
   sources: Source[]
   missing_information: string
   error: string

@@ -75,7 +75,7 @@ export function Overview() {
     <div className="ov-page">
       <PageHead
         title="Project overview"
-        lead="Understand this project one step at a time, even if you have never written code."
+        lead="See the problem, the solution and one simple journey through the project."
         actions={
           <>
             {/* Disabled while anything else is reading, because the request would be
@@ -130,7 +130,7 @@ export function Overview() {
       {body && <>
         {body.scope_update_available && <p role="status">Showing only {body.project_name}, your selected local folder. Build its overview to generate explanations from these files.</p>}
         {body.plain_language_update_available && !building && <Card>
-          <p role="status"><strong>Your saved explanation needs an update.</strong> Rebuild it for the full project summary and example in Step 1, the main components in Step 3, project-specific setup commands in Step 4, and an input-to-result walkthrough in Step 5. Connected systems are explained separately. Refreshing the page only reloads the saved text.</p>
+          <p role="status"><strong>Your saved explanation needs an update.</strong> Rebuild it to show the problem, solution and example flow in Start here. Connected systems remain separate. Refreshing the page only reloads the saved text.</p>
           <Button kind="primary" icon="refresh" disabled={busy} onClick={build}>Update saved explanation</Button>
         </Card>}
         {body.routing_changed && <p role="status">AI routing or explanation settings changed since this overview was saved. Rebuild to apply the latest settings.</p>}
@@ -138,7 +138,7 @@ export function Overview() {
         {!!body.failed_topics&&<Button icon="refresh" disabled={building||busy} onClick={build}>Retry failed topics</Button>}
         <div className="ov-view-bar">
           <div><span className="ov-eyebrow">Choose your level of detail</span>
-            <p>Beginner adds simple reading help and word meanings. Developer and Architect keep the technical details. Every view uses the same saved evidence.</p></div>
+            <p>Start with the story. Open a deeper view when you want more detail.</p></div>
           <Segmented items={[...MODES]} active={mode} onPick={m => setMode(m as OverviewMode)} />
         </div>
         <OverviewDashboard key={`${body.repo}:${body.scan_id}:${status.data?.knowledge_revision}`}
