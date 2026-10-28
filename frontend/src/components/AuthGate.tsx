@@ -133,9 +133,12 @@ function Login({ setup, onSuccess, notice }: { setup: boolean; onSuccess: () => 
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const submitting = useRef(false)
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (submitting.current) return
     if (setup && password !== confirm) { setError('Passwords do not match.'); return }
+    submitting.current = true
     setBusy(true); setError('')
     try {
       await post(setup ? '/api/auth/setup' : '/api/auth/login', setup ? { username, password, code } : { username, password })
@@ -143,19 +146,19 @@ function Login({ setup, onSuccess, notice }: { setup: boolean; onSuccess: () => 
       if (window.location.pathname === '/login') window.history.replaceState(null, '', '/')
       await onSuccess()
     } catch (e) { setError((e as Error).message) }
-    finally { setBusy(false) }
+    finally { submitting.current = false; setBusy(false) }
   }
   return <>
     <h1>{setup ? 'Create your owner account' : 'Welcome back'}</h1>
     <p>{setup ? 'Protect access to your saved projects, answers and connections on this computer.' : 'Sign in to your local KT Assistant account.'}</p>
     {notice && <p role="status" className="auth-notice">{notice}</p>}
-    <form onSubmit={submit} className="auth-form">
-      {setup && <label>One-time setup code<input aria-label="One-time setup code" aria-describedby="setup-help" value={code} onChange={e => setCode(e.target.value)} required maxLength={100} autoComplete="off" spellCheck={false} />
+    <form onSubmit={submit} className="auth-form" aria-busy={busy}>
+      {setup && <label>One-time setup code<input aria-label="One-time setup code" aria-describedby="setup-help" value={code} onChange={e => setCode(e.target.value)} disabled={busy} required maxLength={100} autoComplete="off" spellCheck={false} />
         <span id="setup-help">Open the setup-code file shown in the app’s startup terminal and paste its contents here.</span></label>}
-      <label>Username<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required maxLength={80} minLength={setup ? 3 : 1} autoCapitalize="none" spellCheck={false} /></label>
-      <label>Password<input aria-label="Password" aria-describedby={setup ? 'password-help' : undefined} type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={setup ? 'new-password' : 'current-password'} required minLength={setup ? 15 : 1} maxLength={128} />
+      <label>Username<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" disabled={busy} required maxLength={80} minLength={setup ? 3 : 1} autoCapitalize="none" spellCheck={false} /></label>
+      <label>Password<input aria-label="Password" aria-describedby={setup ? 'password-help' : undefined} type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={setup ? 'new-password' : 'current-password'} disabled={busy} required minLength={setup ? 15 : 1} maxLength={128} />
         {setup && <span id="password-help">Use 15–128 characters. Spaces and long passphrases are welcome.</span>}</label>
-      {setup && <label>Confirm password<input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" required maxLength={128} /></label>}
+      {setup && <label>Confirm password<input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" disabled={busy} required maxLength={128} /></label>}
       {error && <p className="auth-error" role="alert">{error}</p>}
       <Button kind="primary" type="submit" disabled={busy}>{busy ? 'Please wait…' : setup ? 'Create account' : 'Sign in'}</Button>
     </form>

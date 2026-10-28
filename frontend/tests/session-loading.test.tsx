@@ -62,6 +62,36 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
+it('locks sign-in fields while waiting and unlocks them after an error', async () => {
+  vi.mocked(get).mockResolvedValue({ authenticated: false, setup_required: false, user: null })
+  const attempt = deferred()
+  vi.mocked(post).mockReturnValueOnce(attempt.promise)
+  await render(<AuthGate><Draft /></AuthGate>)
+  const username = container.querySelector<HTMLInputElement>('input[autocomplete="username"]')!
+  const password = container.querySelector<HTMLInputElement>('input[autocomplete="current-password"]')!
+  const form = container.querySelector<HTMLFormElement>('form.auth-form')!
+  await act(async () => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    setValue.call(username, 'tester')
+    username.dispatchEvent(new Event('input', { bubbles: true }))
+    setValue.call(password, 'password')
+    password.dispatchEvent(new Event('input', { bubbles: true }))
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+  expect(form.getAttribute('aria-busy')).toBe('true')
+  expect(username.disabled).toBe(true)
+  expect(password.disabled).toBe(true)
+  expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  expect(container.textContent).toContain('Please wait')
+  await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(vi.mocked(post).mock.calls.filter(([path]) => path === '/api/auth/login')).toHaveLength(1)
+  await act(async () => attempt.reject(new Error('Wrong password')))
+  expect(form.getAttribute('aria-busy')).toBe('false')
+  expect(username.disabled).toBe(false)
+  expect(password.disabled).toBe(false)
+  expect(container.textContent).toContain('Wrong password')
+})
+
 describe('session checks when returning to a browser tab', () => {
   it('keeps the workspace visible during tab verification and preserves the same account draft', async () => {
     vi.mocked(get).mockResolvedValue(session())
