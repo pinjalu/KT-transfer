@@ -4,7 +4,7 @@ import { Button, Failed, Loading, PageHead } from '../components/ui'
 import { useApi } from '../lib/useApi'
 import './local-source.css'
 
-type SourceFile = { path: string; snapshot: string; note: string; lines: { number: number; text: string }[] }
+type SourceFile = { path: string; snapshot: string; source_kind?: 'local' | 'zip'; note: string; lines: { number: number; text: string }[] }
 
 export function LocalSource() {
   const [params] = useSearchParams()
@@ -15,11 +15,11 @@ export function LocalSource() {
   useEffect(() => {
     if (source.data && /^#L\d+$/.test(hash)) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'center' })
   }, [source.data, hash])
-  if (source.loading) return <Loading what="the saved local source" message="Checking local folder access…" />
+  if (source.loading) return <Loading what="the saved source" message="Checking source access…" />
   if (source.error) return <Failed message={source.error} onRetry={source.reload} />
   if (!source.data) return null
   return <>
-    <PageHead title={source.data.path} lead={`Local folder · snapshot ${source.data.snapshot.slice(0, 7)}`}
+    <PageHead title={source.data.path} lead={`${source.data.source_kind === 'zip' ? 'ZIP file' : 'Local folder'} · snapshot ${source.data.snapshot.slice(0, 7)}`}
       actions={<><Button icon="refresh" onClick={source.reload}>Refresh source</Button>
         <Link className="btn btn-secondary" to="/overview">Project overview</Link></>} />
     <p className="local-source-note">{source.data.note}</p>

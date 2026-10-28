@@ -18,18 +18,22 @@ export function Shell({ children }: { children: ReactNode }) {
   const account = useAccount()
   const [logoutError, setLogoutError] = useState('')
   const location = useLocation()
+  const [projectVersion, setProjectVersion] = useState(0)
   // Polled rather than read once: a scan changes this while the user is looking at another screen.
-  const status = useApi<Status>('/api/status', 2000)
+  const status = useApi<Status>('/api/status', 2000, projectVersion)
   const { data, reload } = status
   const savedStatus = useRef<Status | null>(null)
   if (data) savedStatus.current = data
   const workspace = data ?? savedStatus.current
   useEffect(() => {
+    // Hide the previous project's views immediately while the new selection is
+    // loading, and abort any status response started before the selection changed.
+    const projectChanged = () => setProjectVersion(value => value + 1)
     window.addEventListener(JOB_CHANGED, reload)
-    window.addEventListener(PROJECT_CHANGED, reload)
+    window.addEventListener(PROJECT_CHANGED, projectChanged)
     return () => {
       window.removeEventListener(JOB_CHANGED, reload)
-      window.removeEventListener(PROJECT_CHANGED, reload)
+      window.removeEventListener(PROJECT_CHANGED, projectChanged)
     }
   }, [reload])
   const project = projectName(data?.settings)

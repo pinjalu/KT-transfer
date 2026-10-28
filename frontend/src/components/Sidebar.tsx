@@ -12,10 +12,7 @@ export function Sidebar({ project, username, onSignOut }: { project: string; use
 
       <div className="sidebar-project">
         <span className="sidebar-project-label">Project</span>
-        <button className="project-pick" type="button">
-          <span className="project-pick-name">{project || 'No project'}</span>
-          <span className="project-pick-arrow"><Icon name="chevron" size={14} /></span>
-        </button>
+        <span className="sidebar-project-name" title={project || 'No project'}>{project || 'No project'}</span>
       </div>
 
       <ul className="sidebar-list">

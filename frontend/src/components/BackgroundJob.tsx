@@ -16,7 +16,7 @@ export function BackgroundJob({ job, onChanged }: { job: Job | null; onChanged: 
   useEffect(() => { setError('') }, [job?.id])
   if (!job || hidden === job.id) return null
   const active = jobActive(job)
-  const act = async (action: 'cancel' | 'retry') => {
+  const act = async (action: 'cancel' | 'retry' | 'basic-search') => {
     setPending(true)
     setError('')
     try {
@@ -43,13 +43,16 @@ export function BackgroundJob({ job, onChanged }: { job: Job | null; onChanged: 
             ? 'Cancellation requested. Waiting for the current connector or model request to finish.'
             : active
             ? `${progressText(progress)}. You can keep browsing.`
-            : job.error || (job.state === 'partial' ? 'Some information was not read. Check import coverage before retrying.' : 'The job has finished.')}
+            : job.error || (job.state === 'partial' ? 'Some information was not read. Check import coverage before retrying.'
+              : job.state === 'succeeded' && job.search_mode === 'basic' ? 'Ready with basic word search. You can turn on meaning search in Connections.' : 'The job has finished.')}
         </p>
+        {job.can_skip_index && <p>Need to finish sooner? Basic search uses matching words and skips this step. It may miss results written with different words.</p>}
         {job.can_retry && (job.kind === 'scan' || job.kind === 'local') && <p>Retry reuses completed files after checking access and changes.</p>}
         {job.can_retry && job.kind === 'evaluation' && <p>Retry starts a fresh evaluation; completed cases from this run remain available for review.</p>}
         {error && <p role="alert">{error}</p>}
       </div>
       <div className="background-job-actions">
+        {job.can_skip_index && <Button disabled={pending} onClick={() => void act('basic-search')}>Use basic search now</Button>}
         {job.can_cancel && <Button disabled={pending || job.state === 'cancelling'} onClick={() => void act('cancel')}>
           {job.state === 'cancelling' ? 'Cancelling…' : 'Cancel job'}
         </Button>}

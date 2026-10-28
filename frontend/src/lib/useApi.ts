@@ -10,7 +10,7 @@ export type Load<T> = {
 }
 
 /** Reads one endpoint. A failure is kept and shown, never swallowed into an empty screen. */
-export function useApi<T>(path: string, poll = 0, revision?: number, enabled = true): Load<T> {
+export function useApi<T>(path: string, poll = 0, revision?: number | string, enabled = true): Load<T> {
   const active = usePageActive()
   const key = `${path}:${revision ?? ''}`
   const [result, setResult] = useState<{ key: string; data: T | null; error: string | null } | null>(null)

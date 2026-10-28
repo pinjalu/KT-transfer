@@ -23,9 +23,10 @@ export function useJobProgress(job?: BackgroundJob | null) {
 }
 
 export function progressText(progress?: BackgroundJob['progress']) {
-  const embedding = !!progress?.embed_total
+  const embedding = progress?.embed_total != null
   const done = embedding ? progress?.embed_done : progress?.done ?? progress?.processed
   const total = embedding ? progress?.embed_total : progress?.total
   return `${progress?.phase || 'Preparing the job'}${total && done !== undefined
-    ? ` — ${done} of ${total}${embedding ? ' text sections' : ''}` : ''}`
+    ? ` — ${done} of ${total}${embedding ? ' new or changed text sections' : ''}` : ''}${progress?.embed_reused
+    ? ` · ${progress.embed_reused} sections already indexed` : ''}`
 }

@@ -1,6 +1,8 @@
 /** The shape pka/service.py returns from POST /api/ask. */
 
 export type Source = {
+  system_id?: string
+  system_name?: string
   source_id: string
   path: string
   start: number
@@ -98,7 +100,8 @@ export function conversationContext(turns: Turn[], repo: string | undefined, rev
 }
 
 /** Where an excerpt came from. Slack and Jira blocks are stored under their own path prefix. */
-export function originOf(path: string, url?: string | null): 'Slack' | 'Jira' | 'GitHub' | 'Local folder' {
+export function originOf(path: string, url?: string | null): 'Slack' | 'Jira' | 'GitHub' | 'Local folder' | 'ZIP file' {
+  if (url?.startsWith('/source?') && new URLSearchParams(url.split('?')[1].split('#')[0]).get('source') === 'zip') return 'ZIP file'
   if (path.startsWith('local://') || url?.startsWith('/source?')) return 'Local folder'
   if (path.startsWith('slack/')) return 'Slack'
   if (path.startsWith('jira/')) return 'Jira'

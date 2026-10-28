@@ -262,7 +262,7 @@ export function Ask() {
             {latest && (
               <Card>
                 <p className="src-foot">
-                  Checked against the repository at {latest.repo?.startsWith('local:') ? 'snapshot' : 'commit'}{' '}
+                  Checked against the repository at {/^(local|zip):/.test(latest.repo ?? '') ? 'snapshot' : 'commit'}{' '}
                   <span className="mono">{latest.commit?.slice(0, 7)}</span>{' '}
                   at {new Date(latest.access_checked_at).toLocaleTimeString()}.
                 </p>

@@ -1,7 +1,7 @@
 import { Card, Chip } from './ui'
 import type { CoverageReply } from './ImportCoverage'
 
-const NAMES = { github: 'GitHub', local: 'Local folder', jira: 'Jira', slack: 'Slack' }
+const NAMES = { github: 'GitHub', local: 'Local folder', zip: 'ZIP file', jira: 'Jira', slack: 'Slack' }
 
 export function SourceFreshness({ coverage, warning }: { coverage?: CoverageReply; warning?: string }) {
   const sources = Object.values(coverage?.sources ?? {})

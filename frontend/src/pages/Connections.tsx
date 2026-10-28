@@ -7,6 +7,8 @@ import { SlackPanel } from '../components/SlackPanel'
 import { ImportHistory } from '../components/ImportHistory'
 import { ImportCoverage } from '../components/ImportCoverage'
 import { SourceFreshness } from '../components/SourceFreshness'
+import { ZipProject } from '../components/ZipProject'
+import { SearchPreparation } from '../components/SearchPreparation'
 import { SourceCredentials } from '../components/SourceCredentials'
 import type { CredentialSource } from '../components/SourceCredentials'
 import type { CoverageReply } from '../components/ImportCoverage'
@@ -16,8 +18,8 @@ import { ApiError, post } from '../lib/api'
 import { useStatus } from '../lib/useStatus'
 import './connections.css'
 
-type Connection = 'github' | 'local' | 'jira' | 'slack'
-const names = { github:'GitHub', local:'Local folder', jira:'Jira', slack:'Slack' }
+type Connection = 'github' | 'local' | 'zip' | 'jira' | 'slack'
+const names = { github:'GitHub', local:'Local folder', zip:'ZIP file', jira:'Jira', slack:'Slack' }
 
 export function Connections() {
   const account = useAccount()
@@ -30,6 +32,7 @@ export function Connections() {
   const [repo, setRepo] = useState('')
   const [branch, setBranch] = useState('main')
   const [localPath, setLocalPath] = useState('')
+  const [addToProject, setAddToProject] = useState(false)
   const [seeded, setSeeded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
@@ -39,20 +42,26 @@ export function Connections() {
     status.reload(); coverage.reload()
   }
   useEffect(() => {
+    if (!seeded && !settings && status.data?.stored_project?.source_kind === 'zip') {
+      setConnection('zip'); setSeeded(true); return
+    }
     if (!settings || seeded) return
-    setRepo(settings.repo.startsWith('local:') ? '' : settings.repo)
-    setBranch(settings.repo.startsWith('local:') ? 'main' : settings.branch)
+    setRepo(/^(local|zip):/.test(settings.repo) ? '' : settings.repo)
+    setBranch(/^(local|zip):/.test(settings.repo) ? 'main' : settings.branch)
     setLocalPath(settings.local?.path ?? settings.local_path ?? '')
     if (canReadLocal && (settings.repo.startsWith('local:') || settings.source_kind === 'local'
       || settings.selected_source === 'local')) setConnection('local')
+    if (settings.source_kind === 'zip') setConnection('zip')
     setSeeded(true)
-  }, [settings, seeded, canReadLocal])
+  }, [settings, seeded, canReadLocal, status.data?.stored_project])
   const stored = status.data?.stored_project
   const awaiting = status.data?.awaiting_project ?? false
   const busy = status.data?.busy ?? false
   const scan = status.data?.scan
   const primaryLocal = settings?.repo.startsWith('local:') ?? false
-  const primaryForm = connection === (primaryLocal ? 'local' : 'github')
+  const primaryZip = settings?.source_kind === 'zip'
+  const canAddFolder = !awaiting && !!settings && !primaryLocal && !primaryZip && !!status.data?.ready
+  const primaryForm = connection === (primaryZip ? 'zip' : primaryLocal ? 'local' : 'github')
   const refresh = async () => {
     setNote('')
     try {
@@ -68,7 +77,8 @@ export function Connections() {
         source_kind:connection, repo:connection === 'github' ? repo : '',
         branch:connection === 'github' ? branch : 'working-tree',
         local_path:connection === 'local' ? localPath : '',
-        platforms:settings?.platforms ?? [connection],
+        add_to_project:connection === 'local' && canAddFolder && addToProject,
+        platforms:[connection],
       }) as { reconnected?: boolean; additional_local?: boolean }
       if (saved.additional_local) {
         await post('/api/local/read')
@@ -84,26 +94,27 @@ export function Connections() {
   }
   if (status.loading) return <Loading what="connections" />
   if (status.error) return <Failed message={status.error} onRetry={status.reload} />
-  const choices: Connection[] = canReadLocal && !status.data?.demo ? ['github','local','jira','slack'] : ['github','jira','slack']
+  const choices: Connection[] = status.data?.demo ? ['github','jira','slack'] : canReadLocal ? ['github','local','zip','jira','slack'] : ['github','zip','jira','slack']
   return <>
     <PageHead title="Connections" lead="Connect the code and conversations that explain your project." />
     <div className="conn-badge-row"><Chip tone="info"><Icon name="lock" size={14} /> Read-only access</Chip>
       {status.data?.demo && <Chip tone="violet">Example mode, fixture data</Chip>}</div>
     <Tabs items={['Connections','Import history']} active={tab} onPick={setTab} />
     {tab === 'Connections' ? <div className="stack conn-stack">
-      {connection !== 'local' && <SourceCredentials source={connection} onSourceChange={setConnection}
+      {connection !== 'local' && connection !== 'zip' && <SourceCredentials source={connection} onSourceChange={setConnection}
         onSaved={credentialsSaved} disabled={busy||!!status.data?.demo} title="1. Add your connection tokens" />}
       <Card>
         <div className="conn-picker">
-          <div><h2>{connection==='local'?'Your project sources':'2. Choose what to read'}</h2><p>Add each connection to the same project. Read the repository first, then add Jira issues and Slack messages.</p></div>
+          <div><h2>{connection==='local'||connection==='zip'?'Your project sources':'2. Choose what to read'}</h2><p>Read a GitHub repository, local folder or ZIP project, then add Jira issues and Slack messages.</p></div>
           <label className="field"><span className="field-label">Connection</span>
-            <select aria-label="Connection" value={connection} onChange={e => { setConnection(e.target.value as Connection); setNote('') }}>
+            <select aria-label="Connection" value={connection} onChange={e => { setConnection(e.target.value as Connection); setAddToProject(false); setNote('') }}>
               {choices.map(key => <option key={key} value={key}>{names[key]}</option>)}
             </select></label>
         </div>
         <div className="conn-saved" aria-label="Saved source status">{choices.map(key => {
           const read = coverage.data?.sources[key]?.available
-          const selected = key === 'github' ? settings && !primaryLocal
+          const selected = key === 'github' ? settings && !primaryLocal && !primaryZip
+            : key === 'zip' ? primaryZip
             : key === 'local' ? primaryLocal || settings?.local?.path
             : key === 'jira' ? settings?.jira?.project : settings?.slack?.channels?.length
           return <span key={key}><Chip tone={read ? 'ok' : 'quiet'}>{names[key]} · {read ? 'Read' : selected ? 'Not read yet' : 'Not connected'}</Chip></span>
@@ -111,8 +122,11 @@ export function Connections() {
         <p className="conn-picker-help">Switching this dropdown only changes the form below. It does not disconnect other sources.</p>
       </Card>
       {note && <p className="conn-note" role="status">{note}</p>}
+      {status.data && <SearchPreparation status={status.data} onChanged={status.reload} />}
       {coverage.error && <Failed message={coverage.error} onRetry={coverage.reload} />}
       {!awaiting && <SourceFreshness coverage={coverage.data ?? undefined} warning={status.data?.warning} />}
+      {connection === 'zip' && <ZipProject status={status.data ?? null} coverage={coverage.data?.sources.zip}
+        onChanged={() => { status.reload(); coverage.reload() }} />}
       {(connection === 'github' || connection === 'local') && <Card>
         <div className="conn-row">
           <div className="conn-id"><span className="conn-logo"><Icon name="doc" size={20} /></span><div>
@@ -122,6 +136,7 @@ export function Connections() {
           {awaiting && stored && <div className="conn-resume">
             <span className="conn-resume-text">Saved project: <span className="mono">{stored.project_name || projectName(null, stored.repo)}</span>. Its imported content is still stored.</span>
             <Button kind="secondary" onClick={() => {
+              if (stored.source_kind === 'zip') { setConnection('zip'); return }
               const local = stored.source_kind === 'local'
               setConnection(local ? 'local' : 'github'); setRepo(local ? '' : stored.repo)
               setBranch(local ? 'main' : stored.branch); setLocalPath(stored.local_path ?? '')
@@ -136,6 +151,14 @@ export function Connections() {
               <label className="field"><span className="field-label">Repository</span><input value={repo} onChange={e => setRepo(e.target.value)} placeholder="owner/repository or URL" maxLength={400} disabled={status.data?.demo} /></label>
               <label className="field"><span className="field-label">Branch</span><input value={branch} onChange={e => setBranch(e.target.value)} placeholder="main" maxLength={200} disabled={status.data?.demo} /></label>
             </>}
+          {connection === 'local' && canAddFolder && <label className="conn-add-folder">
+            <input type="checkbox" checked={addToProject} disabled={busy || saving}
+              onChange={e => setAddToProject(e.target.checked)} />
+            <span>Add this folder to the current project ({projectName(settings)})</span>
+          </label>}
+          <p className="conn-plain conn-selection-help">{connection === 'local' && canAddFolder && addToProject
+            ? 'The folder will be read together with the current project’s code and conversations.'
+            : 'Choosing a different repository or folder starts a new project. Its overview, files and conversations replace the previous project in this workspace.'}</p>
           </div>
           <div className="conn-act">
             <Button kind="primary" onClick={save} disabled={saving || busy || status.data?.demo || (connection === 'local' ? !localPath || !canReadLocal : !repo || !branch)}>{saving ? 'Saving…' : 'Save and read files'}</Button>
@@ -144,7 +167,7 @@ export function Connections() {
         </div>
         <p className="conn-local-note">Refresh reuses unchanged files. After an interrupted read, choose Retry job to continue with saved files. Access and file changes are checked each time.</p>
         {connection === 'local' ? <p className="conn-local-note">Choose a folder on the computer running KT Assistant. A Git clone is optional.
-          Local files are added beside your GitHub code, Jira issues and Slack messages. Read this folder again after editing files.
+          A folder starts its own project unless you choose to add it to the current project. Read this folder again after editing files.
           Built-in rules exclude secret filenames, dependencies, generated files and linked folders; custom .gitignore rules are not applied.</p>
           : <><p className="conn-local-note">Refreshing the repository replaces the project scan. Read the local folder, Jira issues and Slack messages again afterward, then rebuild the overview.</p>
             {!status.data?.token_configured && !status.data?.demo && <p className="conn-local-note">No GitHub token saved for your account. Add it in step 1 above for a private repository.</p>}</>}

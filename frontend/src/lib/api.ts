@@ -68,10 +68,19 @@ async function send(path: string, init: RequestInit = {}): Promise<unknown> {
 export const get = (path: string, signal?: AbortSignal) => send(path, { signal })
 export const post = async (path: string, payload?: unknown) => {
   const body = await send(path, { method: 'POST', body: payload === undefined ? '{}' : JSON.stringify(payload) })
-  if (path === '/api/config') window.dispatchEvent(new Event(PROJECT_CHANGED))
+  if (path === '/api/config' || path === '/api/zip/resume') window.dispatchEvent(new Event(PROJECT_CHANGED))
   // Refresh the shared controls as soon as a job starts or changes, even on another page.
   if (body && typeof body === 'object' && 'job_id' in body) {
     window.dispatchEvent(new Event(JOB_CHANGED))
   }
+  return body
+}
+
+export async function uploadZip(file: File) {
+  const body = await send('/api/zip/upload?filename=' + encodeURIComponent(file.name), {
+    method: 'POST', body: file, headers: { 'content-type': 'application/zip' },
+  })
+  window.dispatchEvent(new Event(PROJECT_CHANGED))
+  window.dispatchEvent(new Event(JOB_CHANGED))
   return body
 }

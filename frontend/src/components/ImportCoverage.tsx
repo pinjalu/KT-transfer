@@ -1,7 +1,7 @@
 import { Chip } from './ui'
 
 export type Coverage = {
-  source: 'github' | 'local' | 'jira' | 'slack'
+  source: 'github' | 'local' | 'zip' | 'jira' | 'slack'
   state: string
   available: boolean
   read_at: string | null
@@ -17,7 +17,7 @@ export type CoverageReply = { sources: Partial<Record<Coverage['source'], Covera
 const LABELS: Record<string, string> = { complete: 'Read within scope', partial: 'Incomplete read',
   unknown: 'Coverage unknown', not_read: 'Not read', running: 'Reading', failed: 'Failed',
   cancelled: 'Cancelled', interrupted: 'Interrupted' }
-const NAMES = { github: 'GitHub', local: 'Local folder', jira: 'Jira', slack: 'Slack' }
+const NAMES = { github: 'GitHub', local: 'Local folder', zip: 'ZIP file', jira: 'Jira', slack: 'Slack' }
 
 export function ImportCoverage({ coverage }: { coverage?: Coverage }) {
   if (!coverage) return null
@@ -28,14 +28,14 @@ export function ImportCoverage({ coverage }: { coverage?: Coverage }) {
       <Chip tone={state === 'complete' ? 'ok' : state === 'failed' ? 'bad' : state === 'not_read' ? 'quiet' : 'warn'}>
         {LABELS[state] ?? state}
       </Chip>
-      {coverage.read_at && <span>{['github', 'local'].includes(coverage.source) ? 'Last scan finished' : 'Saved read'}: {new Date(coverage.read_at).toLocaleString()}</span>}
+      {coverage.read_at && <span>{['github', 'local', 'zip'].includes(coverage.source) ? 'Last scan finished' : 'Saved read'}: {new Date(coverage.read_at).toLocaleString()}</span>}
     </div>
     <p>{coverage.summary}</p>
     {!coverage.available && coverage.read_at && <p className="coverage-warning">This saved read is unavailable for answers.</p>}
     {attempt && <p className="coverage-warning" role="status">
-      Latest attempt: {attempt.state}. {attempt.error || (['github', 'local'].includes(coverage.source)
+      Latest attempt: {attempt.state}. {attempt.error || (['github', 'local', 'zip'].includes(coverage.source)
         ? 'Counts below describe this scan attempt.' : 'The coverage below describes the last saved read.')}
-      {!['github', 'local'].includes(coverage.source) && coverage.read_at && ' The previous saved read is shown below.'}
+      {!['github', 'local', 'zip'].includes(coverage.source) && coverage.read_at && ' The previous saved read is shown below.'}
     </p>}
     {coverage.counts.length > 0 && <dl className="coverage-counts">
       {coverage.counts.map(c => <div key={c.label}><dt>{c.label}</dt><dd>{c.value}</dd></div>)}

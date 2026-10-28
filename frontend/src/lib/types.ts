@@ -1,6 +1,6 @@
 /** Shapes returned by pka/web.py. Kept here so a screen never guesses at a field name. */
 
-export type Settings = { repo: string; branch: string; platforms: string[]; project_name?: string; source_kind?: 'github' | 'local'; selected_source?: 'github' | 'local'; local_path?: string; local?: { path: string }; jira?: { project?: string }; slack?: { channels?: unknown[] } } | null
+export type Settings = { repo: string; branch: string; platforms: string[]; project_name?: string; source_kind?: 'github' | 'local' | 'zip'; selected_source?: 'github' | 'local' | 'zip'; local_path?: string; archive?: { filename: string; files: number; skipped: Record<string, number>; bytes: number }; local?: { path: string; repo?: string }; jira?: { project?: string }; slack?: { channels?: unknown[] } } | null
 
 export type Scan = {
   id?: number
@@ -35,6 +35,8 @@ export type Status = {
   demo: boolean
   model: string
   token_configured: boolean
+  search_mode?: 'basic' | 'semantic'
+  semantic_available?: boolean
   warning: string
   ready: boolean
   job_error: string
@@ -50,7 +52,7 @@ export type Status = {
   awaiting_project?: boolean
   /** The project the last run used, offered on Connections as a shortcut rather than
    *  adopted silently. Null when nothing has ever been saved. */
-  stored_project?: { repo: string; branch: string; project_name?: string; source_kind?: 'github' | 'local'; local_path?: string } | null
+  stored_project?: { repo: string; branch: string; project_name?: string; source_kind?: 'github' | 'local' | 'zip'; local_path?: string } | null
 }
 
 export type Progress = { phase?: string; read?: number; total?: number; done?: number } | null
@@ -66,8 +68,10 @@ export type BackgroundJob = {
   finished_at: string | null
   can_cancel: boolean
   can_retry: boolean
+  can_skip_index?: boolean
+  search_mode?: 'basic' | 'semantic'
   progress: { phase?: string; done?: number; processed?: number; total?: number;
-              embed_done?: number; embed_total?: number } | null
+              embed_done?: number; embed_total?: number; embed_reused?: number } | null
 }
 
 export type Platform = {

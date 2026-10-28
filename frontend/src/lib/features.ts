@@ -1,13 +1,14 @@
 export type Evidence = { path: string; line: number; url: string }
+export type FeatureSnapshot = { repo?: string; branch?: string; scan_id?: number; commit?: string; knowledge_revision?: number }
 export type FeatureSummary = {
   id: string; name: string; plain: string; ticket_name: string
   route_count: number; file_count: number; issue_count: number; has_tests: boolean; gap_count: number
 }
-export type FeatureList = {
+export type FeatureList = FeatureSnapshot & {
   available: boolean; reason?: string; scan_id?: number; commit?: string
   features: FeatureSummary[]; unclustered?: { routes: number; files: number; note: string }
 }
-export type FeatureDetail = {
+export type FeatureDetail = FeatureSnapshot & {
   id: string; name: string; ticket_name: string
   walkthrough_sections?: { key: string; title: string }[]
   flow: { title: string; steps: { n: number; label: string; plain: string; component: Evidence & { kind: string; name: string } }[] }

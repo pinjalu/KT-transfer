@@ -34,10 +34,10 @@ afterEach(async () => {
 
 it('updates sidebar, breadcrumb and browser title immediately after selecting a different project', async () => {
   await act(async () => root.render(<MemoryRouter><Shell /></MemoryRouter>))
-  expect(container.querySelector('.project-pick-name')?.textContent).toBe('old-project')
+  expect(container.querySelector('.sidebar-project-name')?.textContent).toBe('old-project')
   settings = { ...settings!, project_name: 'new-project', local: { path: 'D:\\Projects\\new-project' } }
   await act(async () => window.dispatchEvent(new Event(PROJECT_CHANGED)))
-  expect(container.querySelector('.project-pick-name')?.textContent).toBe('new-project')
+  expect(container.querySelector('.sidebar-project-name')?.textContent).toBe('new-project')
   expect(container.querySelector('.crumb')?.textContent).toBe('new-project')
   expect(document.title).toBe('new-project · KT Assistant')
   expect(container.textContent).not.toContain('old-project')
@@ -46,13 +46,13 @@ it('updates sidebar, breadcrumb and browser title immediately after selecting a 
 it('shows the added folder for an older mixed-source workspace and retains an explicit new repository name', async () => {
   settings = { ...settings!, local: { path: 'C:\\Projects\\functionalAI\\' } }
   await act(async () => root.render(<MemoryRouter><Shell /></MemoryRouter>))
-  expect(container.querySelector('.project-pick-name')?.textContent).toBe('functionalAI')
+  expect(container.querySelector('.sidebar-project-name')?.textContent).toBe('functionalAI')
   settings = { ...settings!, repo: 'acme/another-project', project_name: 'another-project' }
   await act(async () => window.dispatchEvent(new Event(PROJECT_CHANGED)))
-  expect(container.querySelector('.project-pick-name')?.textContent).toBe('another-project')
+  expect(container.querySelector('.sidebar-project-name')?.textContent).toBe('another-project')
   settings = null
   await act(async () => window.dispatchEvent(new Event(PROJECT_CHANGED)))
-  expect(container.querySelector('.project-pick-name')?.textContent).toBe('No project')
+  expect(container.querySelector('.sidebar-project-name')?.textContent).toBe('No project')
   expect(document.title).toBe('KT Assistant')
 })
 

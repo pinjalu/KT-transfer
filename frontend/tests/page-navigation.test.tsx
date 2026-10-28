@@ -7,7 +7,7 @@ import { RetainedPages } from '../src/components/RetainedPages'
 import { Overview } from '../src/pages/Overview'
 import { Ask } from '../src/pages/Ask'
 import { Architecture } from '../src/pages/Architecture'
-import { get, post } from '../src/lib/api'
+import { get, post, PROJECT_CHANGED } from '../src/lib/api'
 import { useApi } from '../src/lib/useApi'
 import { useRememberedParam } from '../src/lib/pageState'
 import type { Status } from '../src/lib/types'
@@ -59,6 +59,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   Element.prototype.scrollIntoView = vi.fn()
   status = { knowledge_revision: 1, settings: { repo: 'acme/project', branch: 'main', platforms: ['github'] },
+    scan: { id: 1, repo: 'acme/project', branch: 'main', commit: 'abcdefg', status: 'complete' },
     ready: true, busy: false, overview_building: false, awaiting_project: false } as Status
   body = { repo: 'acme/project', branch: 'main', commit: 'abcdefg', scan_id: 1, scanned_at: null,
     demo: false, sections: [{ key: 'purpose', title: 'Project purpose', statements: [{ text: 'Saved project explanation',
@@ -71,7 +72,13 @@ beforeEach(() => {
   vi.mocked(get).mockImplementation(async path => {
     if (path === '/api/status') return status
     if (path === '/api/overview') return { available: true, overview: body, building: false, reason: '' }
-    if (path === '/api/features') return { available: true, features: [], unclustered: { note: '' } }
+    if (path === '/api/architecture') return { available: true, reason: '', architecture: {
+      repo: status.settings?.repo, branch: status.settings?.branch, scan_id: status.scan?.id,
+      commit: status.scan?.commit, knowledge_revision: status.knowledge_revision,
+      systems: [{ id: 'primary', name: 'project', diagrams: [], facts: [], roles: {} }] } }
+    if (path === '/api/features') return { available: true, repo: status.settings?.repo, branch: status.settings?.branch,
+      scan_id: status.scan?.id, commit: status.scan?.commit, knowledge_revision: status.knowledge_revision,
+      features: [], unclustered: { note: '' } }
     if (path === '/api/poll') return { value: 'saved' }
     throw new Error(`Unexpected read: ${path}`)
   })
@@ -128,13 +135,15 @@ it('keeps an in-flight overview read alive across navigation instead of restarti
   expect(page('/overview').textContent).toContain('Saved project explanation')
 })
 
-it('refreshes saved architecture only when requested and retains it during the read', async () => {
+it('refreshes architecture independently of the saved overview and retains it through navigation', async () => {
   await renderApp(); await navigate('/architecture'); await navigate('/ask'); await navigate('/architecture')
-  expect(reads('/api/overview')).toHaveLength(2)
+  expect(reads('/api/overview')).toHaveLength(1)
+  expect(reads('/api/architecture')).toHaveLength(1)
   const architecture = page('/architecture')
   const refresh = Array.from(architecture.querySelectorAll('button')).find(x => x.textContent?.includes('Refresh architecture'))!
   await click(refresh)
-  expect(reads('/api/overview')).toHaveLength(3)
+  expect(reads('/api/overview')).toHaveLength(1)
+  expect(reads('/api/architecture')).toHaveLength(2)
   expect(architecture.textContent).toContain('Architecture')
   expect(post).not.toHaveBeenCalled()
 })
@@ -233,6 +242,43 @@ it('discards old page state when switching projects and on workspace unmount', a
   expect(container.querySelector('[data-page]')).toBeNull()
   await renderApp()
   expect(reads('/api/overview')).toHaveLength(3)
+})
+
+it('hides old views immediately after a project selection and ignores a late old status response', async () => {
+  await renderApp()
+  await navigate('/ask')
+  const draft = page('/ask').querySelector('textarea')!
+  await type(draft, 'Previous project question')
+  await navigate('/overview')
+  const oldOverview = page('/overview')
+  const oldStatus = status
+  let finishOld!: (value: Status) => void
+  let finishNew!: (value: Status) => void
+  const normal = vi.mocked(get).getMockImplementation()!
+  let statusReads = 0
+  vi.mocked(get).mockImplementation((path, signal) => {
+    if (path === '/api/status') return new Promise<Status>(resolve => {
+      if (++statusReads === 1) finishOld = resolve
+      else finishNew = resolve
+    })
+    if (path === '/api/overview') return Promise.resolve({ available: false, overview: null, building: false })
+    return normal(path, signal)
+  })
+  await act(async () => vi.advanceTimersByTimeAsync(2000))
+  const oldSignal = reads('/api/status').at(-1)![1]!
+  await act(async () => window.dispatchEvent(new Event(PROJECT_CHANGED)))
+  expect(oldSignal.aborted).toBe(true)
+  expect(oldOverview.closest('[hidden]')).not.toBeNull()
+  expect(container.querySelector('.sidebar-project-name')?.textContent).toBe('No project')
+  status = { ...status, settings: { repo: 'local:D:/new-folder', branch: 'working-tree', platforms: ['local'] },
+    ready: false, knowledge_revision: 2 }
+  await act(async () => finishNew(status))
+  expect(container.contains(draft)).toBe(false)
+  expect(container.contains(oldOverview)).toBe(false)
+  expect(container.textContent).not.toContain('Saved project explanation')
+  await act(async () => finishOld(oldStatus))
+  expect(container.querySelector('.sidebar-project-name')?.textContent).toBe('new-folder')
+  expect(container.textContent).not.toContain('Previous project question')
 })
 
 function Selection() {

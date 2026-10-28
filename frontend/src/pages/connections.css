@@ -172,3 +172,6 @@
 .source-freshness dt { font-weight: 600; }
 .source-freshness dd { margin: 0; display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px 12px; }
 .source-freshness dd > span:last-child { flex-basis: 100%; }
+.conn-add-folder { display: flex; align-items: center; gap: 9px; font-size: 13px; grid-column: 1 / -1; }
+.conn-add-folder input { width: 16px; height: 16px; flex: 0 0 auto; }
+.conn-selection-help { grid-column: 1 / -1; }

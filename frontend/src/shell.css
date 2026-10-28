@@ -18,14 +18,10 @@
   display: block; padding: 0 var(--s2) var(--s1);
   font-size: 11px; color: var(--sidebar-text-dim);
 }
-.project-pick {
-  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
-  background: var(--sidebar-deep); border: 1px solid #1d4257; color: #fff;
-  border-radius: var(--r-md); padding: 10px var(--s3); font-weight: 600; text-align: left;
+.sidebar-project-name {
+  display: block; padding: var(--s1) var(--s2); color: #fff; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.project-pick:hover { background: var(--sidebar-hover); }
-.project-pick-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-pick-arrow { display: flex; transform: rotate(90deg); color: var(--sidebar-text-dim); }
 
 /* flex: 1 makes this take the leftover height so the footer sits at the bottom. Without
    align-content the grid stretches its ten rows to fill that height, which spread the links
