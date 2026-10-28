@@ -64,6 +64,26 @@
 .ov-story-step-detail h4 { margin: 0 0 10px; font-size: 14px; }
 .ov-story-gap { margin: 0; padding: 12px 15px; border-radius: 9px; background: var(--warn-wash); color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
 .ov-story-more { margin-bottom: 24px; }
+.ov-panel .cites { display: inline-flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 0; }
+.ov-panel .cite { display: inline-block; font-size: 11px; font-weight: 650; padding: 3px 7px; border-radius: 6px; background: var(--accent-wash); text-decoration: none; }
+.ov-panel .cite:hover { text-decoration: underline; }
+.ov-panel .said-functions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--ink-soft); }
+.ov-panel .said-functions a { padding: 3px 7px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); text-decoration: none; }
+.ov-panel .said-functions a:hover { border-color: var(--accent); text-decoration: underline; }
+.ov-visual-map, .ov-main-flows { border: 1px solid var(--border); border-radius: 12px; background: #fafdfe; padding: 18px; margin: 0 0 24px; }
+.ov-visual-map-head h3, .ov-main-flows h3 { margin: 6px 0 12px; font-size: 18px; }
+.ov-map-picked { margin-top: 13px; padding: 12px; border-radius: 8px; background: var(--accent-wash); font-size: 12px; }
+.ov-map-picked p { margin: 5px 0; color: var(--ink-soft); }
+.ov-map-empty { margin: 0 0 20px; padding: 12px 15px; border: 1px dashed var(--border-strong); border-radius: 9px; color: var(--ink-soft); font-size: 12px; }
+.ov-main-flow-list { display: grid; gap: 9px; }
+.ov-main-flow-list details { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.ov-main-flow-list summary { display: flex; justify-content: space-between; gap: 10px; cursor: pointer; padding: 12px 14px; font-size: 13px; }
+.ov-main-flow-list summary span { color: var(--ink-soft); font-size: 11px; }
+.ov-main-flow-list ol { list-style: none; margin: 0; padding: 0 14px 14px; display: grid; gap: 9px; }
+.ov-main-flow-list li { display: flex; gap: 10px; padding-top: 9px; border-top: 1px solid var(--border); font-size: 12px; }
+.ov-main-flow-list li > div { min-width: 0; }
+.ov-main-flow-list li p { margin: 4px 0 7px; color: var(--ink-soft); }
+.ov-flow-number { display: grid; place-items: center; width: 23px; height: 23px; flex: none; border-radius: 50%; background: var(--accent-wash); color: var(--accent-deep); font-size: 11px; font-weight: 700; }
 .ov-hero {
   display: flex; align-items: center; justify-content: space-between; gap: 32px;
   padding: 20px 26px; border-radius: 18px; color: #d6e5eb;

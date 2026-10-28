@@ -24,6 +24,7 @@ from pka.overview_context import select_sources as overview_sources, source_syst
 from pka.overview_scope import selected_local, apply_metadata, current_local_payload
 from pka.overview import (TOPICS, reading_order, section_from, tidy, topics_for,
                           walkthrough)
+from pka.overview_references import definitions as function_definitions, references as function_references
 from pka.plain_language import STYLE_VERSION
 from pka.mcp_client import connect
 from pka.parallel import concurrency, process_parallel
@@ -1125,8 +1126,41 @@ class Service:
                     view = await asyncio.to_thread(SystemIndex, self.index, scan['id'], system['paths'])
                     system['facts'] = await asyncio.to_thread(derive_facts, view, scan)
                     system['roles'] = await asyncio.to_thread(describe_roles, view, scan, system['facts'])
+                    try:
+                        system['diagrams'] = await asyncio.to_thread(build_diagrams, view, scan, system['facts'])
+                    except Exception:
+                        applog.failure('overview.system_diagrams_failed', system=system['id'])
+                        system['diagrams'] = []
                     self.ensure_current(checked)
                     self.check_cancelled()
+
+            from pka import features as feature_maps
+            for system in systems:
+                if overview_selection:
+                    system['feature_flows'] = local_display.get('system_feature_flows', {}).get(system['id'], [])
+                    system['diagrams'] = diagrams
+                else:
+                    if len(systems) == 1:
+                        view = analysis_index
+                        system['facts'] = facts
+                        system['diagrams'] = diagrams
+                    else:
+                        from pka.architecture import SystemIndex
+                        view = await asyncio.to_thread(SystemIndex, self.index, scan['id'], system['paths'])
+                    try:
+                        derived = await asyncio.to_thread(feature_maps.derive, view, scan, system['facts'])
+                        system['feature_flows'] = feature_maps.overview_flows(derived)
+                    except Exception:
+                        applog.failure('overview.system_features_failed', system=system['id'])
+                        system['feature_flows'] = []
+                self.ensure_current(checked)
+                self.check_cancelled()
+            function_symbols = {}
+            for system in systems:
+                function_symbols[system['id']] = await asyncio.to_thread(
+                    function_definitions, self.index, scan, system['paths'])
+                self.ensure_current(checked)
+                self.check_cancelled()
 
             def payload_now(sections, done):
                 self.ensure_current(checked)
@@ -1136,6 +1170,8 @@ class Service:
                         'demo':self.demo,'sections':sections,'facts':facts,'explanation_style':STYLE_VERSION,
                         'systems':[{k:system[k] for k in ('id','name')} for system in systems],
                         'diagrams':diagrams,'roles':roles,
+                        'system_diagrams':{system['id']:system.get('diagrams', []) for system in systems},
+                        'system_feature_flows':{system['id']:system.get('feature_flows', []) for system in systems},
                         'steps':walkthrough([t['key'] for t in topics],
                                             [s['key'] for s in sections],
                                             [g['key'] for g in facts],
@@ -1222,6 +1258,7 @@ class Service:
                 topic_states[topic['key']]['state'] = 'retrieving'
                 self.overview_progress = {'phase':'Writing project overview','done':done,'total':len(topics),'topics':topic_states}
                 scoped_paths = system['paths'] if system else paths
+                scoped_symbols = function_symbols.get(system['id'] if system else systems[0]['id'], [])
                 scoped_facts = system.get('facts', []) if system else facts
                 scoped_roles = system.get('roles', {}) if system else roles
                 sources = self.index.search_many(topic['queries'], scan,
@@ -1243,13 +1280,16 @@ class Service:
                     'default' if self.generator is ollama_answer else str(id(self.generator)))
                 cached = topic_cache.read(self.index,cache_key) if not self.demo else None
                 if cached:
+                    cached = {**cached, 'statements':[
+                        {**statement, 'function_refs':function_references(statement, sources, scoped_symbols)}
+                        for statement in cached.get('statements', [])]}
                     topic_states[topic['key']]['state'] = 'cached'
                     return cached, sources, cache_key
                 topic_states[topic['key']]['state'] = 'generating'
                 if not sources:
                     section = section_from(topic, [], None,
                         'No indexed excerpt matched this topic, so nothing is claimed about it.',
-                        measure=not self.demo, facts=scoped_facts, paths=scoped_paths)
+                        measure=not self.demo, facts=scoped_facts, paths=scoped_paths, symbols=scoped_symbols)
                     applog.warn('overview.topic_empty', topic=topic['key'])
                 else:
                     try:
@@ -1260,7 +1300,8 @@ class Service:
                         else:
                             answer = await generate_topic(topic, sources)
                         section = section_from(topic, sources, answer,
-                                               measure=not self.demo, facts=scoped_facts, paths=scoped_paths)
+                                               measure=not self.demo, facts=scoped_facts, paths=scoped_paths,
+                                               symbols=scoped_symbols)
                         if generation_metadata(answer): section['generation'] = generation_metadata(answer)
                         applog.event('overview.topic', topic=topic['key'], sources=len(sources),
                                      statements=len(section['statements']),
@@ -1271,7 +1312,8 @@ class Service:
                     except SourceError as exc:
                         if exc.code in {'stale','access_denied','access_unverified','access','scope'}: raise
                         section = section_from(topic, sources, None, str(exc),
-                                               measure=not self.demo, facts=scoped_facts, paths=scoped_paths)
+                                               measure=not self.demo, facts=scoped_facts, paths=scoped_paths,
+                                               symbols=scoped_symbols)
                         if generation_metadata(exc): section['generation'] = generation_metadata(exc)
                         applog.failure('overview.topic_failed', topic=topic['key'], code=exc.code, msg=exc)
                 return section, sources, cache_key

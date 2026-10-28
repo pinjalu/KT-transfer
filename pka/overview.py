@@ -21,6 +21,7 @@ from pathlib import PurePosixPath
 
 from pka.config import source_url
 from pka.index import is_source_path
+from pka.overview_references import references as function_references
 from pka.statement_evidence import describe as describe_evidence
 
 TOPICS = [
@@ -82,7 +83,9 @@ Finish with **How the parts connect:** describing the supported path between the
 Do not pick random files and explain one function in each. Do not make a list of utility
 functions, logging helpers or tests the architecture. A function name alone does not prove
 its role. Use fewer components if fewer are supported. Only claim calls or order shown
-by the code or documentation; report missing connections in missing_information.''',
+by the code or documentation; report missing connections in missing_information. When a
+real function is central to a part, write its exact name in backticks so the reader can
+open its definition. Do not list incidental helper functions.''',
     },
     {
         'key': 'setup',
@@ -139,7 +142,9 @@ feature if the project is explicitly a logging tool. Do not infer a complete wor
 a prompt, imports, similarly named functions, a proposed ticket or unrelated routes.
 Keep this system separate from other imported systems; do not invent calls between them.
 Name precise missing links or output evidence in missing_information, and explain the parts
-that are supported instead of replacing them with generic instructions.''',
+that are supported instead of replacing them with generic instructions. When naming a real
+function, use its exact name in backticks so the reader can open its definition. Do not
+mention a function unless the supplied code shows that name.''',
     },
     {
         'key': 'interfaces',
@@ -566,9 +571,11 @@ def tidy(statements: list[dict], sources: list[dict],
 
 
 def section_from(topic: dict, sources: list[dict], answer: dict | None, error: str = '',
-                 measure: bool = True, facts=(), paths=()) -> dict:
+                 measure: bool = True, facts=(), paths=(), symbols=()) -> dict:
     """Package one section, keeping its own sources and its own gaps attached to it."""
     statements, checks = tidy((answer or {}).get('statements', []), sources, measure, facts, paths)
+    for statement in statements:
+        statement['function_refs'] = function_references(statement, sources, symbols)
     story = {}
     if topic['key'] == 'purpose':
         labels = {'problem': 'problem', 'solution': 'solution',

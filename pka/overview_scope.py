@@ -38,7 +38,8 @@ def current_local_payload(index, scan, selection, cached=None):
     from pka.overview import topics_for, section_from, reading_order
     view = SystemIndex(index, scan['id'], selection['paths'])
     found = facts.derive(view, scan)
-    feature_list = {'available':True, **features.listing(features.derive(view, scan, found)),
+    derived = features.derive(view, scan, found)
+    feature_list = {'available':True, **features.listing(derived),
                     'repo':selection['repo'], 'branch':'', 'commit':selection['commit'],
                     'scan_id':scan['id'], 'knowledge_revision':index.revision}
     if cached is None:
@@ -50,4 +51,5 @@ def current_local_payload(index, scan, selection, cached=None):
                       'Build the overview to explain this local project from its own files.'}) for topic in topics],
                   'scope_update_available':True, 'plain_language_update_available':True}
     return apply_metadata({**cached, 'overview_features':feature_list,
+        'system_feature_flows':{selection['id']:features.overview_flows(derived)},
         'reading_order':reading_order(selection['paths'], repo=scan['repo'], commit=scan['commit'])}, selection, index.revision)

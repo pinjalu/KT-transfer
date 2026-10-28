@@ -25,6 +25,7 @@ export const EVIDENCE_LABELS: Record<EvidenceKind, string> = {
 export type Statement = {
   text: string
   source_ids: string[]
+  function_refs?: { name: string; path: string; line: number; url: string }[]
   support: Support
   support_share: number | null
   about_this_project: boolean

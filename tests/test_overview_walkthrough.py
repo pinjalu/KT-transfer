@@ -180,6 +180,10 @@ def test_separate_systems_never_share_a_generation_request_or_citation_ids(tmp_p
     ids = [s['source_id'] for part in sections for s in part['sources']]
     assert len(ids) == len(set(ids))
     assert all(s.get('system_name') for part in sections for s in part['sources'])
+    assert set(first['system_diagrams']) == {'primary', prefix}
+    assert not any(node['path'].startswith(prefix) for diagram in first['system_diagrams']['primary']
+                   for node in diagram['nodes'])
+    assert set(first['system_feature_flows']) == {'primary', prefix}
     seen.clear()
     fail_local = False
     second = asyncio.run(svc.build_overview())

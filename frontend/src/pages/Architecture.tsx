@@ -24,9 +24,9 @@ type RoleCard = {
   holds: string[]; used_by: RoleLink[]; calls: RoleLink[]
 }
 
-const DRAWN = ['modules', 'journey', 'stack']
+const DRAWN = ['modules', 'journey', 'er', 'stack']
 const TAB_FOR: Record<string, string> = {
-  modules: 'System map', journey: 'Request flow', stack: 'Layers',
+  modules: 'System map', journey: 'Request flow', er: 'ER diagram', stack: 'Layers',
 }
 /** Which fact group answers which tab. Each is a list with real lines, not a drawing. */
 const FACT_TABS: [string, string][] = [

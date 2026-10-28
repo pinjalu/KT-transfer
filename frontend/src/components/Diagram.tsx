@@ -18,11 +18,12 @@ export type DiagramNode = {
   line: number
   url: string
   kind: string
+  fields?: string[]
   column: number
   row: number
 }
 
-export type DiagramEdge = { from: string; to: string; line: number; count: number; back: boolean }
+export type DiagramEdge = { from: string; to: string; line: number; count: number; back: boolean; reason?: string }
 
 /** A band holds no node list. Its members are the nodes carrying the same `column`. */
 export type Band = { key: string; title: string; plain: string; column: number; count: number }
@@ -48,6 +49,7 @@ function clipped(text: string) {
 
 /** What the browser puts in the hover bubble, and what a reader is told an arrow means. */
 function edgeReason(edge: DiagramEdge) {
+  if (edge.reason) return edge.reason + (edge.line ? ` (line ${edge.line})` : '')
   if (edge.back) return 'these two files import each other' + (edge.line ? ', at line ' + edge.line : '')
   if (edge.count > 1) return `${edge.count} imports cross here`
   return edge.line ? 'declared at line ' + edge.line : 'a request arrives here'

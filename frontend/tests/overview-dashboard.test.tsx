@@ -75,6 +75,45 @@ afterEach(async () => {
 })
 
 describe('interactive overview', () => {
+  it('shows named sources, exact function links, every feature flow, and the ER map', async () => {
+    const purpose = topic('purpose', 'Purpose')
+    purpose.statements[0].text = 'The `match` function compares profiles.'
+    purpose.statements[0].function_refs = [{ name: 'match', path: 'matching.py', line: 18,
+      url: 'https://github.com/example/project/blob/abcdefg/matching.py#L18' }]
+    body.sections = [purpose, topic('flows', 'Step by step'), topic('data', 'Data & settings')]
+    body.systems = [{ id: 'primary', name: 'project' }]
+    body.system_feature_flows = { primary: [
+      { id: 'match', name: 'Matching', route_count: 2, more_steps: 0, steps: [
+        { n: 1, label: 'POST /match', plain: 'Receives the request.',
+          component: { kind: 'route', name: 'matching.py', path: 'matching.py', line: 8,
+            url: 'https://github.com/example/project/blob/abcdefg/matching.py#L8' } }] },
+      { id: 'accounts', name: 'Accounts', route_count: 1, more_steps: 0, steps: [
+        { n: 1, label: 'GET /accounts', plain: 'Returns accounts.',
+          component: { kind: 'route', name: 'accounts.py', path: 'accounts.py', line: 4,
+            url: 'https://github.com/example/project/blob/abcdefg/accounts.py#L4' } }] },
+    ] }
+    body.system_diagrams = { primary: [{ key: 'er', kind: 'graph', title: 'How saved information connects',
+      plain: 'Entities from files.', note: 'Declarations only.', circular: 0,
+      nodes: [{ id: 'er:users', label: 'users', sublabel: 'id, name', fields: ['id', 'name'],
+        path: 'schema.sql', line: 1, url: 'https://github.com/example/project/blob/abcdefg/schema.sql#L1',
+        kind: 'entity', column: 0, row: 0 }], edges: [] }] }
+    await render()
+    expect(panel().textContent).toContain('Open function:')
+    expect(panel().querySelector<HTMLAnchorElement>('.said-functions a')?.href).toContain('matching.py#L18')
+    expect(panel().querySelector('.cite')?.textContent).toBe('View source: README.md')
+    expect(panel().textContent).not.toContain('[1]')
+    await click('Step by step')
+    expect(panel().querySelectorAll('.ov-main-flow-list details')).toHaveLength(2)
+    expect(panel().textContent).toContain('Matching')
+    expect(panel().textContent).toContain('Accounts')
+    await act(async () => { panel().querySelector<HTMLDetailsElement>('.ov-main-flow-list details')!.open = true })
+    expect(panel().querySelector<HTMLAnchorElement>('.ov-main-flow-list .source-link')?.href).toContain('matching.py#L8')
+    await click('Data & settings')
+    expect(panel().querySelector('svg[aria-label="How saved information connects"]')).not.toBeNull()
+    expect(panel().textContent).toContain('Entities from files.')
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it('puts the problem and solution before technical shortcuts and opens each step of the user flow', async () => {
     const purpose = topic('purpose', 'The problem, the solution and what happens', 5)
     const lines = [
@@ -149,9 +188,9 @@ describe('interactive overview', () => {
   it('offers a rebuild for an older explanation without quietly generating new content', async () => {
     body.plain_language_update_available = true
     await render()
-    expect(container.textContent).toContain('problem, solution and example flow in Start here')
-    expect(container.textContent).toContain('Connected systems remain separate')
-    expect(container.textContent).toContain('Refreshing the page only reloads the saved text')
+    expect(container.textContent).toContain('source-linked graphs, an ER diagram')
+    expect(container.textContent).toContain('every discovered main feature in Step by step')
+    expect(container.textContent).toContain('Source references will use names instead of numbers')
     expect(container.querySelector('.ov-saved-state')?.textContent).toContain('Explanation update available')
     expect(post).not.toHaveBeenCalled()
     await click('Update saved explanation')

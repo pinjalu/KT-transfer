@@ -4,14 +4,17 @@ import { Icon } from './Icon'
 import { Said, Statements } from './Statements'
 import { GenerationDetails } from './GenerationDetails'
 import { PlainLanguageGuide } from './PlainLanguageGuide'
+import { Diagram } from './Diagram'
+import type { DiagramNode, DiagramPayload } from './Diagram'
 import { Button, Chip, Empty, Failed, Loading, Missing, SourceLink } from './ui'
 import { originOf, sourcePath } from '../lib/answer'
 import { factsOf } from '../lib/overview'
 import { projectName } from '../lib/project'
-import type { FactGroup, Overview, Section } from '../lib/overview'
+import type { FactGroup, Overview, OverviewFeatureFlow, Section } from '../lib/overview'
 import type { Statement } from '../lib/answer'
 import type { Load } from '../lib/useApi'
 import type { FeatureList } from '../lib/features'
+import '../pages/architecture.css'
 
 export type OverviewMode = 'Beginner' | 'Developer' | 'Architect'
 export type FeatureReply = FeatureList
@@ -60,7 +63,7 @@ function Explanation({ section, mode }: { section: Section; mode: OverviewMode }
     {section.generation && (mode === 'Beginner' ? <details className="ov-disclosure"><summary>How this explanation was written</summary>
       <GenerationDetails value={section.generation} cached={section.cache_hit}/></details>
       : <GenerationDetails value={section.generation} cached={section.cache_hit}/>)}
-    {section.statements.length > 0 ? <Statements statements={section.statements} sources={section.sources} />
+    {section.statements.length > 0 ? <Statements statements={section.statements} sources={section.sources} citationStyle="named" />
       : !section.error && <Missing what={section.missing_information || 'No evidence was found for this topic.'}
         checked="The excerpts retrieved for this system and topic" />}
     {!!section.statements.length && section.missing_information && <Missing what={section.missing_information} />}
@@ -88,7 +91,7 @@ function withoutStoryHeading(text: string) {
 }
 
 function StoryClaim({ section, statement }: { section: Section; statement: Statement }) {
-  return <ol className="ov-story-claim"><Said statement={{ ...statement, text: withoutStoryHeading(statement.text) }} sources={section.sources} /></ol>
+  return <ol className="ov-story-claim"><Said statement={{ ...statement, text: withoutStoryHeading(statement.text) }} sources={section.sources} citationStyle="named" /></ol>
 }
 
 function ProjectStory({ section }: { section: Section }) {
@@ -124,8 +127,44 @@ function ProjectStory({ section }: { section: Section }) {
   </div>
 }
 
+const MAP_FOR: Record<string, string> = { architecture: 'modules', flows: 'journey', data: 'er' }
+
+function OverviewMap({ body, topic, systemId }: { body: Overview; topic: string; systemId: string }) {
+  const [picked, setPicked] = useState<DiagramNode | null>(null)
+  const systemCount = body.systems?.length ?? 1
+  const drawings = body.system_diagrams?.[systemId] ?? (systemCount === 1 ? body.diagrams : [])
+  const diagram = drawings.find((item: DiagramPayload) => item.key === MAP_FOR[topic])
+  if (!diagram) return topic === 'data' && body.system_diagrams
+    ? <p className="ov-map-empty">No database entities were declared in the files that were read, so an ER diagram cannot be drawn.</p> : null
+  return <section className="ov-visual-map" aria-label={diagram.title}>
+    <div className="ov-visual-map-head"><span className="ov-eyebrow">Visual map from the files</span><h3>{diagram.title}</h3></div>
+    <Diagram d={diagram} selected={picked?.path ?? ''} onPick={setPicked} />
+    {picked && <div className="ov-map-picked"><strong>{picked.label}</strong>
+      {!!picked.fields?.length && <p>Fields: {picked.fields.join(', ')}</p>}
+      <SourceLink path={picked.path} line={picked.line} url={picked.url} />
+    </div>}
+  </section>
+}
+
+function MainFeatureFlows({ flows }: { flows: OverviewFeatureFlow[] }) {
+  if (!flows.length) return <p className="ov-map-empty">No route-based feature groups were found in the imported files for this system.</p>
+  return <section className="ov-main-flows" aria-label="Main feature flows">
+    <span className="ov-eyebrow">Main features</span><h3>Explore every feature found</h3>
+    <p className="ov-hint">Open a feature to see its route and related files. These are code links, not a record of a request running.</p>
+    <div className="ov-main-flow-list">{flows.map(flow => <details key={flow.id}>
+      <summary><strong>{flow.name}</strong><span>{flow.route_count} route{flow.route_count === 1 ? '' : 's'}</span></summary>
+      <ol>{flow.steps.map(step => <li key={step.n}>
+        <span className="ov-flow-number">{step.n}</span><div><strong>{step.label}</strong><p>{step.plain}</p>
+          <SourceLink path={step.component.path} line={step.component.line} url={step.component.url} /></div>
+      </li>)}</ol>
+      {flow.more_steps > 0 && <p className="ov-hint">{flow.more_steps} more related code steps are outside this short view.</p>}
+    </details>)}</div>
+  </section>
+}
+
 function TopicContent({ section, body, mode }: { section: Section; body: Overview; mode: OverviewMode }) {
   const content = useRef<HTMLDivElement>(null)
+  const primarySystemId = body.systems?.[0]?.id ?? 'primary'
   const supportingFacts = section.key === 'setup' ? factsOf(body, 'commands')
     : section.key === 'technologies' ? factsOf(body, 'dependencies') : undefined
 
@@ -139,11 +178,15 @@ function TopicContent({ section, body, mode }: { section: Section; body: Overvie
   }}>
     {section.system_sections?.length ? section.system_sections.map(part => <section className="ov-system" key={part.system_id} aria-label={part.system_name}>
       <h3>{part.system_name}</h3>{section.key === 'purpose' && <ProjectStory section={part} />}
+      {section.key === 'flows' && body.system_feature_flows && <MainFeatureFlows flows={body.system_feature_flows[part.system_id ?? ''] ?? []} />}
+      {MAP_FOR[section.key] && <OverviewMap body={body} topic={section.key} systemId={part.system_id ?? ''} />}
       {section.key === 'purpose' && mode === 'Beginner' && !!Object.keys(part.story ?? {}).length
         ? <details className="ov-disclosure ov-story-more"><summary>Read the full explanation</summary><div className="ov-disclosure-body"><Explanation section={part} mode={mode} /></div></details>
         : <Explanation section={part} mode={mode} />}
     </section>) : <>
       {section.key === 'purpose' && <ProjectStory section={section} />}
+      {section.key === 'flows' && body.system_feature_flows && <MainFeatureFlows flows={body.system_feature_flows[primarySystemId] ?? []} />}
+      {MAP_FOR[section.key] && <OverviewMap body={body} topic={section.key} systemId={primarySystemId} />}
       {section.key === 'purpose' && mode === 'Beginner' && !!Object.keys(section.story ?? {}).length
         ? <details className="ov-disclosure ov-story-more"><summary>Read the full explanation</summary><div className="ov-disclosure-body"><Explanation section={section} mode={mode} /></div></details>
         : <Explanation section={section} mode={mode} />}

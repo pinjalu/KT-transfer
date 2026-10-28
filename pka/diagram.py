@@ -536,7 +536,9 @@ def build(index, scan: dict, facts: list) -> list[dict]:
             return ''
         return source_url(scan.get('repo', ''), scan.get('commit', ''), path, line)
 
+    from pka.er_diagram import build as er_diagram
     made = [stack_bands(files, route_paths, link),
             module_graph(files, link),
-            request_journey(files, routes, link)]
+            request_journey(files, routes, link),
+            er_diagram(index, scan, paths)]
     return [d for d in made if d]

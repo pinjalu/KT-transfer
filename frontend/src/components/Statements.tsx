@@ -10,7 +10,7 @@ import { EVIDENCE_LABELS, SUPPORT_LABELS, SUPPORT_SAYS, SUPPORT_TONE } from '../
  * Keep citations available; explanatory provenance belongs in an optional disclosure.
  * Suggestions, unverified answers and concrete source warnings stay visibly labelled.
  */
-export function Cites({ ids, sources }: { ids: string[]; sources: Source[] }) {
+export function Cites({ ids, sources, style = 'number' }: { ids: string[]; sources: Source[]; style?: 'number' | 'named' }) {
   const order = new Map(sources.map((s, i) => [s.source_id, i + 1]))
   const known = ids.filter((id) => order.has(id))
   if (!known.length) return null
@@ -18,7 +18,7 @@ export function Cites({ ids, sources }: { ids: string[]; sources: Source[] }) {
     <span className="cites">
       {known.map((id) => (
         <a key={id} className="cite" href={`#src-${id}`} title={sources.find((s) => s.source_id === id)?.path}>
-          [{order.get(id)}]
+          {style === 'named' ? `View source: ${sources.find((s) => s.source_id === id)?.path?.split('/').pop() || 'file'}` : `[${order.get(id)}]`}
         </a>
       ))}
     </span>
@@ -41,8 +41,8 @@ function StatementText({ text }: { text: string }) {
   </p>)}</>
 }
 
-export function Said({ statement, sources, citations = true, showContextMark = true }:
-  { statement: Statement; sources: Source[]; citations?: boolean; showContextMark?: boolean }) {
+export function Said({ statement, sources, citations = true, showContextMark = true, citationStyle = 'number' }:
+  { statement: Statement; sources: Source[]; citations?: boolean; showContextMark?: boolean; citationStyle?: 'number' | 'named' }) {
   const tone = SUPPORT_TONE[statement.support]
   const generic = showContextMark && !statement.about_this_project
   // A sentence can pass the support check and still send a reader to a file that was never
@@ -55,8 +55,11 @@ export function Said({ statement, sources, citations = true, showContextMark = t
     <li className={'said' + (tone === 'bad' || unread.length ? ' said-bad' : '')}>
       <div className="said-text">
         <StatementText text={statement.text} />
-        {citations && <Cites ids={statement.source_ids} sources={sources} />}
+        {citations && <Cites ids={statement.source_ids} sources={sources} style={citationStyle} />}
       </div>
+      {!!statement.function_refs?.length && <div className="said-functions"><span>Open function:</span>{statement.function_refs.map(ref =>
+        <a key={`${ref.path}:${ref.line}:${ref.name}`} href={ref.url} target="_blank" rel="noreferrer"
+          title={`${ref.path}:${ref.line}`}><code>{ref.name}()</code></a>)}</div>}
       {!['code', 'mixed', 'documentation', 'discussion'].includes(evidence.kind) &&
         <div className="said-evidence"><Chip tone={evidence.kind === 'verified_code' ? 'ok' : 'warn'}>
           {EVIDENCE_LABELS[evidence.kind] ?? EVIDENCE_LABELS.unverified}
@@ -82,13 +85,13 @@ export function Said({ statement, sources, citations = true, showContextMark = t
   )
 }
 
-export function Statements({ statements, sources, citations = true, limit, showContextMark = true }:
-  { statements: Statement[]; sources: Source[]; citations?: boolean; limit?: number; showContextMark?: boolean }) {
+export function Statements({ statements, sources, citations = true, limit, showContextMark = true, citationStyle = 'number' }:
+  { statements: Statement[]; sources: Source[]; citations?: boolean; limit?: number; showContextMark?: boolean; citationStyle?: 'number' | 'named' }) {
   const shown = limit ? statements.slice(0, limit) : statements
   return (
     <>
       <ol className="said-list">
-        {shown.map((s, i) => <Said key={i} statement={s} sources={sources} citations={citations}
+        {shown.map((s, i) => <Said key={i} statement={s} sources={sources} citations={citations} citationStyle={citationStyle}
                                  showContextMark={showContextMark} />)}
       </ol>
       {limit && statements.length > limit && (

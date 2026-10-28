@@ -1,7 +1,7 @@
 """One explanation style for every project source and generation feature."""
 from dataclasses import replace
 
-STYLE_VERSION = 'plain-language-v4-problem-solution-flow'
+STYLE_VERSION = 'plain-language-v5-diagrams-feature-flows'
 
 GUIDANCE = '''PLAIN-LANGUAGE EXPLANATIONS
 Write for a first-time reader with no programming knowledge, at roughly a ten-year-old

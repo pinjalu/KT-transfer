@@ -403,6 +403,17 @@ def listing(payload: dict) -> dict:
                          for f in payload['features']]}
 
 
+def overview_flows(payload: dict) -> list[dict]:
+    """Short, source-linked static steps for every route-based feature in the overview."""
+    result = []
+    for feature in payload['features']:
+        steps = detail(feature)['flow']['steps']
+        result.append({'id':feature['id'], 'name':feature['name'],
+                       'route_count':feature['route_count'],
+                       'steps':steps[:8], 'more_steps':max(0, len(steps) - 8)})
+    return result
+
+
 def _component(path: str, line: int, url: str, kind: str = 'file') -> dict:
     return {'kind': kind, 'name': path.rsplit('/', 1)[-1], 'sub': path.rsplit('/', 1)[0],
             'path': path, 'line': line, 'url': url}

@@ -30,6 +30,7 @@
 /* A band tells a reader what kind of thing a box is before they read its name. */
 .dg-route .dg-box { fill: var(--ok-wash); stroke: var(--ok); }
 .dg-store .dg-box { fill: var(--warn-wash); stroke: var(--warn); }
+.dg-entity .dg-box { fill: #f4f0ff; stroke: #9474bd; }
 .dg-outside .dg-box { fill: var(--page); stroke: var(--border-strong); stroke-dasharray: 4 3; }
 .dg-group .dg-box { fill: var(--accent-wash); stroke: var(--accent); }
 .dg-more .dg-box { fill: var(--page); stroke-dasharray: 3 3; }

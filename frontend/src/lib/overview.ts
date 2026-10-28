@@ -1,6 +1,13 @@
 /** The shape pka/service.py build_overview() caches and GET /api/overview returns. */
 import type { Source, Statement } from './answer'
 import type { FeatureList } from './features'
+import type { DiagramPayload } from '../components/Diagram'
+
+export type OverviewFeatureFlow = {
+  id: string; name: string; route_count: number; more_steps: number
+  steps: { n: number; label: string; plain: string;
+    component: { kind: string; name: string; path: string; line: number; url: string } }[]
+}
 
 export type Section = {
   system_id?: string
@@ -51,7 +58,9 @@ export type Overview = {
   demo: boolean
   sections: Section[]
   facts: FactGroup[]
-  diagrams: unknown[]
+  diagrams: DiagramPayload[]
+  system_diagrams?: Record<string, DiagramPayload[]>
+  system_feature_flows?: Record<string, OverviewFeatureFlow[]>
   roles: { cards?: unknown[] }
   steps: unknown[]
   reading_order: Reading[]
