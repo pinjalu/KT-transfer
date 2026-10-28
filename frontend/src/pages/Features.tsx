@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, Chip, Confidence, Empty, Failed, Loading, NoProject, PageHead, SourceLink } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { FeatureWalkthrough } from '../components/FeatureWalkthrough'
 import { sourcePath } from '../lib/answer'
-import { useApi } from '../lib/useApi'
+import { ApiError, get } from '../lib/api'
+import { sameFeatureSnapshot, useFeatures } from '../lib/useFeatures'
 import { useStatus } from '../lib/useStatus'
 import { useRememberedParam } from '../lib/pageState'
 import type { FeatureDetail, FeatureList, FeatureSummary } from '../lib/features'
@@ -13,17 +14,51 @@ import './features.css'
 const VIEWS = ['Overview', 'Code flow', 'APIs and data', 'Tests', 'Known problems', 'KT walkthrough'] as const
 type View = typeof VIEWS[number]
 
-function Feature({ summary, revision }: { summary: FeatureSummary; revision: number }) {
-  const detail = useApi<FeatureDetail>(`/api/features/${encodeURIComponent(summary.id)}`, 0, revision)
+function Feature({ summary, snapshot, revision, cache }: {
+  summary: FeatureSummary; snapshot: FeatureList; revision: number; cache: Map<string, FeatureDetail>
+}) {
+  const key = JSON.stringify([summary.id, snapshot.repo, snapshot.branch, snapshot.scan_id, snapshot.commit, revision])
+  const [result, setResult] = useState<{ data: FeatureDetail | null; error: string | null }>(() => ({
+    data: cache.get(key) ?? null, error: null,
+  }))
+  const [refresh, setRefresh] = useState(0)
   const [view, setView] = useState<View>('Overview')
-  if (detail.error) return <Failed message={detail.error} onRetry={detail.reload} />
-  if (!detail.data) return <Loading what="feature details" detail="Checking source access and reading the saved scan. No overview build is started." />
-  const body = detail.data
+  useEffect(() => {
+    // Feature stays mounted only while selected. Reuse its checked result when returning
+    // to it, but never reuse a result from a different scan or knowledge revision.
+    if (!refresh && cache.has(key)) return
+    const controller = new AbortController()
+    let live = true
+    void get(`/api/features/${encodeURIComponent(summary.id)}`, controller.signal).then(value => {
+      if (!live) return
+      const body = value as FeatureDetail
+      if (!sameFeatureSnapshot(body, snapshot)) {
+        cache.delete(key)
+        setResult({ data: null, error: 'These feature details do not match the current project files. Refresh to load the current feature.' })
+        return
+      }
+      cache.set(key, body)
+      setResult({ data: body, error: null })
+    }).catch(exc => {
+      if (!live) return
+      cache.delete(key)
+      setResult({ data: null, error: exc instanceof ApiError ? exc.message : 'Something went wrong.' })
+    })
+    return () => { live = false; controller.abort() }
+  }, [key, refresh, cache])
+  const reload = () => {
+    cache.delete(key)
+    setResult({ data: null, error: null })
+    setRefresh(n => n + 1)
+  }
+  if (result.error) return <Failed message={result.error} onRetry={reload} />
+  if (!result.data) return <Loading what="feature details" detail="Checking source access and reading the saved scan. No overview build is started." />
+  const body = result.data
   const data = body.apis_and_data
   return <section className="feature-detail" aria-label="Selected feature">
     <div className="feature-hero">
       <div className="feature-eyebrow"><Icon name="grid" size={16} /> FEATURE EXPLORER <Chip tone="accent">From saved code</Chip>
-        <Button kind="ghost" icon="refresh" onClick={detail.reload}>Refresh feature</Button></div>
+        <Button kind="ghost" icon="refresh" onClick={reload}>Refresh feature</Button></div>
       <h2>{body.name}</h2>
       <p>Explore {data.routes.length} route{data.routes.length === 1 ? '' : 's'} and {body.related.length} related file{body.related.length === 1 ? '' : 's'} found in the imported code.</p>
       <div className="feature-metrics">
@@ -122,8 +157,8 @@ function Feature({ summary, revision }: { summary: FeatureSummary; revision: num
 
 export function Features() {
   const status = useStatus()
-  const list = useApi<FeatureList>('/api/features', 0, status.data?.knowledge_revision,
-    !!status.data && !status.data.awaiting_project)
+  const list = useFeatures(status)
+  const detailCache = useRef(new Map<string, FeatureDetail>())
   const [selection, setParams] = useRememberedParam('feature')
   const [filter, setFilter] = useState('')
   const head = <PageHead title="Feature explorer" lead="Follow a feature through its code, data, tests and related tickets."
@@ -133,7 +168,7 @@ export function Features() {
   if (status.data?.awaiting_project) return <>{head}<NoProject what="features from the saved code" /></>
   if (!status.data) return <>{head}<Loading what="the project" /></>
   if (list.error) return <>{head}<Failed message={list.error} onRetry={list.reload} /></>
-  if (!list.data) return <>{head}<Loading what="saved features" detail="Checking access to connected sources. No overview build is needed." /></>
+  if (!list.data) return <>{head}<Loading what="features" detail="Finding features in this project’s files. Results appear after the current read finishes." /></>
   const body = list.data
   if (!body.available || !body.features.length) return <>{head}<Card><Empty
     title={body.available ? 'No route-based features were found' : 'Read your code to explore features'}
@@ -163,7 +198,8 @@ export function Features() {
           {body.unclustered && <p>{body.unclustered.files} files and {body.unclustered.routes} routes are outside the displayed groups.</p>}
         </details>
       </aside>
-      {selected ? <Feature key={`${chosen}:${status.data.knowledge_revision}`} summary={selected} revision={status.data.knowledge_revision} />
+      {selected ? <Feature key={JSON.stringify([body.repo, body.branch, body.scan_id, body.commit, chosen, status.data.knowledge_revision])}
+        summary={selected} snapshot={body} revision={status.data.knowledge_revision} cache={detailCache.current} />
         : <Card><Empty title="This feature is not in the current scan" detail="Choose a feature from the list. The project or saved code may have changed." /></Card>}
     </div>
   </>

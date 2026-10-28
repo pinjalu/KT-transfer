@@ -12,6 +12,16 @@ Opening it or switching tabs never calls an overview build or a model. Backgroun
 revalidation keeps the selected tab; a changed source revision replaces the saved details.
 Failures hide previously displayed protected data and remain distinct from empty results.
 
+Both feature GET responses identify their source with `repo`, `branch`, `scan_id`,
+`commit` and `knowledge_revision`. The UI accepts results only for the current project
+and saved read. Queuing a source import clears the feature list and detail until that
+read finishes. Starting an overview build refreshes **Main features**, including its
+count. Delayed responses from an earlier project or read cannot restore old cards.
+The backend also rechecks the revision after source access checks before returning features.
+Feature details already opened on the current page are reused when a reader switches
+away and back. **Refresh feature** fetches them again; a different project or saved
+read gets a new detail request.
+
 Features start at route declarations, grouped by URL subject, and follow handler imports up
 to two steps. At most 24 groups and 20 files per group are displayed; unmatched files/routes
 are reported. This is not an exhaustive inventory of business capabilities. Route names may

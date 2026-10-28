@@ -31,12 +31,15 @@ function panel() { return container.querySelector('#feature-panel')! }
 beforeEach(() => {
   vi.useFakeTimers()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  status = { knowledge_revision: 1, awaiting_project: false } as Status
-  list = { available: true, commit: 'abcdefg', features: ['orders', 'users'].map(id => ({
+  status = { knowledge_revision: 1, awaiting_project: false, ready: true,
+    settings: { repo: 'acme/shop', branch: 'main', platforms: ['github'] },
+    scan: { id: 1, repo: 'acme/shop', branch: 'main', commit: 'abcdefg', status: 'complete' } } as Status
+  list = { available: true, repo: 'acme/shop', branch: 'main', scan_id: 1, knowledge_revision: 1, commit: 'abcdefg', features: ['orders', 'users'].map(id => ({
     id, name: id === 'orders' ? 'Orders' : 'Users', plain: '', ticket_name: '',
     route_count: 1, file_count: 1, issue_count: 1, gap_count: 1, has_tests: true,
   })), unclustered: { files: 0, routes: 0, note: 'A feature starts at a route.' } }
-  body = { id: 'orders', name: 'Orders', ticket_name: '',
+  body = { id: 'orders', name: 'Orders', ticket_name: '', repo: 'acme/shop', branch: 'main', scan_id: 1,
+    knowledge_revision: 1, commit: 'abcdefg',
     flow: { title: 'Static code map for Orders.', steps: [{ n: 1, label: 'POST /orders', plain: 'Route declaration.', component: { ...file, name: 'app.py', kind: 'route' } }] },
     apis_and_data: { routes: [{ method: 'POST', path: '/orders', declared_at: file }], tables: [], services: [] },
     tests: { existing: [{ ...file, name: 'test_orders.py', covers: 'Imports app.py' }] },
@@ -83,6 +86,27 @@ it('opens a deep-linked feature and changes tabs without generating or rereading
   expect(post).not.toHaveBeenCalled()
 })
 
+it('returns to Admin instantly without requesting its details again', async () => {
+  list = { ...list, features: [{ ...list.features[0], id: 'admin', name: 'Admin' }, list.features[1]] }
+  body = { ...body, id: 'admin', name: 'Admin' }
+  await render('/features?feature=admin')
+  expect(container.querySelector('.feature-hero h2')?.textContent).toBe('Admin')
+  const pick = async (name: string) => act(async () => {
+    const target = Array.from(container.querySelectorAll<HTMLButtonElement>('.feature-list > button'))
+      .find(item => item.querySelector('.feature-list-name')?.textContent?.includes(name))
+    if (!target) throw new Error(`Feature missing: ${name}`)
+    target.click()
+  })
+  await pick('Users')
+  expect(container.querySelector('.feature-hero h2')?.textContent).toBe('Users')
+  await pick('Admin')
+  expect(container.querySelector('.feature-hero h2')?.textContent).toBe('Admin')
+  expect(container.textContent).not.toContain('Checking source access and reading the saved scan')
+  expect(vi.mocked(get).mock.calls.filter(([path]) => path === '/api/features/admin')).toHaveLength(1)
+  await click('Refresh feature')
+  expect(vi.mocked(get).mock.calls.filter(([path]) => path === '/api/features/admin')).toHaveLength(2)
+})
+
 it('searches feature names and recovers from no matches', async () => {
   await render()
   const input = container.querySelector<HTMLInputElement>('input[type=search]')!
@@ -94,6 +118,51 @@ it('searches feature names and recovers from no matches', async () => {
   expect(container.textContent).toContain('No matching features')
   await click('Clear search')
   expect(container.querySelectorAll('.feature-list > button')).toHaveLength(2)
+})
+
+it('hides old feature lists and details as soon as a file read is queued', async () => {
+  await render()
+  expect(container.querySelector('.feature-hero h2')?.textContent).toBe('Orders')
+  status = { ...status, busy: true, job: { id: 5, kind: 'scan', state: 'queued' } as Status['job'] }
+  await act(async () => vi.advanceTimersByTimeAsync(5000))
+  expect(container.querySelector('.feature-list')).toBeNull()
+  expect(container.querySelector('.feature-detail')).toBeNull()
+  expect(container.textContent).toContain('Finding features in this project')
+  status = { ...status, busy: false, job: { ...status.job!, state: 'succeeded' } }
+  list = { ...list, features: [] }
+  await act(async () => vi.advanceTimersByTimeAsync(5000))
+  expect(container.textContent).toContain('No route-based features were found')
+  expect(container.textContent).not.toContain('Orders')
+})
+
+it('rejects details from another project instead of showing the same-named old feature', async () => {
+  body.repo = 'acme/old-project'
+  await render()
+  expect(container.querySelector('.feature-detail')).toBeNull()
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('do not match the current project')
+})
+
+it('ignores a slow old feature list after switching project without changing the revision number', async () => {
+  const oldList = list
+  let finishOld!: (value: FeatureList) => void
+  const normal = vi.mocked(get).getMockImplementation()!
+  let first = true
+  vi.mocked(get).mockImplementation((path, signal) => {
+    if (path === '/api/features' && first) {
+      first = false
+      return new Promise(resolve => { finishOld = resolve })
+    }
+    return normal(path, signal)
+  })
+  await render()
+  status = { ...status, settings: { ...status.settings!, repo: 'acme/new-project' },
+    scan: { ...status.scan!, repo: 'acme/new-project' } }
+  list = { ...list, repo: 'acme/new-project', features: [] }
+  await act(async () => vi.advanceTimersByTimeAsync(5000))
+  expect(container.textContent).toContain('No route-based features were found')
+  await act(async () => finishOld(oldList))
+  expect(container.textContent).not.toContain('Orders')
+  expect(container.querySelector('.feature-list')).toBeNull()
 })
 
 it('supports keyboard tabs and preserves the view across background reads', async () => {
@@ -131,7 +200,7 @@ it('shows source failures and discards protected details after access is revoked
 
 it('does not reuse a removed feature after the source revision changes', async () => {
   await render('/features?feature=orders')
-  list = { ...list, features: [list.features[1]] }
+  list = { ...list, knowledge_revision: 2, features: [list.features[1]] }
   status = { ...status, knowledge_revision: 2 }
   await act(async () => vi.advanceTimersByTimeAsync(5000))
   expect(container.textContent).toContain('This feature is not in the current scan')
