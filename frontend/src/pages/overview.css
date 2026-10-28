@@ -178,3 +178,16 @@
   .ov-panel-footer { padding: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .ov-metric { transition: none; } .ov-metric:hover { transform: none; } }
+.ov-simple-guide {
+  margin-bottom: 22px; padding: 16px 18px; border: 1px solid #bae6e8;
+  border-radius: 12px; background: #f0fbfb; color: #183b48;
+}
+.ov-simple-guide h3 { margin: 0 0 8px; font-size: 15px; }
+.ov-simple-guide p { margin: 0 0 12px; line-height: 1.65; }
+.ov-simple-guide summary { cursor: pointer; font-weight: 600; }
+.ov-simple-guide dl { margin: 12px 0 0; }
+.ov-simple-guide dl > div + div { margin-top: 10px; }
+.ov-simple-guide dt { font-weight: 600; }
+.ov-simple-guide dd { margin: 3px 0 0; line-height: 1.55; }
+.ov-system { margin-bottom: 28px; padding-top: 12px; border-top: 1px solid var(--border, #dce5eb); }
+.ov-system > h3 { margin: 0 0 16px; }

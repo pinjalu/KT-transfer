@@ -39,7 +39,9 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   Element.prototype.scrollIntoView = vi.fn()
-  status = { knowledge_revision: 1, busy: false, overview_building: false, awaiting_project: false } as Status
+  status = { knowledge_revision: 1, busy: false, overview_building: false, awaiting_project: false, ready: true,
+    settings: { repo: 'example/project', branch: 'main', platforms: ['github'] },
+    scan: { id: 1, repo: 'example/project', branch: 'main', commit: 'abcdefg', status: 'complete' } } as Status
   body = { repo: 'example/project', branch: 'main', commit: 'abcdefg', scan_id: 1, scanned_at: null,
     demo: false, sections: [topic('purpose', 'Project purpose', 5), topic('setup', 'Project setup'), topic('testing', 'Project tests')],
     facts: [{ key: 'commands', title: 'Commands', plain: 'Commands in the README', truncated: 0, note: '',
@@ -54,7 +56,9 @@ beforeEach(() => {
     if (path === '/api/overview') return { available: true, overview: body, building: status.overview_building, progress: null, reason: '' }
     if (path === '/api/features') {
       if (featuresError) throw new Error('Source read failed')
-      return { available: true, features: [{ id: 'api', name: 'API', route_count: 2, file_count: 4, gap_count: 1 }], unclustered: { note: '' } }
+      return { available: true, repo: body.repo, branch: body.branch, scan_id: body.scan_id,
+        commit: body.commit, knowledge_revision: status.knowledge_revision,
+        features: [{ id: 'api', name: 'API', route_count: 2, file_count: 4, gap_count: 1 }], unclustered: { note: '' } }
     }
     throw new Error(`Unexpected read: ${path}`)
   })
@@ -71,6 +75,36 @@ afterEach(async () => {
 })
 
 describe('interactive overview', () => {
+  it.each(['example/project', 'local:D:/Projects/shop', 'zip:D:/managed/source'])('shows simple reading help for every topic and source: %s', async repo => {
+    body.repo = repo
+    status.settings!.repo = repo
+    status.scan!.repo = repo
+    body.sections = ['purpose','technologies','architecture','setup','flows','interfaces','data','testing','decisions'].map(key => topic(key, key))
+    body.topics_total = body.topics_done = 9
+    await render()
+    for (const label of ['Start here','Technology','Code structure','Getting started','Step by step','Ways to use it','Data & settings','Testing','Team context','Main features','Facts from files','Reading checklist','Gaps & coverage']) {
+      await click(label)
+      expect(panel().querySelector('[aria-label="Help for new readers"]')).not.toBeNull()
+      expect(panel().textContent).toContain('Words made simple')
+    }
+    await click('Developer')
+    expect(panel().querySelector('[aria-label="Help for new readers"]')).toBeNull()
+    await click('Architect')
+    expect(panel().querySelector('[aria-label="Help for new readers"]')).toBeNull()
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('offers a rebuild for an older explanation without quietly generating new content', async () => {
+    body.plain_language_update_available = true
+    await render()
+    expect(container.textContent).toContain('project-specific setup commands in Step 4')
+    expect(container.textContent).toContain('input-to-result walkthrough in Step 5')
+    expect(container.textContent).toContain('Refreshing the page only reloads the saved text')
+    expect(container.querySelector('.ov-saved-state')?.textContent).toContain('Explanation update available')
+    expect(post).not.toHaveBeenCalled()
+    await click('Update saved explanation')
+    expect(post).toHaveBeenCalledExactlyOnceWith('/api/overview')
+  })
   it('uses the current project title while retaining the actual repository in source metadata', async () => {
     status.settings = { repo: body.repo, branch: 'main', platforms: ['github', 'local'], project_name: 'functionalAI' }
     await render()
@@ -82,11 +116,57 @@ describe('interactive overview', () => {
     expect(post).not.toHaveBeenCalled()
   })
 
+  it('shows only local-folder metadata and current local cards for an older mixed workspace', async () => {
+    status.settings = { ...status.settings!, selected_source: 'local', project_name: 'famas_matching_square',
+      local: { repo: 'local:D:/famas_matching_square', path: 'D:/famas_matching_square' } }
+    body = { ...body, project_name: 'famas_matching_square', source_kind: 'local', overview_scope: 'local://snapshot/',
+      repo: 'local:D:/famas_matching_square', files_indexed: 105, files_skipped: 29,
+      overview_features: { available: true, repo: 'local:D:/famas_matching_square', branch: body.branch,
+        scan_id: body.scan_id, commit: body.commit, knowledge_revision: 1,
+        features: [{ id: 'matching', name: 'Matching', route_count: 1, file_count: 2, gap_count: 0 }], unclustered: { note: '' } } }
+    await render()
+    expect(container.querySelector('.ov-hero h2')?.textContent).toBe('famas_matching_square')
+    expect(container.querySelector('.ov-hero-meta')?.textContent).toBe('Local folder')
+    expect(container.querySelector('.ov-hero')?.textContent).not.toContain('abcdefg')
+    expect(container.querySelector('.ov-hero')?.textContent).not.toContain('example/project')
+    const files = [...container.querySelectorAll('.ov-metric')].find(value => value.textContent?.includes('Files indexed'))!
+    expect(files.querySelector('strong')?.textContent).toBe('105')
+    expect(files.textContent).toContain('29 files skipped')
+    await click('Main features')
+    expect(panel().textContent).toContain('Matching')
+    expect(panel().textContent).not.toContain('Explore API')
+    expect(vi.mocked(get).mock.calls.some(([path]) => path === '/api/features')).toBe(false)
+    await click('Gaps & coverage')
+    expect(panel().querySelector('.ov-coverage')?.textContent).not.toContain('Commit')
+    expect(panel().querySelector('.ov-coverage')?.textContent).not.toContain('abcdefg')
+  })
+
+  it('keeps the two systems’ explanations and failures separate in the same topic', async () => {
+    const first = { ...topic('flows', 'Flow'), system_id: 'primary', system_name: 'BSA_chatbot' }
+    first.statements[0].text = 'A dealer asks a motorcycle question.'
+    const second = { ...topic('flows', 'Flow'), system_id: 'local://snapshot/', system_name: 'famas_matching_square',
+      statements: [], sources: [], error: 'Local model unavailable' }
+    body.systems = [{ id: first.system_id, name: first.system_name }, { id: second.system_id, name: second.system_name }]
+    body.sections = [{ ...first, system_sections: [first, second] }]
+    await render()
+    const groups = panel().querySelectorAll('.ov-system')
+    expect(groups).toHaveLength(2)
+    expect(groups[0].textContent).toContain('A dealer asks a motorcycle question')
+    expect(groups[0].textContent).not.toContain('Local model unavailable')
+    expect(groups[1].textContent).toContain('famas_matching_square')
+    expect(groups[1].textContent).toContain('Local model unavailable')
+    expect(groups[1].textContent).not.toContain('motorcycle')
+  })
+
   it('navigates topics and exposes all points without requesting a build or fetching again', async () => {
     await render()
     expect(panel().textContent).toContain('Project purpose point 3')
     expect(panel().textContent).toContain('Project purpose point 4')
     expect(panel().textContent).toContain('Project purpose point 5')
+    const guide = panel().querySelector('[aria-label="Help for new readers"]')!
+    expect(guide.querySelector('details')?.open).toBe(false)
+    const statements = panel().querySelector('a.cite')!
+    expect(statements.compareDocumentPosition(guide) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await click('Getting started')
     expect(panel().textContent).toContain('Project setup point 1')
     expect(panel().textContent).toContain('npm start')
@@ -172,6 +252,37 @@ describe('interactive overview', () => {
     await click('Main features')
     expect(panel().querySelector('[role="alert"]')).not.toBeNull()
     expect(panel().textContent).not.toContain('No features were derived.')
+  })
+
+  it('clears Main features at overview start and waits for features from the current project', async () => {
+    await render()
+    await click('Main features')
+    expect(panel().querySelector('.ov-feature h3')?.textContent).toBe('API')
+    let finish!: (value: unknown) => void
+    const normal = vi.mocked(get).getMockImplementation()!
+    vi.mocked(get).mockImplementation((path, signal) => path === '/api/features'
+      ? new Promise(resolve => { finish = resolve }) : normal(path, signal))
+    status = { ...status, overview_building: true, busy: true }
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(panel().querySelector('.ov-feature')).toBeNull()
+    expect(panel().textContent).toContain('Finding features in this project')
+    const metric = [...container.querySelectorAll('.ov-metric')].find(el => el.textContent?.includes('Feature groups'))!
+    expect(metric.querySelector('strong')?.textContent).toBe('…')
+    await act(async () => finish({ available: true, repo: body.repo, branch: body.branch,
+      scan_id: body.scan_id, commit: body.commit, knowledge_revision: status.knowledge_revision,
+      features: [{ id: 'inventory', name: 'Inventory', route_count: 1, file_count: 2, gap_count: 0 }] }))
+    expect(panel().querySelector('.ov-feature h3')?.textContent).toBe('Inventory')
+    expect(panel().textContent).not.toContain('Explore API')
+  })
+
+  it('never displays features returned for a different project, even with the same scan number', async () => {
+    const normal = vi.mocked(get).getMockImplementation()!
+    vi.mocked(get).mockImplementation(async (path, signal) => path === '/api/features'
+      ? { ...(await normal(path, signal) as object), repo: 'acme/old-project' } : normal(path, signal))
+    await render()
+    await click('Main features')
+    expect(panel().querySelector('.ov-feature')).toBeNull()
+    expect(panel().querySelector('[role="alert"]')?.textContent).toContain('do not match the current project')
   })
 
   it('offers retry beside partial coverage and prevents duplicate builds', async () => {

@@ -1,10 +1,8 @@
 /**
  * Mockup 08. The shape of the project, drawn from what was read.
  *
- * Nothing here is new backend work. `pka/diagram.py` has derived three diagrams since the
- * overview was built, `pka/facts.py` has the exact routes, stores and services with their
- * line numbers, and `pka/roles.py` has a card per file saying what uses it and what it uses.
- * All of it already arrives in the GET /api/overview payload and had nowhere to appear.
+ * GET /api/architecture derives diagrams, facts and file roles from the current imported
+ * snapshot. It does not reuse a saved overview, and connected systems remain separate.
  *
  * The tabs are split by whether a thing is worth drawing. A graph of imports is; a list of
  * four tables is not, and pretending otherwise would be decoration.
@@ -15,7 +13,7 @@ import { Button, Card, Chip, Empty, Failed, Loading, NoProject, PageHead, Source
 import { Diagram } from '../components/Diagram'
 import type { DiagramNode, DiagramPayload } from '../components/Diagram'
 import { useStatus } from '../lib/useStatus'
-import { useOverview } from '../lib/useOverview'
+import { useArchitecture } from '../lib/useArchitecture'
 import type { FactGroup } from '../lib/overview'
 import './architecture.css'
 
@@ -136,7 +134,8 @@ function Detail({ card, picked, onClose }:
 
 export function Architecture() {
   const status = useStatus()
-  const reply = useOverview(status)
+  const reply = useArchitecture(status)
+  const [systemId, setSystemId] = useState('')
   const [tab, setTab] = useState('')
   const [picked, setPicked] = useState('')
 
@@ -147,33 +146,32 @@ export function Architecture() {
   if (reply.loading) return <>
     <PageHead title="Architecture" />
     <Loading what="the architecture"
-      message={status.loading ? 'Checking architecture status…' : 'Loading saved architecture…'}
+      message={status.loading ? 'Checking architecture status…' : 'Drawing current architecture…'}
       detail={status.loading ? 'Getting the current project and build status.'
-        : status.data?.overview_building
-        ? 'Your overview build is continuing. Checking source access before showing the saved diagrams.'
-        : 'Checking access to your connected sources before showing the saved diagrams.'} />
+        : 'Reading the current imported files and drawing each system separately.'} />
   </>
   if (reply.error) return <Failed message={reply.error} onRetry={reply.reload} />
 
-  const body = reply.data?.overview ?? null
+  const body = reply.data?.architecture ?? null
   if (!body) {
     return (
       <>
         <PageHead title="Architecture" />
         <Card>
-          <Empty title="The diagrams are built with the overview."
-                 detail="Every box and arrow here is derived from the files that were read, and that derivation runs as part of building the overview. Build one and this screen fills in."
-                 action={<Link className="btn btn-primary" to="/overview">Go to Project overview</Link>} />
+          <Empty title="Read project files to see the architecture."
+                 detail={reply.data?.reason || 'Diagrams are drawn directly from the imported files. An overview build is not required.'}
+                 action={<Link className="btn btn-primary" to="/connections">Go to Connections</Link>} />
         </Card>
       </>
     )
   }
 
-  const diagrams = ((body.diagrams ?? []) as DiagramPayload[])
+  const system = body.systems.find(value => value.id === systemId) ?? body.systems[0]
+  const diagrams = ((system?.diagrams ?? []) as DiagramPayload[])
     .filter((d) => d && d.nodes?.length)
   const ordered = DRAWN.map((k) => diagrams.find((d) => d.key === k)).filter(Boolean) as DiagramPayload[]
-  const facts = body.facts ?? []
-  const cards = ((body.roles?.cards ?? []) as RoleCard[])
+  const facts = system?.facts ?? []
+  const cards = ((system?.roles?.cards ?? []) as RoleCard[])
 
   const tabs = [...ordered.map((d) => TAB_FOR[d.key] ?? d.title), ...FACT_TABS.map(([name]) => name)]
   const active = tab && tabs.includes(tab) ? tab : tabs[0] ?? ''
@@ -186,8 +184,13 @@ export function Architecture() {
   return (
     <>
       <PageHead title="Architecture"
-                actions={<Button icon="refresh" onClick={reply.reload}>Refresh architecture</Button>}
-                lead={`Drawn from ${body.repo} at commit ${body.commit?.slice(0, 7)}. No model decided any of it.`} />
+                actions={<Button icon="refresh" onClick={() => { setPicked(''); reply.reload() }}>Refresh architecture</Button>}
+                lead={`Drawn from the current imported files for ${system?.name || body.repo}. Refresh recalculates the diagrams without rebuilding the overview.`} />
+      <p className="arch-hint">To include changed files, read the source again in <Link to="/connections">Connections</Link>, then refresh here.</p>
+      {body.systems.length > 1 && <div className="arch-systems" aria-label="Choose a system">{body.systems.map(value =>
+        <Button key={value.id} kind={value.id === system?.id ? 'primary' : 'ghost'} onClick={() => {
+          setSystemId(value.id); setTab(''); setPicked('')
+        }}>{value.name}</Button>)}</div>}
 
       {!tabs.length ? (
         <Card>
@@ -202,7 +205,7 @@ export function Architecture() {
               <Card title={drawn ? drawn.title : active}
                     aside={drawn ? <Chip tone="ok">Drawn from the files</Chip> : undefined}>
                 {drawn
-                  ? <Diagram d={drawn} selected={picked} onPick={pick} />
+                  ? <Diagram key={`${body.repo}:${body.scan_id}:${body.knowledge_revision}:${system?.id}:${drawn.key}`} d={drawn} selected={picked} onPick={pick} />
                   : <Facts group={facts.find((g) => g.key === factKey)} />}
               </Card>
             </div>

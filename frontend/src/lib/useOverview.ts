@@ -8,7 +8,9 @@ export function useOverview(status: Load<Status>) {
   const enabled = !!status.data && !status.data.awaiting_project
   // Saved content stays in the page until an explicit update or a build changes it.
   const reply = useApi<OverviewReply>('/api/overview', status.data?.overview_building ? 4000 : 0,
-    status.data?.knowledge_revision, enabled)
+    JSON.stringify([status.data?.knowledge_revision, status.data?.settings?.repo, status.data?.settings?.branch,
+      status.data?.scan?.id, status.data?.scan?.commit, status.data?.settings?.selected_source,
+      status.data?.settings?.local?.repo, status.data?.settings?.local_path]), enabled)
   const job = status.data?.job
   const change = job?.kind === 'overview' ? `${job.id}:${job.state}` : ''
   const previous = useRef<string | undefined>(undefined)

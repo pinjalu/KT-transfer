@@ -93,3 +93,4 @@
 
 /* The server's "and N more" node is a count, not a file, so it is not clickable-looking. */
 .dg-band-box.dg-band-more { border-style: dashed; cursor: default; color: var(--ink-dim); }
+.arch-systems { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }

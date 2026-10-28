@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, Empty, Failed, Loading, NoProject, PageHead, Segmented } from '../components/ui'
 import { OverviewDashboard } from '../components/OverviewDashboard'
-import type { FeatureReply, OverviewMode } from '../components/OverviewDashboard'
-import { useApi } from '../lib/useApi'
+import type { OverviewMode } from '../components/OverviewDashboard'
+import { useFeatures } from '../lib/useFeatures'
 import { useOverview } from '../lib/useOverview'
 import { projectName } from '../lib/project'
 import { ApiError, post } from '../lib/api'
@@ -16,8 +16,9 @@ export function Overview() {
   const [mode, setMode] = useState<OverviewMode>('Beginner')
   const status = useStatus()
   const reply = useOverview(status)
-  const features = useApi<FeatureReply>('/api/features', 0, status.data?.knowledge_revision,
-    !!status.data && !status.data.awaiting_project)
+  const localSelection = status.data?.settings?.selected_source === 'local'
+    && !status.data?.settings?.repo?.startsWith('local:')
+  const features = useFeatures(status, !localSelection)
   const [note, setNote] = useState('')
   const [blocked, setBlocked] = useState(false)
   const busy = status.data?.busy ?? false
@@ -74,7 +75,7 @@ export function Overview() {
     <div className="ov-page">
       <PageHead
         title="Project overview"
-        lead="Get oriented, then explore what matters to you."
+        lead="Understand this project one step at a time, even if you have never written code."
         actions={
           <>
             {/* Disabled while anything else is reading, because the request would be
@@ -127,17 +128,22 @@ export function Overview() {
       )}
 
       {body && <>
+        {body.scope_update_available && <p role="status">Showing only {body.project_name}, your selected local folder. Build its overview to generate explanations from these files.</p>}
+        {body.plain_language_update_available && !building && <Card>
+          <p role="status"><strong>Your saved explanation needs an update.</strong> Rebuild it for the full project summary and example in Step 1, the main components in Step 3, project-specific setup commands in Step 4, and an input-to-result walkthrough in Step 5. Connected systems are explained separately. Refreshing the page only reloads the saved text.</p>
+          <Button kind="primary" icon="refresh" disabled={busy} onClick={build}>Update saved explanation</Button>
+        </Card>}
         {body.routing_changed && <p role="status">AI routing or explanation settings changed since this overview was saved. Rebuild to apply the latest settings.</p>}
         {body.partial && <p role="status">Partial coverage: {body.successful_topics ?? body.topics_done} topics completed; {body.failed_topics ?? 0} failed. Review each topic's missing information. Rebuilding reuses saved topics and retries failures.</p>}
         {!!body.failed_topics&&<Button icon="refresh" disabled={building||busy} onClick={build}>Retry failed topics</Button>}
         <div className="ov-view-bar">
           <div><span className="ov-eyebrow">Choose your level of detail</span>
-            <p>Every view uses the same saved evidence.</p></div>
+            <p>Beginner adds simple reading help and word meanings. Developer and Architect keep the technical details. Every view uses the same saved evidence.</p></div>
           <Segmented items={[...MODES]} active={mode} onPick={m => setMode(m as OverviewMode)} />
         </div>
         <OverviewDashboard key={`${body.repo}:${body.scan_id}:${status.data?.knowledge_revision}`}
-          body={body} features={features} mode={mode} building={building}
-          project={projectName(status.data?.settings, body.repo)} />
+          body={body} features={body.overview_features ? { data: body.overview_features, loading: false, error: null, reload: reply.reload } : features} mode={mode} building={building}
+          project={body.project_name || projectName(status.data?.settings, body.repo)} />
       </>}
       <details className="ov-refresh-help">
         <summary>How refreshing works</summary>

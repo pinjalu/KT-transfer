@@ -3,28 +3,26 @@ import { Link } from 'react-router-dom'
 import { Icon } from './Icon'
 import { Statements } from './Statements'
 import { GenerationDetails } from './GenerationDetails'
+import { PlainLanguageGuide } from './PlainLanguageGuide'
 import { Button, Chip, Empty, Failed, Loading, Missing, SourceLink } from './ui'
 import { originOf, sourcePath } from '../lib/answer'
 import { factsOf } from '../lib/overview'
 import { projectName } from '../lib/project'
 import type { FactGroup, Overview, Section } from '../lib/overview'
 import type { Load } from '../lib/useApi'
+import type { FeatureList } from '../lib/features'
 
 export type OverviewMode = 'Beginner' | 'Developer' | 'Architect'
-export type FeatureReply = {
-  available: boolean
-  features: { id: string; name: string; route_count: number; file_count: number; gap_count: number }[]
-  unclustered: { note: string }
-}
+export type FeatureReply = FeatureList
 
 const TOPIC: Record<string, { label: string; icon: string; hint: string }> = {
-  purpose: { label: 'Start here', icon: 'home', hint: 'What the project does and why it exists.' },
+  purpose: { label: 'Start here', icon: 'home', hint: 'The whole project, with an example input, its journey and the result.' },
   technologies: { label: 'Technology', icon: 'grid', hint: 'The tools it uses and the role of each one.' },
-  architecture: { label: 'Code structure', icon: 'nodes', hint: 'Find your way around the codebase.' },
-  setup: { label: 'Getting started', icon: 'wrench', hint: 'Set up and run the project.' },
-  flows: { label: 'Runtime flow', icon: 'send', hint: 'Follow what happens when the project runs.' },
-  interfaces: { label: 'APIs & interfaces', icon: 'link', hint: 'How the outside world interacts with it.' },
-  data: { label: 'Data & settings', icon: 'database', hint: 'Where information and configuration live.' },
+  architecture: { label: 'Code structure', icon: 'nodes', hint: 'The main parts, what each does and how they connect.' },
+  setup: { label: 'Getting started', icon: 'wrench', hint: 'Tools, settings and startup commands from this project’s files.' },
+  flows: { label: 'Step by step', icon: 'send', hint: 'A real example: what the user sends, how this system handles it, and what comes back.' },
+  interfaces: { label: 'Ways to use it', icon: 'link', hint: 'How people and other programs ask it to do something.' },
+  data: { label: 'Data & settings', icon: 'database', hint: 'What the project remembers and which settings change how it works.' },
   testing: { label: 'Testing', icon: 'check', hint: 'Understand what the existing checks cover.' },
   decisions: { label: 'Team context', icon: 'people', hint: 'What the imported tickets and discussions say.' },
 }
@@ -55,7 +53,20 @@ function FactDetails({ group, open = false }: { group: FactGroup; open?: boolean
   </details>
 }
 
-function TopicContent({ section, body }: { section: Section; body: Overview }) {
+function Explanation({ section, mode }: { section: Section; mode: OverviewMode }) {
+  return <>
+    {section.error && <Failed message={`This section could not be written. ${section.error}`} />}
+    {section.generation && (mode === 'Beginner' ? <details className="ov-disclosure"><summary>How this explanation was written</summary>
+      <GenerationDetails value={section.generation} cached={section.cache_hit}/></details>
+      : <GenerationDetails value={section.generation} cached={section.cache_hit}/>)}
+    {section.statements.length > 0 ? <Statements statements={section.statements} sources={section.sources} />
+      : !section.error && <Missing what={section.missing_information || 'No evidence was found for this topic.'}
+        checked="The excerpts retrieved for this system and topic" />}
+    {!!section.statements.length && section.missing_information && <Missing what={section.missing_information} />}
+  </>
+}
+
+function TopicContent({ section, body, mode }: { section: Section; body: Overview; mode: OverviewMode }) {
   const content = useRef<HTMLDivElement>(null)
   const supportingFacts = section.key === 'setup' ? factsOf(body, 'commands')
     : section.key === 'technologies' ? factsOf(body, 'dependencies') : undefined
@@ -68,15 +79,12 @@ function TopicContent({ section, body }: { section: Section; body: Overview }) {
     const excerpt = Array.from(content.current?.querySelectorAll('details') ?? []).find(item => item.id === target)
     if (excerpt) excerpt.open = true
   }}>
-    {section.error && <Failed message={`This section could not be written. ${section.error}`} />}
-    <GenerationDetails value={section.generation} cached={section.cache_hit}/>
-    {section.statements.length > 0 ? <>
-      <Statements statements={section.statements} sources={section.sources} />
-    </> : !section.error && <Missing what={section.missing_information || 'No evidence was found for this topic.'}
-      checked="The excerpts retrieved for this topic" />}
-    {!!section.statements.length && section.missing_information && <Missing what={section.missing_information} />}
+    {section.system_sections?.length ? section.system_sections.map(part => <section className="ov-system" key={part.system_id} aria-label={part.system_name}>
+      <h3>{part.system_name}</h3><Explanation section={part} mode={mode} />
+    </section>) : <Explanation section={section} mode={mode} />}
     {section.key === 'setup' && <p className="ov-hint">These instructions come from the project documentation. Nothing here was run.</p>}
-    {supportingFacts && <FactDetails group={supportingFacts} open />}
+    {supportingFacts && <FactDetails group={supportingFacts} open={mode !== 'Beginner' || section.key === 'setup'} />}
+    {section.key === 'setup' && factsOf(body, 'environment') && <FactDetails group={factsOf(body, 'environment')!} />}
     {section.key === 'architecture' && <Link className="ov-inline-link" to="/architecture">
       Explore the interactive architecture map <Icon name="chevron" size={15} /></Link>}
     <div className="ov-evidence">
@@ -85,7 +93,7 @@ function TopicContent({ section, body }: { section: Section; body: Overview }) {
       <p className="ov-hint">Open an excerpt to check the original context.</p>
       {section.sources.map((source, i) => <details className="ov-source" id={`src-${source.source_id}`} key={source.source_id}>
         <summary><span className="ov-source-number">{i + 1}</span><span className="ov-source-path">{sourcePath(source.path)}</span>
-          <Chip tone="quiet">{originOf(source.path, source.url)}</Chip></summary>
+          <Chip tone="quiet">{source.system_name || originOf(source.path, source.url)}</Chip></summary>
         <div className="ov-disclosure-body">
           <SourceLink path={source.path} line={source.start} url={source.url ?? undefined} />
           <pre>{source.text}</pre>
@@ -119,6 +127,7 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
   body: Overview; features: Load<FeatureReply>; mode: OverviewMode; building: boolean; project?: string
 }) {
   const [picked, setPicked] = useState('purpose')
+  const sourceKind = body.source_kind || (body.repo.startsWith('zip:') ? 'zip' : body.repo.startsWith('local:') ? 'local' : 'github')
   const [query, setQuery] = useState('')
   const heading = useRef<HTMLHeadingElement>(null)
   const review = body.sections.filter(needsReview)
@@ -138,7 +147,10 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
   const active = items.find(item => item.id === picked) ?? items[0]
   const selected = body.sections.find(s => s.key === active.id)
   const visible = items.filter(item => `${item.id} ${item.label} ${item.title} ${item.hint}`.toLowerCase().includes(query.toLowerCase().trim()))
-  const featureRows = features.data?.available ? features.data.features : []
+  const featureMismatch = features.data?.available && (features.data.repo !== body.repo
+    || features.data.branch !== body.branch || features.data.scan_id !== body.scan_id || features.data.commit !== body.commit)
+  const featureError = features.error || (featureMismatch ? 'Features do not match this overview’s project files. Refresh to load the current features.' : null)
+  const featureRows = !featureError && features.data?.available ? features.data.features : []
   const currentIndex = sections.findIndex(s => s.id === active.id)
   const select = (id: string) => {
     setPicked(id)
@@ -151,13 +163,17 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
       <div className="ov-hero-main">
         <span className="ov-eyebrow">Your project at a glance</span>
         <h2>{project || projectName(null, body.repo)}</h2>
-        <p>Start with the big picture. Follow a topic, inspect its evidence, or work through the reading list.</p>
-        <div className="ov-hero-meta"><span><Icon name="nodes" size={14} />{body.branch}</span>
-          <span className="mono">{body.commit?.slice(0, 7)}</span><span>{body.repo}</span></div>
+        {body.systems && body.systems.length > 1 && <p>Separate systems: {body.systems.map(system => system.name).join(' · ')}</p>}
+        <p>Start with what the project does. Then learn its parts, follow one action, and see how to use it. Open source links when you want to check a detail.</p>
+        <div className="ov-hero-meta">{sourceKind === 'github' ? <>
+          <span><Icon name="nodes" size={14} />{body.branch}</span>
+          <span className="mono">{body.commit?.slice(0, 7)}</span><span>{body.repo}</span>
+        </> : <span><Icon name="doc" size={14} />{sourceKind === 'zip' ? 'ZIP project' : 'Local folder'}</span>}</div>
       </div>
       <div className="ov-hero-aside">
         <span className="ov-saved-state"><span className="ov-status-dot" />
-          {body.demo ? 'Demo overview' : building ? 'Build in progress' : body.complete ? 'Saved overview' : 'Partial overview'}</span>
+          {body.demo ? 'Demo overview' : building ? 'Build in progress' : body.plain_language_update_available
+            ? 'Explanation update available' : body.complete ? 'Saved overview' : 'Partial overview'}</span>
         <Link to="/ask" className="ov-hero-action"><Icon name="chat" size={17} />Ask about this project<Icon name="chevron" size={16} /></Link>
         <Link to="/architecture" className="ov-hero-secondary">Explore architecture <Icon name="external" size={13} /></Link>
       </div>
@@ -167,8 +183,8 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
       {[
         { label: 'Topics written', value: `${written}/${body.topics_total}`, icon: 'doc', to: sections[0]?.id ?? '_facts', hint: 'Explore the overview', tone: 'teal' },
         { label: 'Files indexed', value: body.files_indexed, icon: 'database', to: '_facts', hint: `${body.files_skipped} files skipped`, tone: 'blue' },
-        { label: 'Feature groups', value: features.loading ? '…' : features.error || !features.data?.available ? '—' : featureRows.length,
-          icon: 'grid', to: '_features', hint: features.error ? 'Read unavailable' : 'Explore grouped routes', tone: 'violet' },
+        { label: 'Feature groups', value: features.loading ? '…' : featureError || !features.data?.available ? '—' : featureRows.length,
+          icon: 'grid', to: '_features', hint: featureError ? 'Read unavailable' : 'Explore grouped routes', tone: 'violet' },
         { label: 'Review items', value: issueCount, icon: 'warn', to: '_review', hint: 'Topic flags & known gaps', tone: 'amber' },
       ].map(metric => <button type="button" className={`ov-metric ov-metric-${metric.tone}`} key={metric.label}
         onClick={() => select(metric.to)} aria-controls="ov-panel">
@@ -204,16 +220,19 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
           <span className="ov-panel-icon"><Icon name={active.icon} size={24} /></span>
         </header>
         <div className="ov-panel-body">
-          {selected && <TopicContent key={`${selected.key}:${mode}`} section={selected} body={body} />}
+          {selected && <TopicContent key={`${selected.key}:${mode}`} section={selected} body={body} mode={mode} />}
+          {mode === 'Beginner' && <PlainLanguageGuide topic={active.id} />}
           {active.id === '_features' && <>
             <p className="ov-hint">Grouped from routes, the files they reach and tickets that name them.</p>
-            {features.loading ? <Loading what="features" /> : features.error
-              ? <Failed message={features.error} onRetry={features.reload} /> : featureRows.length
+            {features.loading ? <Loading what="features" detail="Finding features in this project’s files. Results appear after the current read finishes." /> : featureError
+              ? <Failed message={featureError} onRetry={features.reload} /> : featureRows.length
               ? <div className="ov-feature-grid">{featureRows.map(feature => <div className="ov-feature" key={feature.id}>
                 <span className="ov-feature-icon"><Icon name="grid" size={18} /></span><h3>{feature.name}</h3>
                 <p>{feature.route_count} route{feature.route_count === 1 ? '' : 's'} <span>·</span> {feature.file_count} file{feature.file_count === 1 ? '' : 's'}</p>
                 {feature.gap_count > 0 && <Chip tone="warn">{feature.gap_count} known gap{feature.gap_count === 1 ? '' : 's'}</Chip>}
-                <Link to={`/features?feature=${encodeURIComponent(feature.id)}`}>Explore {feature.name} →</Link>
+                {body.overview_scope?.startsWith('local://')
+                  ? <p className="ov-hint">Found in this local folder.</p>
+                  : <Link to={`/features?feature=${encodeURIComponent(feature.id)}`}>Explore {feature.name} →</Link>}
               </div>)}</div> : <Empty title="No features were derived."
                 detail={features.data?.unclustered?.note || 'No feature groups are available for the current information.'} />}
           </>}
@@ -226,8 +245,8 @@ export function OverviewDashboard({ body, features, mode, building, project }: {
           <div hidden={active.id !== '_reading'}><ReadingList body={body} /></div>
           {active.id === '_review' && <>
             <div className="ov-coverage"><h3>What this overview covers</h3><p>{body.scope_note}</p>
-              <dl><div><dt>Repository</dt><dd>{body.repo}</dd></div>
-                <div><dt>{body.repo.startsWith('local:') ? 'Snapshot' : 'Commit'}</dt><dd className="mono">{body.commit?.slice(0, 7)}</dd></div>
+              <dl><div><dt>{sourceKind === 'github' ? 'Repository' : 'Project'}</dt><dd>{sourceKind === 'github' ? body.repo : project || projectName(null, body.repo)}</dd></div>
+                {sourceKind === 'github' && <div><dt>Commit</dt><dd className="mono">{body.commit?.slice(0, 7)}</dd></div>}
                 <div><dt>Files</dt><dd>{body.files_indexed} indexed · {body.files_skipped} skipped</dd></div>
                 <div><dt>Topics written</dt><dd>{written} of {body.topics_total}</dd></div>
                 {body.scanned_at && <div><dt>Sources read</dt><dd>{new Date(body.scanned_at).toLocaleString()}</dd></div>}

@@ -1,7 +1,11 @@
 /** The shape pka/service.py build_overview() caches and GET /api/overview returns. */
 import type { Source, Statement } from './answer'
+import type { FeatureList } from './features'
 
 export type Section = {
+  system_id?: string
+  system_name?: string
+  system_sections?: Section[]
   generation?: import('./ai').Generation
   cache_hit?: boolean
   key: string
@@ -26,6 +30,14 @@ export type FactGroup = {
 export type Reading = { path: string; why: string; url: string }
 
 export type Overview = {
+  overview_scope?: string
+  project_name?: string
+  source_kind?: 'github' | 'local' | 'zip'
+  scope_update_available?: boolean
+  overview_features?: FeatureList
+  systems?: { id: string; name: string }[]
+  explanation_style?: string
+  plain_language_update_available?: boolean
   routing_changed?: boolean
   partial?: boolean
   failed_topics?: number
