@@ -335,6 +335,14 @@ class Index:
             row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
             current = json.loads(row[0]) if row else {}
             merged = {**current, **settings}
+            if current.get('repo') != merged.get('repo'):
+                # Source choices and display metadata belong to a project. Keep
+                # workspace preferences, but never carry an old project's sources
+                # into a newly selected repository, folder or ZIP.
+                for key in ('local', 'jira', 'slack', 'archive', 'local_path',
+                            'project_name', 'source_kind', 'selected_source', 'platforms'):
+                    if key not in settings:
+                        merged.pop(key, None)
             db.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(merged),))
             if (current.get('repo'), current.get('branch')) == (merged.get('repo'), merged.get('branch')):
                 return
@@ -344,7 +352,7 @@ class Index:
                 for key in ('read_at', 'import_report'):
                     (merged.get(name) or {}).pop(key, None)
             db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(merged),))
-            for table in ('chunks','search','answers','overviews','ai_topic_cache','scans','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','file_checkpoints','evaluation_runs'):
+            for table in ('chunks','search','answers','overviews','ai_topic_cache','scans','vectors','vector_models','source_imports','calibration','jira_explanations','decision_summaries','file_checkpoints','evaluation_runs','jobs'):
                 db.execute('DELETE FROM '+table)
             db.execute('UPDATE active SET scan_id=NULL')
     @staticmethod
@@ -482,6 +490,25 @@ class Index:
             raise ValueError('Unknown source prefix.')
         name = 'local' if prefix == 'local://' else prefix[:-1]
         with self.db() as db:
+            signature = embed.signature() if embed.enabled() else ''
+            previous = db.execute('SELECT payload FROM source_imports WHERE name=?', (name,)).fetchone()
+            same_scope = bool(import_meta and import_meta.get('scope') and previous and
+                              json.loads(previous[0]).get('scope') == import_meta.get('scope'))
+            def identity(path, text):
+                # Citation paths contain a snapshot digest. It changes even when
+                # only a different file changed; the relative filename is stable.
+                if prefix == 'local://' and same_scope:
+                    path = path.split('/', 3)[-1]
+                return path, text
+            reusable = {}
+            if signature and (prefix != 'local://' or same_scope):
+                for row in db.execute('''SELECT c.path,c.text,c.metadata,v.vector FROM chunks c
+                        JOIN vectors v ON c.id=v.chunk_id JOIN vector_models m ON v.scan_id=m.scan_id
+                        WHERE c.scan_id=? AND c.path LIKE ? AND m.signature=?''',
+                        (scan_id, prefix+'%', signature)):
+                    metadata = json.loads(row['metadata'] or '{}')
+                    reusable[identity(row['path'], row['text'])] = (
+                        row['vector'], metadata.get('_embedding_path', row['path']))
             stale = [r[0] for r in db.execute(
                 'SELECT id FROM chunks WHERE scan_id=? AND path LIKE ?',(scan_id,prefix+'%')).fetchall()]
             for chunk_id in stale:
@@ -489,16 +516,30 @@ class Index:
             for chunk_id in stale:
                 db.execute('DELETE FROM vectors WHERE chunk_id=?',(chunk_id,))
             db.execute('DELETE FROM chunks WHERE scan_id=? AND path LIKE ?',(scan_id,prefix+'%'))
+            vector_count = db.execute('SELECT COUNT(*) FROM vectors WHERE scan_id=?', (scan_id,)).fetchone()[0]
+            reused = 0
             for block in blocks:
+                saved = reusable.get(identity(block['path'], block['text']))
+                metadata = dict(block.get('metadata') or {})
+                metadata.pop('_embedding_path', None)
+                if saved and vector_count < embed.MAX_CHUNKS:
+                    # Keep the exact input path used to compute this vector. The
+                    # visible citation still points to the newly verified snapshot.
+                    metadata['_embedding_path'] = saved[1]
                 cur = db.execute(
                     'INSERT INTO chunks(scan_id,path,start,end,text,symbols,split,url,metadata) VALUES(?,?,?,?,?,?,?,?,?)',
                     (scan_id,block['path'],block['start'],block['end'],block['text'],
-                     block['symbols'],int(block['split']),block.get('url') or None,json.dumps(block.get('metadata') or {})))
+                     block['symbols'],int(block['split']),block.get('url') or None,json.dumps(metadata)))
                 db.execute('INSERT INTO search(rowid,path,symbols,text) VALUES(?,?,?,?)',
                     (cur.lastrowid,' '.join(words(block['path'])),block['symbols'],' '.join(words(block['text']))))
+                if saved and vector_count < embed.MAX_CHUNKS:
+                    db.execute('INSERT INTO vectors VALUES(?,?,?)', (cur.lastrowid, scan_id, saved[0]))
+                    reused += 1
+                    vector_count += 1
             self._changed(db)
             db.execute('DELETE FROM source_imports WHERE name=?', (name,))
             if import_meta is not None:
+                import_meta['report']['reused_vectors'] = reused
                 db.execute('INSERT INTO source_imports VALUES(?,?)', (name, json.dumps(import_meta)))
                 row = db.execute('SELECT value FROM settings WHERE id=1').fetchone()
                 settings = json.loads(row[0]) if row else {}
@@ -760,12 +801,15 @@ class Index:
     def unembedded(self, scan_id: int) -> list[dict]:
         """Chunks in this scan that have no vector yet, so a scan can be embedded in batches."""
         with self.db() as db:
-            return [dict(r) for r in db.execute(
-                'SELECT c.id, c.path, c.text FROM chunks c '
+            rows = db.execute(
+                'SELECT c.id, c.path, c.text, c.metadata FROM chunks c '
                 'LEFT JOIN vectors v ON v.chunk_id=c.id '
                 'WHERE c.scan_id=? AND v.chunk_id IS NULL ORDER BY c.id '
                 'LIMIT MAX(0, ? - (SELECT COUNT(*) FROM vectors WHERE scan_id=?))',
-                (scan_id, embed.MAX_CHUNKS, scan_id)).fetchall()]
+                (scan_id, embed.MAX_CHUNKS, scan_id)).fetchall()
+            return [{'id':r['id'], 'path':r['path'], 'text':r['text'],
+                     'embedding_path':json.loads(r['metadata'] or '{}').get('_embedding_path', r['path'])}
+                    for r in rows]
 
     def save_vectors(self, scan_id: int, pairs: list[tuple[int, object]]) -> int:
         with self.db() as db:

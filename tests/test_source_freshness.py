@@ -176,6 +176,8 @@ def test_cached_and_derived_views_recheck_external_access(state, endpoint, name)
     source.denied = SourceError('access_denied', 'Issue no longer accessible')
     app = create_app(False, index.path, connector_factory=factory)
     with TestClient(app, base_url='http://localhost:8000') as client:
+        assert client.post('/api/config', json={'repo':index.settings()['repo'], 'branch':index.settings()['branch']},
+                           headers={'X-PKA-Request':'1'}).status_code == 200
         response = client.get(endpoint, headers={'X-PKA-Request':'1'})
     assert response.status_code == 409
     assert 'old overview' not in response.text
@@ -341,7 +343,9 @@ def test_removed_snapshot_does_not_advertise_old_source_timestamps(state, action
         index.invalidate()
     else:
         index.configure({'repo':'acme/another','branch':'main'})
-    assert not index.settings()['jira'].get('read_at')
+    assert not (index.settings().get('jira') or {}).get('read_at')
+    if action == 'repository':
+        assert not index.settings().get('jira'), 'A new project must choose its own Jira scope'
     assert index.source_import('jira') is None
 
 

@@ -16,6 +16,7 @@ from pka.llm.store import Store
 from pka.llm.ollama import Ollama
 from pka.llm.gemini import Gemini
 from pka.llm.groq import Groq
+from pka.plain_language import explain_simply
 
 ACTIVE = ContextVar('pka_llm_context', default=None)
 
@@ -92,7 +93,7 @@ class Router:
         return await self._run(request, validate, 'ask', unchanged, synthetic=True, override=target, diagnostic=True)
 
     async def generate(self, request, validator, feature, guard, *, synthetic=False, override=None):
-        return await self._run(request, validator, feature, guard, synthetic=synthetic, override=override)
+        return await self._run(explain_simply(request), validator, feature, guard, synthetic=synthetic, override=override)
 
     async def _run(self, request, validator, feature, guard, *, synthetic=False, override=None, diagnostic=False):
         generation_id = uuid.uuid4().hex
@@ -238,6 +239,7 @@ async def generate(request, validator, feature='ask'):
         return await router.generate(request,validator,'tests' if feature=='tests' else selected,guard,
                                      synthetic=synthetic,override=override)
     # Standalone callers keep local-only behavior; no environment cloud key is used.
+    request = explain_simply(request)
     target = Target(provider='ollama',model=Routing().local_model)
     started = time.perf_counter()
     try:

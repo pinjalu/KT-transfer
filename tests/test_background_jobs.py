@@ -261,3 +261,104 @@ def test_job_history_is_bounded_and_keeps_the_latest_record(setup):
     with svc.index.db() as db:
         assert db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0] == 30
     assert svc.index.latest_job()['id'] == svc.job['id']
+
+
+@pytest.mark.parametrize('kind', ['scan', 'local'])
+@pytest.mark.parametrize('phase', ['documents', 'calibration'])
+def test_basic_search_finishes_import_without_waiting_for_model(setup, monkeypatch, kind, phase):
+    from pka import embed
+    svc, _, factory = setup
+    svc.index.configure_source('local', {'repo':'local:fixture', 'path':'fixture'})
+    monkeypatch.setenv('PKA_EMBED_MODEL', 'fixture')
+    monkeypatch.setattr(embed, 'BATCH', 1)
+    cancelled = []
+    async def scenario():
+        entered = asyncio.Event()
+        async def vectors(texts):
+            calibration = texts == list(embed.PROBES)
+            if calibration == (phase == 'calibration'):
+                entered.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.append(True)
+            return [[1.0, 0.0] for _ in texts]
+        monkeypatch.setattr(embed, 'vectors', vectors)
+        job_id = svc.start_job(kind)
+        assert not svc.job_status()['can_skip_index']
+        await asyncio.wait_for(entered.wait(), 5)
+        assert svc.job_status()['can_skip_index']
+        with pytest.raises(SourceError):
+            svc.use_basic_search(job_id + 1)
+        svc.use_basic_search(job_id)
+        await asyncio.wait_for(svc.task, 5)
+        assert svc.job_status()['state'] == 'succeeded'
+        assert not svc.job_status()['can_skip_index'] and not svc.cancel.is_set()
+        assert svc.index.active_scan()
+        if kind == 'local':
+            assert svc.index.source_import('local')['report']['read'] > 0
+        assert cancelled and not svc._embedding_requests
+        if phase == 'calibration':
+            assert svc.index.embedded(svc.index.active_scan()['id']) > 0
+        with pytest.raises(SourceError):
+            svc.use_basic_search(job_id)
+    run(scenario())
+    reopened = Service(Index(svc.index.path), demo=False, connector_factory=factory)
+    assert reopened.search_mode() == 'basic' and not reopened.semantic_enabled()
+
+
+def test_search_mode_api_persists_and_rejects_invalid_or_busy_updates(setup, monkeypatch):
+    old, source, factory = setup
+    monkeypatch.setenv('PKA_EMBED_MODEL', 'fixture')
+    app = create_app(False, old.index.path, connector_factory=factory)
+    svc = app.state.service
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), cookies=auth_cookies(app),
+                base_url='http://localhost:8000', headers={'X-PKA-Request':'1'}) as client:
+            assert (await client.post('/api/search-mode', json={'mode':'unknown'})).status_code == 422
+            assert (await client.post('/api/search-mode', json={'mode':'basic'})).status_code == 200
+            status = (await client.get('/api/status')).json()
+            assert status['search_mode'] == 'basic' and status['semantic_available']
+            async with svc.lock:
+                assert (await client.post('/api/search-mode', json={'mode':'semantic'})).status_code == 409
+            assert (await client.post('/api/search-mode', json={'mode':'semantic'})).status_code == 200
+            assert (await client.get('/api/status')).json()['search_mode'] == 'semantic'
+            assert (await client.post('/api/jobs/999/basic-search')).status_code == 409
+            from pka import embed
+            entered = asyncio.Event()
+            async def vectors(texts):
+                entered.set()
+                await asyncio.Event().wait()
+            monkeypatch.setattr(embed, 'vectors', vectors)
+            await client.post('/api/config', json={'repo':'acme/shop', 'branch':'main'})
+            started = await client.post('/api/scan')
+            job_id = started.json()['job_id']
+            await asyncio.wait_for(entered.wait(), 5)
+            route = f'/api/jobs/{job_id}/basic-search'
+            assert (await client.post(route, headers={'X-PKA-Request':''})).status_code == 403
+            assert svc.semantic_enabled()
+            assert (await client.post(route)).status_code == 200
+            await asyncio.wait_for(svc.task, 5)
+            assert svc.job_status()['state'] == 'succeeded'
+            assert (await client.get('/api/status')).json()['search_mode'] == 'basic'
+    run(scenario())
+
+
+def test_basic_search_never_restarts_embedding_for_questions_or_overview(setup, monkeypatch):
+    from pka import embed, service as module
+    svc, _, _ = setup
+    monkeypatch.setenv('PKA_EMBED_MODEL', 'fixture')
+    scan_id = svc.index.active_scan()['id']
+    svc.index.prepare_vectors(scan_id, embed.signature())
+    svc.index.save_vectors(scan_id, [(row['id'], [1.0, 0.0]) for row in svc.index.unembedded(scan_id)[:1]])
+    svc.set_search_mode('basic')
+    svc.demo = False
+    monkeypatch.setattr(module, 'topics_for', lambda present: module.TOPICS[:1])
+    async def vectors(texts):
+        pytest.fail('Basic search must not call the embedding model, even with some saved vectors')
+    async def generate(question, sources):
+        return {'statements':[], 'missing_information':'Fixture explanation'}
+    monkeypatch.setattr(embed, 'vectors', vectors)
+    svc.generator = generate
+    assert run(svc.ask('How does authentication work?'))['sources']
+    assert run(svc.build_overview())['complete']

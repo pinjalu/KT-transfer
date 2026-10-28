@@ -283,6 +283,10 @@ def test_overview_publishes_fast_topic_early_but_preserves_final_order(setup, mo
 def test_overview_batches_query_vectors_before_any_generation(setup, monkeypatch):
     svc, _ = setup
     topics = prepare_overview(svc, monkeypatch)
+    monkeypatch.setenv('PKA_EMBED_MODEL', 'fixture')
+    async def already_prepared(scan_id):
+        return 1
+    monkeypatch.setattr(svc, 'embed_snapshot', already_prepared)
     monkeypatch.setattr(svc.index, 'embedded', lambda scan_id: 1)
     calls = []
 

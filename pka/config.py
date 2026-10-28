@@ -84,7 +84,7 @@ def project_name(settings: dict | None) -> str:
 
 def selected_source(settings: dict | None) -> str:
     settings = settings or {}
-    if settings.get('selected_source') in {'github', 'local'}:
+    if settings.get('selected_source') in {'github', 'local', 'zip'}:
         return settings['selected_source']
     # Old mixed workspaces only recorded the added folder, not the chosen form.
     if ((settings.get('local') or {}).get('path') or settings.get('local_path')
@@ -147,8 +147,10 @@ def source_url(repo: str, commit: str, path: str, start: int | None = None, end:
         commit = parts[2]
         link = '/source?snapshot=' + quote(commit, safe='') + '&path=' + quote(path, safe='')
         return link + (f'#L{start}' if start else '')
-    if repo.startswith('local:'):
+    if repo.startswith(('local:', 'zip:')):
         link = '/source?snapshot=' + quote(commit, safe='') + '&path=' + quote(path, safe='')
+        if repo.startswith('zip:'):
+            link += '&source=zip'
         return link + (f'#L{start}' if start else '')
     link = 'https://github.com/' + repo + '/blob/' + commit + '/' + quote(path, safe='/')
     if start:

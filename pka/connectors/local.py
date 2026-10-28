@@ -16,7 +16,7 @@ PRIVATE_DIRS = {'.ssh', '.aws', '.azure', '.config', '.codex', '.agents', '.cach
 
 
 def is_local(repo):
-    return str(repo or '').startswith(PREFIX)
+    return str(repo or '').startswith((PREFIX, 'zip:'))
 
 
 def _linked(info):
@@ -64,7 +64,7 @@ class LocalSource:
         if not is_local(repo):
             raise SourceError('scope', 'Select a local project folder first.')
         self.repo = repo
-        self.root = Path(repo[len(PREFIX):])
+        self.root = Path(repo.split(':', 1)[1])
         self.entries, self.allowed, self.commit = [], {}, ''
 
     def _root(self):

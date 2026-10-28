@@ -101,6 +101,49 @@ def test_web_requires_selection_and_refuses_concurrent_work(context):
         finally: app.state.service.lock.release()
 
 
+def test_features_are_scoped_and_hidden_until_a_source_read_finishes(context):
+    service, _, factory = context
+    app = create_app(False, service.index.path, connector_factory=factory)
+    with OwnerClient(app, base_url='http://localhost:8000', headers={'X-PKA-Request':'1'}) as client:
+        assert client.get('/api/features').json()['features'] == []
+        assert client.get('/api/features/orders').status_code == 409
+        assert client.post('/api/config', json={'repo':'acme/shop', 'branch':'main'}).status_code == 200
+        scope = client.get('/api/features').json()
+        assert scope['available'] and scope['features']
+        assert scope['repo'] == 'acme/shop' and scope['branch'] == 'main'
+        assert scope['scan_id'] == service.index.active_scan()['id']
+        assert scope['knowledge_revision'] == service.index.revision
+        detail = client.get('/api/features/orders').json()
+        for key in ('repo', 'branch', 'scan_id', 'commit', 'knowledge_revision'):
+            assert detail[key] == scope[key]
+        # Queuing a read has not changed the index revision yet. Old features must
+        # still disappear immediately, before new files replace the saved chunks.
+        app.state.service._new_job('local')
+        assert client.get('/api/features').json()['features'] == []
+        assert client.get('/api/features/orders').status_code == 409
+        assert service.index.revision == scope['knowledge_revision']
+        app.state.service.job['state'] = 'succeeded'
+        assert client.get('/api/features').json()['available']
+        app.state.service._new_job('overview')
+        assert client.get('/api/features').json()['available'], 'Current features may be read while explanations are written'
+
+
+@pytest.mark.parametrize('endpoint', ['/api/features', '/api/features/orders'])
+def test_features_discard_a_response_if_the_project_changes_during_access_check(context, monkeypatch, endpoint):
+    service, _, factory = context
+    app = create_app(False, service.index.path, connector_factory=factory)
+    with OwnerClient(app, base_url='http://localhost:8000', headers={'X-PKA-Request':'1'}) as client:
+        assert client.post('/api/config', json={'repo':'acme/shop', 'branch':'main'}).status_code == 200
+        async def changed(scan):
+            revision = app.state.service.index.revision
+            app.state.service.index.configure({'repo':'acme/new-project', 'branch':'main'})
+            return revision, {}
+        monkeypatch.setattr(app.state.service, 'check_external_access', changed)
+        reply = client.get(endpoint)
+        assert reply.status_code == 409 and 'changed' in reply.text
+        assert 'Orders' not in reply.text
+
+
 def test_live_story_regression_withholds_unrelated_route_and_invented_result(context, monkeypatch):
     service, state, _ = context
     monkeypatch.setattr(service.index, 'search_many', lambda *args, **kwargs: [{

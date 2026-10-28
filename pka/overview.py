@@ -26,18 +26,32 @@ from pka.statement_evidence import describe as describe_evidence
 TOPICS = [
     {
         'key': 'purpose',
-        'title': 'What this project is for',
+        'title': 'Project summary and an example',
         'queries': [
             'readme introduction overview purpose project description what this does',
             'application product users feature goal problem solves',
             'title heading about summary intro',
         ],
         'test_cap': 0,
-        'ask': 'Say what this project is for, what problem it solves and who uses it. Open with one plain sentence a non-developer would follow. Then say what it actually does, naming the real parts. If the excerpts never state the business purpose, say that in missing_information and describe what the code does instead of guessing at why.',
+        'ask': '''Explain the WHOLE selected project to someone seeing it for the first time.
+Use these headings, with each paragraph in its own statement object and its own citations:
+**Project summary:** Explain what the product does, who uses it and its main capabilities,
+using its real name when documented. Do not turn one helper function into the project summary.
+**Example input (illustrative):** Give one concrete, quoted example of what a person would
+type, upload or choose in THIS project. Choose the action from the supplied evidence.
+For a question-answering website, show a relevant example question; for other projects,
+use their actual kind of input instead of pretending every project is a chatbot.
+**How it works:** Follow that same example: First the person sends the input; Next explain
+the main supported processing steps; Finally explain what is returned. Use everyday words.
+**What the user gets:** Describe the supported output. Quote an example answer only if
+the sources support its content, and label invented sample wording illustrative, not a real
+run or guaranteed answer. Never invent facts, totals, search results or an unseen connection.
+If purpose, input, a processing link or output is not shown, describe the supported parts
+and identify the exact missing evidence in missing_information. Do not fill gaps with a generic flow.''',
     },
     {
         'key': 'technologies',
-        'title': 'What it is built with',
+        'title': 'Tools this project uses',
         'queries': [
             'requirements dependencies install package version',
             'import framework library module from',
@@ -48,14 +62,23 @@ TOPICS = [
     },
     {
         'key': 'architecture',
-        'title': 'How the code is organised',
+        'title': 'Main parts and how they work together',
         'queries': [
             'module package folder structure layer component organisation',
-            'class function responsibility interface service helper utility',
+            'application entry point user interface request handler core service workflow storage',
             'import from internal dependency between files',
         ],
         'test_cap': 0,
-        'ask': 'Explain how this project is split up and what each part is responsible for. Name the real files and folders. For each, say what a developer would go there to change. Say which part calls which only where an excerpt shows it.',
+        'ask': '''Explain only the main parts of THIS project, grouped by responsibility.
+Start with **The main parts:** and the supported big picture. Then give three to five main
+components when evidence supports them, each in a separate short paragraph with a useful
+heading. For each, say what it receives, its main job, what it passes on or returns, and
+one representative real file or folder. Explain why a newcomer would open that part.
+Finish with **How the parts connect:** describing the supported path between these components.
+Do not pick random files and explain one function in each. Do not make a list of utility
+functions, logging helpers or tests the architecture. A function name alone does not prove
+its role. Use fewer components if fewer are supported. Only claim calls or order shown
+by the code or documentation; report missing connections in missing_information.''',
     },
     {
         'key': 'setup',
@@ -67,29 +90,63 @@ TOPICS = [
             'readme prerequisites version required before you begin',
         ],
         'test_cap': 0,
-        'ask': 'Give the setup and start-up steps as a numbered walk a person can follow after cloning this repository. Commands exactly as the excerpts show them, in the order they are run. Never invent a step, a port or a path. Anything the excerpts leave out goes in missing_information, because a reader will try to run what you write.',
+        'ask': '''Give setup and startup steps SPECIFIC to THIS project, using its supplied files
+whether they came from GitHub, a local folder or a ZIP. Do not tell the reader to "read the
+README", "install the required tools" or "configure the environment" without the actual details.
+Use short numbered headings in separate statement objects, in the supported order:
+tools and versions required; installing dependencies; required settings; starting the
+application; opening or using it and checking it started. Include only supported steps.
+For each command, explain what it does, show the exact command in backticks, and identify
+the working folder from the documentation or the manifest that defines the script.
+Use actual script names, configuration key names and documented URLs. Show setting names,
+never secret values. Distinguish optional services from required ones and separate OS-specific
+alternatives. Do not assume npm start, a virtual environment, a database, port or URL just
+because of a framework. A dependency list alone does not prove how to launch the program.
+If an install command, start command, working folder or required setting cannot be found,
+put that precise gap in missing_information. Never replace missing commands with generic
+instructions. Describe commands from sources without claiming they were executed.''',
     },
     {
         'key': 'flows',
-        'title': 'What happens when it runs',
+        'title': 'Follow a real user action from input to result',
         'queries': [
-            'main entry point startup initialise bootstrap lifespan',
-            'request response handler route controller middleware',
-            'workflow process pipeline step job queue task loop',
+            'user input question form submit upload request handler',
+            'main application workflow search process answer response result',
+            'frontend fetch backend route service return display output',
         ],
         'test_cap': 0,
-        'ask': 'Walk through what happens from the moment this project starts. The entry point, then step by step what happens when a request or a command arrives, then what goes back out. Finish with one concrete example: somebody does a particular thing, these files run in this order, this is what they get.',
+        'ask': '''Walk a newcomer through ONE main user-facing action in this system, from input
+to the visible result. This is a deeper walkthrough of a real feature, not a list of functions.
+Use these headings, each in its own short statement object with its own source citations:
+**Example input (illustrative):** Name the action and give a concrete example of what the user
+types, selects or uploads. Use a quoted question for a chatbot, or this system's actual input
+type for another kind of project. Do not pretend every project is a chatbot.
+**First — receiving the input:** Explain where it arrives and the main file that handles it.
+**Next — doing the work:** Follow the supported checks, search, calculation or processing in
+order. Say what each main part receives and passes on, in simple words. Use a second short
+paragraph if needed; avoid naming every helper function.
+**Finally — what the user sees:** Describe the actual kind of result returned or displayed.
+Give illustrative sample wording or a result shape only when supported. Never invent search
+matches, business facts, IDs, numeric results or claim the example was actually run.
+**If it cannot finish:** Include a supported failure or empty-result path only when shown.
+Logging start/end messages, debug helpers and application startup are not the user's action.
+Do not describe a person requesting a logging function. Only explain logging as the main
+feature if the project is explicitly a logging tool. Do not infer a complete workflow from
+a prompt, imports, similarly named functions, a proposed ticket or unrelated routes.
+Keep this system separate from other imported systems; do not invent calls between them.
+Name precise missing links or output evidence in missing_information, and explain the parts
+that are supported instead of replacing them with generic instructions.''',
     },
     {
         'key': 'interfaces',
-        'title': 'What it exposes to the outside',
+        'title': 'How people and other programs use it',
         'queries': [
             'route endpoint api get post put delete path url',
             'websocket socket event message channel subscribe',
             'command line argument parser option flag input output',
         ],
         'test_cap': 1,
-        'ask': 'Explain what this project offers to anything outside it: its addresses, its command line options, its events. For each important one say what action causes it, what has to be sent, what comes back, and what changes as a result.',
+        'ask': 'Explain the ways a person or another program can ask this project to do something. Define API, route or command in ordinary words before using the term. For each important supported action, explain what is sent, where it goes, and what comes back. Keep exact addresses and commands. Describe changes only when the excerpts show them.',
     },
     {
         'key': 'data',
@@ -100,7 +157,7 @@ TOPICS = [
             'config settings environment file store save read write path',
         ],
         'test_cap': 0,
-        'ask': 'Explain what this project stores and what each stored thing means in the real world, not just its type. For each table or model, say what one row of it represents and when a new one appears. Then say where settings live, separately from stored data.',
+        'ask': 'Explain what the project remembers and where it keeps that information. Define a database as a place to keep information and a row as one saved entry. For each supported table or model, explain what one entry represents and when it is saved if the files show that. Then explain the settings that change how the program works. Do not guess what survives a restart.',
     },
     {
         'key': 'testing',
@@ -516,6 +573,7 @@ def section_from(topic: dict, sources: list[dict], answer: dict | None, error: s
         'missing_information': (answer or {}).get('missing_information', ''),
         'error': error,
         'sources': [{'source_id': s['source_id'], 'path': s['path'], 'start': s['start'],
-                     'end': s['end'], 'url': s.get('url'), 'text': s['text'], 'split': s.get('split')}
+                     'end': s['end'], 'url': s.get('url'), 'text': s['text'], 'split': s.get('split'),
+                     **({k:s[k] for k in ('system_id', 'system_name')} if s.get('system_id') else {})}
                     for s in sources],
     }

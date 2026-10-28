@@ -20,8 +20,11 @@ from pka.conversation import followup_query
 from pka.facts import derive as derive_facts
 from pka.diagram import build as build_diagrams
 from pka.roles import describe as describe_roles
+from pka.overview_context import select_sources as overview_sources, source_systems
+from pka.overview_scope import selected_local, apply_metadata, current_local_payload
 from pka.overview import (TOPICS, reading_order, section_from, tidy, topics_for,
                           walkthrough)
+from pka.plain_language import STYLE_VERSION
 from pka.mcp_client import connect
 from pka.parallel import concurrency, process_parallel
 
@@ -142,19 +145,21 @@ use a short **bold heading** at the start of a paragraph and backticks for code 
 Do not emit standalone list numbers, empty bullets, tools, or external links.'''
 
 OVERVIEW_STYLE = '''This is a project handover topic, not a short factual lookup.
-Overview topics may use four to EIGHT paragraphs with short **bold headings** when evidence
+Overview topics normally use three to six short paragraphs with **bold headings** when evidence
 supports that depth, including an example. The six-statement guidance for ordinary answers
 does not apply here; an overview may contain up to eight statement objects.
 Put EACH paragraph in a SEPARATE object in the statements array, with its own source_ids.
 Keep each object's text under 1000 characters. Never put the entire explanation or several
 headed sections into one text field; the schema rejects oversized statements.
-Start with **In simple terms:** and explain the topic in everyday language. Then describe
+Follow the topic's requested headings and order. When it does not specify headings,
+start with **What this means:** and explain the topic in everyday language. Then describe
 each supported component or step in two or three short sentences: what it receives,
 what it does and what it produces, only where shown. Explain unfamiliar terms.
-Finish with **Example:** using a simple illustrative input and only the supported steps,
+When the topic asks for an example, use a simple illustrative input and only the supported steps,
 or explain the precise missing link if no example can be supported. Do not present an
 illustrative example as a tested result. Describe what a newcomer needs to understand,
-not just a list of filenames. A useful topic is often 200-350 words; this is NOT a quota.
+not just a list of filenames. Prefer about 120-220 clear words when the evidence supports
+that much detail. This is not a quota. Cover the useful steps without repeating yourself.
 IMPORTANT: A dependency declaration proves only that a package is listed. It does NOT
 prove how it is used, which UI calls which API, which database is active, or any runtime
 behaviour. Explain actual usage ONLY from code or documentation explicitly showing it.
@@ -317,6 +322,7 @@ class Service:
         self.lock = asyncio.Lock()
         self.task = None
         self.cancel = asyncio.Event()
+        self._embedding_requests = set()
         self.progress = None
         self.overview_progress = None
         self.slack_progress = None
@@ -338,6 +344,35 @@ class Service:
 
     def busy(self):
         return self.lock.locked() or bool(self.task and not self.task.done())
+
+    def search_mode(self):
+        return (self.index.settings() or {}).get('search_mode', 'semantic')
+
+    def semantic_enabled(self):
+        return embed.enabled() and self.search_mode() != 'basic'
+
+    def set_search_mode(self, mode):
+        self.index.configure({'search_mode':mode})
+        self._search_embedding_attempt = None
+        if mode == 'basic':
+            # Stop only optional embedding requests. Cancelling the import itself
+            # would discard files that have already passed their access checks.
+            for request in tuple(self._embedding_requests):
+                request.cancel()
+
+    async def embedding_vectors(self, texts):
+        if not self.semantic_enabled():
+            return None
+        request = asyncio.create_task(embed.vectors(texts))
+        self._embedding_requests.add(request)
+        try:
+            return await request
+        except asyncio.CancelledError:
+            if not self.semantic_enabled() and not asyncio.current_task().cancelling():
+                return None
+            raise
+        finally:
+            self._embedding_requests.discard(request)
 
     async def generate_for(self, feature, generator, *args, **kwargs):
         """Bind existing generators to this workspace without changing injected test APIs."""
@@ -408,9 +443,12 @@ class Service:
                     'jira':self.jira_progress, 'slack':self.slack_progress, 'local':self.local_progress,
                     'jira_task':self.jira_task_progress, 'decisions':self.decision_progress,
                     'evaluation':self.evaluation_progress}.get(result['kind'])
-        result['progress'] = ({k:progress.get(k) for k in ('phase', 'done', 'total', 'processed', 'embed_done', 'embed_total')}
+        result['progress'] = ({k:progress.get(k) for k in ('phase', 'done', 'total', 'processed', 'embed_done', 'embed_total', 'embed_reused')}
                               if active and progress else None)
         result['can_cancel'] = active and bool(self.task and not self.task.done())
+        result['can_skip_index'] = bool(result['can_cancel'] and result['state'] == 'running'
+            and self.semantic_enabled() and progress and progress.get('phase') in
+            {'Preparing search index', 'Checking search quality'})
         result['can_retry'] = (not self.busy() and scope == self.job['scope'] and
                                result['state'] in {'failed', 'partial', 'cancelled', 'interrupted'})
         if result['can_retry']:
@@ -462,6 +500,15 @@ class Service:
         if asyncio.current_task() is not self.task:
             self.cancel.clear()
         self.check_cancelled()
+
+    def use_basic_search(self, job_id):
+        current = self.job_status()
+        if not current or current['id'] != job_id or not current['can_skip_index']:
+            raise SourceError('stale_job', 'This job is no longer preparing its search index. Refresh its status.')
+        self.set_search_mode('basic')
+        self.job['search_mode'] = 'basic'
+        self.index.save_job(self.job)
+        return {'ok':True, 'search_mode':'basic'}
 
     def job_work(self, kind):
         cfg = self.index.settings() or {}
@@ -778,7 +825,7 @@ class Service:
                                        'done':len(report['files']), 'total':report['total']}
                 self.index.replace_source(scan['id'], 'local://', blocks, {
                     'scope':self.index.source_scope('local', local_cfg), 'snapshot':snapshot['commit'], 'report':report})
-                if embed.enabled():
+                if self.semantic_enabled():
                     await self.embed_snapshot(scan['id'])
                 self.check_cancelled()
                 if report['state'] == 'partial':
@@ -871,11 +918,12 @@ class Service:
                     raise SourceError('empty','No searchable text was read. Review skipped files and limits.')
                 d.update(status='partial' if incomplete else 'complete',finished=now(),phase='Ready',chunks=len(chunks))
                 self.index.activate(scan_id,chunks,d)
-                if embed.enabled():
+                if self.semantic_enabled():
                     d['phase'] = 'Reading the text for meaning'
                     self.progress = {'id':scan_id,**d}
-                    d['embedded'] = await self.embed_snapshot(scan_id)
+                    await self.embed_snapshot(scan_id)
                     self.check_cancelled()
+                    d.update(embedded=self.index.embedded(scan_id), phase='Ready')
                     self.index.save_scan(scan_id,d)
             except asyncio.CancelledError:
                 d.update(status='interrupted',finished=now(),phase='Stopped',error='Application stopped during scan. Start a new scan.')
@@ -910,35 +958,40 @@ class Service:
         are embedded in batches so a long scan can be cancelled part way without losing the
         batches that already landed.
         """
-        if not embed.enabled():
+        if not self.semantic_enabled():
             return 0
         self.index.prepare_vectors(scan_id, embed.signature())
         pending = self.index.unembedded(scan_id)
-        if not pending:
-            if self.index.embedded(scan_id) and not self.index.calibration(scan_id, embed.model()):
-                await self.calibrate(scan_id)
-            return self.index.embedded(scan_id)
+        reused = self.index.embedded(scan_id)
         revision = self.index.revision
         # Additional folders have their own job. Never put their embedding progress in the
         # repository scan (or leave their banner showing the last filename for minutes).
-        progress_field = 'local_progress' if self.local_progress is not None else 'progress'
+        progress_field = ('local_progress' if self.local_progress is not None else
+                          'overview_progress' if self.overview_progress is not None else 'progress')
 
         def report_embedding(phase, done):
             progress = getattr(self, progress_field)
             if progress is not None:
                 setattr(self, progress_field, {**progress, 'phase':phase,
-                        'embed_done':done, 'embed_total':len(pending)})
+                        'embed_done':done, 'embed_total':len(pending), 'embed_reused':reused})
+
+        if not pending:
+            if reused and not self.index.calibration(scan_id, embed.model()):
+                report_embedding('Checking search quality', 0)
+                await self.calibrate(scan_id)
+            return reused
 
         stored, failed = 0, False
 
         async def embed_batch(batch):
             # The path goes in with the text: a chunk from connectors/github.py means
             # something different from the same lines sitting in a test file.
-            return await embed.vectors(embed.document_texts([b['path'] + '\n' + b['text'] for b in batch]))
+            return await self.embedding_vectors(embed.document_texts([
+                b.get('embedding_path', b['path']) + '\n' + b['text'] for b in batch]))
 
         async def save_batch(batch, found):
             nonlocal stored, failed
-            if self.cancel.is_set():
+            if self.cancel.is_set() or not self.semantic_enabled():
                 return
             self.ensure_current((revision, {}))
             if not found:
@@ -954,10 +1007,10 @@ class Service:
         await process_parallel(
             (pending[n:n + embed.BATCH] for n in range(0, len(pending), embed.BATCH)),
             embed_batch, save_batch, concurrency('PKA_EMBED_CONCURRENCY', 2, 4),
-            stopped=lambda: failed or self.cancel.is_set())
+            stopped=lambda: failed or self.cancel.is_set() or not self.semantic_enabled())
         applog.event('embed.snapshot', scan_id=scan_id, model=embed.model(),
                      stored=stored, chunks=len(pending))
-        if stored and not self.cancel.is_set():
+        if stored and not self.cancel.is_set() and self.semantic_enabled():
             report_embedding('Checking search quality', stored)
             await self.calibrate(scan_id)
         return stored
@@ -970,10 +1023,12 @@ class Service:
         carried over, it is measured again against whatever was actually scanned.
         """
         revision = self.index.revision
-        probes = await embed.vectors(embed.query_texts(list(embed.PROBES)))
+        probes = await self.embedding_vectors(embed.query_texts(list(embed.PROBES)))
         self.ensure_current((revision, {}))
         self.check_cancelled()
         if not probes:
+            if not self.semantic_enabled():
+                return self.index.floor_for(scan_id)
             applog.warn('embed.calibration_skipped', scan_id=scan_id, model=embed.model(),
                         reason='the embedding model did not answer')
             return self.index.floor_for(scan_id)
@@ -1007,22 +1062,30 @@ class Service:
             if not scan:
                 raise SourceError('scan','Run a successful scan before building the overview.')
             self.begin_work()
-            checked = await self.check_external_access(scan)
-            if embed.enabled() and not self.demo:
+            overview_selection = selected_local(self.index, scan)
+            checked = await self.check_external_access(scan, names=() if overview_selection else ('github', 'jira', 'slack'))
+            if self.semantic_enabled() and not self.demo:
+                self.overview_progress = {'phase':'Preparing search index'}
                 await self.embed_snapshot(scan['id'])
                 self.ensure_current(checked)
             started = time.perf_counter()
             present = {p for p in ('slack/','jira/') if self.index.source_blocks(scan['id'],p)}
+            if overview_selection:
+                present = set()
             topics = topics_for(present)
             routing_signature = self.llm.cache_signature()
             topic_states = {t['key']:{'title':t['title'],'state':'pending'} for t in topics}
             applog.event('overview.begin', scan_id=scan['id'], commit=scan['commit'][:12],
                          topics=len(topics), extra_sources=','.join(sorted(present)) or 'none')
             self.overview_progress = {'phase':'Reading project structure','done':0,'total':len(topics)}
+            analysis_index = self.index
+            if overview_selection:
+                from pka.architecture import SystemIndex
+                analysis_index = await asyncio.to_thread(SystemIndex, self.index, scan['id'], overview_selection['paths'])
             try:
                 # These read-only passes can take seconds on a large index. Keep
                 # authentication, status polling and cancellation off that wait.
-                facts = await asyncio.to_thread(derive_facts, self.index, scan)
+                facts = await asyncio.to_thread(derive_facts, analysis_index, scan)
                 applog.event('overview.facts', groups=len(facts),
                              items=sum(len(g['items']) for g in facts))
             except Exception:
@@ -1032,7 +1095,7 @@ class Service:
             self.ensure_current(checked)
             self.check_cancelled()
             try:
-                diagrams = await asyncio.to_thread(build_diagrams, self.index, scan, facts)
+                diagrams = await asyncio.to_thread(build_diagrams, analysis_index, scan, facts)
                 applog.event('overview.diagrams', count=len(diagrams),
                              kinds=','.join(d['key'] for d in diagrams) or 'none',
                              boxes=sum(len(d['nodes']) for d in diagrams),
@@ -1044,21 +1107,34 @@ class Service:
             self.ensure_current(checked)
             self.check_cancelled()
             try:
-                roles = await asyncio.to_thread(describe_roles, self.index, scan, facts)
+                roles = await asyncio.to_thread(describe_roles, analysis_index, scan, facts)
                 applog.event('overview.roles', cards=len(roles.get('cards', [])))
             except Exception:
                 applog.failure('overview.roles_failed', scan_id=scan['id'])
                 roles = {}
             self.ensure_current(checked)
             self.check_cancelled()
-            paths = self.index.code_paths(scan['id'])
+            paths = analysis_index.code_paths(scan['id'])
+            systems = ([{**overview_selection, 'facts':facts, 'roles':roles}] if overview_selection
+                       else source_systems(self.index, scan, paths))
+            local_display = (await asyncio.to_thread(current_local_payload, self.index, scan, overview_selection, {})
+                             if overview_selection else {})
+            if len(systems) > 1:
+                from pka.architecture import SystemIndex
+                for system in systems:
+                    view = await asyncio.to_thread(SystemIndex, self.index, scan['id'], system['paths'])
+                    system['facts'] = await asyncio.to_thread(derive_facts, view, scan)
+                    system['roles'] = await asyncio.to_thread(describe_roles, view, scan, system['facts'])
+                    self.ensure_current(checked)
+                    self.check_cancelled()
 
             def payload_now(sections, done):
                 self.ensure_current(checked)
                 self.check_cancelled()
-                return {'scan_id':scan['id'],'commit':scan['commit'],'repo':scan['repo'],
+                payload = {'scan_id':scan['id'],'commit':scan['commit'],'repo':scan['repo'],
                         'branch':scan.get('branch'),'scanned_at':scan.get('finished'),
-                        'demo':self.demo,'sections':sections,'facts':facts,
+                        'demo':self.demo,'sections':sections,'facts':facts,'explanation_style':STYLE_VERSION,
+                        'systems':[{k:system[k] for k in ('id','name')} for system in systems],
                         'diagrams':diagrams,'roles':roles,
                         'steps':walkthrough([t['key'] for t in topics],
                                             [s['key'] for s in sections],
@@ -1084,6 +1160,10 @@ class Service:
                                             'The diagrams and the groups of facts are drawn from the files '
                                             'themselves, so they are complete before any section is written.'),
                         'elapsed_seconds':round(time.perf_counter()-started,1)}
+                if overview_selection:
+                    payload['overview_features'] = local_display['overview_features']
+                    return apply_metadata(payload, overview_selection, checked[0])
+                return {**payload, 'overview_scope':'workspace'}
 
             sections, done = [], 0
             # Saved before the first topic so the facts and the reading order are readable at once.
@@ -1093,7 +1173,8 @@ class Service:
             # on a machine with limited memory.
             self.overview_progress = {'phase':'Finding topic sources','done':0,'total':len(topics)}
             queries = [query for topic in topics for query in topic['queries']]
-            query_vectors = await embed.vectors(embed.query_texts(queries)) if self.index.embedded(scan['id']) else None
+            query_vectors = (await embed.vectors(embed.query_texts(queries))
+                             if self.semantic_enabled() and self.index.embedded(scan['id']) else None)
             self.ensure_current(checked)
             self.check_cancelled()
             vectors_by_topic, offset = [], 0
@@ -1135,21 +1216,30 @@ class Service:
                     finally:
                         next_generation_at = time.monotonic() + interval
 
-            async def build_topic(item):
-                position, topic = item
+            async def build_system(position, topic, system=None, system_position=0):
                 self.ensure_current(checked)
                 self.check_cancelled()
                 topic_states[topic['key']]['state'] = 'retrieving'
                 self.overview_progress = {'phase':'Writing project overview','done':done,'total':len(topics),'topics':topic_states}
+                scoped_paths = system['paths'] if system else paths
+                scoped_facts = system.get('facts', []) if system else facts
+                scoped_roles = system.get('roles', {}) if system else roles
                 sources = self.index.search_many(topic['queries'], scan,
                                                  test_cap=topic.get('test_cap'),
                                                  vendor_cap=topic.get('vendor_cap', 0),
-                                                 query_vectors=vectors_by_topic[position])
+                                                 query_vectors=vectors_by_topic[position],
+                                                 path_filter=scoped_paths if system else None)
+                sources = overview_sources(self.index, scan, topic['key'], sources, scoped_facts, scoped_roles, paths=scoped_paths)
+                cache_topic = topic
+                if system:
+                    sources = [{**s, 'source_id':f'S{system_position * 100 + i + 1}',
+                                'system_id':system['id'], 'system_name':system['name']} for i, s in enumerate(sources)]
+                    cache_topic = {**topic, 'system_id':system['id'], 'system_name':system['name']}
                 if any(s['path'].startswith(('jira/', 'slack/')) for s in sources):
                     await self.check_external_access(scan)
                 self.ensure_current(checked)
                 self.check_cancelled()
-                cache_key = topic_cache.key(scan,checked[0],topic,sources,routing_signature,
+                cache_key = topic_cache.key(scan,checked[0],cache_topic,sources,routing_signature,
                     'default' if self.generator is ollama_answer else str(id(self.generator)))
                 cached = topic_cache.read(self.index,cache_key) if not self.demo else None
                 if cached:
@@ -1159,7 +1249,7 @@ class Service:
                 if not sources:
                     section = section_from(topic, [], None,
                         'No indexed excerpt matched this topic, so nothing is claimed about it.',
-                        measure=not self.demo, facts=facts, paths=paths)
+                        measure=not self.demo, facts=scoped_facts, paths=scoped_paths)
                     applog.warn('overview.topic_empty', topic=topic['key'])
                 else:
                     try:
@@ -1170,7 +1260,7 @@ class Service:
                         else:
                             answer = await generate_topic(topic, sources)
                         section = section_from(topic, sources, answer,
-                                               measure=not self.demo, facts=facts, paths=paths)
+                                               measure=not self.demo, facts=scoped_facts, paths=scoped_paths)
                         if generation_metadata(answer): section['generation'] = generation_metadata(answer)
                         applog.event('overview.topic', topic=topic['key'], sources=len(sources),
                                      statements=len(section['statements']),
@@ -1181,10 +1271,48 @@ class Service:
                     except SourceError as exc:
                         if exc.code in {'stale','access_denied','access_unverified','access','scope'}: raise
                         section = section_from(topic, sources, None, str(exc),
-                                               measure=not self.demo, facts=facts, paths=paths)
+                                               measure=not self.demo, facts=scoped_facts, paths=scoped_paths)
                         if generation_metadata(exc): section['generation'] = generation_metadata(exc)
                         applog.failure('overview.topic_failed', topic=topic['key'], code=exc.code, msg=exc)
                 return section, sources, cache_key
+
+            async def build_topic(item):
+                position, topic = item
+                if len(systems) < 2:
+                    return await build_system(position, topic, systems[0] if overview_selection else None)
+                # A connected local folder is a separate system, not evidence that the
+                # repository calls it. Generate independently so no model call can combine
+                # their workflows or send local evidence using a GitHub-only approval.
+                groups = systems
+                if topic.get('needs'):
+                    groups = [{'id':'team-context', 'name':'Team records',
+                               'paths':[p for p in self.index.indexed_paths(scan['id'])
+                                        if p.startswith(tuple(topic['needs']))]}]
+                sections_for_systems, all_sources = [], []
+                for group_position, system in enumerate(groups):
+                    section, sources, key = await build_system(position, topic, system, group_position)
+                    self.ensure_current(checked)
+                    self.check_cancelled()
+                    if self.llm.cache_signature() != routing_signature:
+                        raise SourceError('stale','AI routing changed during the overview. Retry with the current settings.')
+                    if not self.demo and not section.get('cache_hit'):
+                        topic_cache.save(self.index, key, checked[0], section)
+                    sections_for_systems.append({**section, 'system_id':system['id'], 'system_name':system['name']})
+                    all_sources.extend(sources)
+                section = {
+                    'key':topic['key'], 'title':topic['title'],
+                    'system_sections':sections_for_systems,
+                    'sources':[s for part in sections_for_systems for s in part['sources']],
+                    'statements':[s for part in sections_for_systems for s in part['statements']],
+                    'checks':{key:sum(part['checks'].get(key, 0) for part in sections_for_systems)
+                              for key in {k for part in sections_for_systems for k in part['checks']}},
+                    'error':'\n'.join(f"{part['system_name']}: {part['error']}" for part in sections_for_systems if part['error']),
+                    'missing_information':'\n'.join(f"{part['system_name']}: {part['missing_information']}"
+                                                   for part in sections_for_systems if part['missing_information']),
+                    'cache_hit':all(part.get('cache_hit') for part in sections_for_systems),
+                }
+                key = topic_cache.key(scan, checked[0], {**topic, 'separate_systems':True}, all_sources, routing_signature)
+                return section, all_sources, key
 
             completed_sections = {}
 
@@ -1574,7 +1702,7 @@ class Service:
             contextual = followup_query(question, history)
             # Existing snapshots gain semantic search without re-reading sources or
             # discarding imported Jira/Slack content. Failed attempts cool down.
-            if embed.enabled() and not self.demo:
+            if self.semantic_enabled() and not self.demo:
                 attempt = (scan['id'], checked[0], embed.signature())
                 last = getattr(self, '_search_embedding_attempt', None)
                 if last is None or last[0] != attempt or time.monotonic() - last[1] > 300:
@@ -1583,7 +1711,8 @@ class Service:
                         self.cancel.clear()
                     await self.embed_snapshot(scan['id'])
             queries = [question] + ([contextual] if contextual else [])
-            found = await embed.vectors(embed.query_texts(queries)) if self.index.embedded(scan['id']) else None
+            found = (await embed.vectors(embed.query_texts(queries))
+                     if self.semantic_enabled() and self.index.embedded(scan['id']) else None)
             self.ensure_current(checked)
             detailed = not focused_question(question)
             source_limit, char_limit = (8, 14000) if detailed else (LIMITS.max_sources, LIMITS.context_chars)

@@ -276,10 +276,11 @@ def test_additional_folder_preserves_github_jira_slack_and_pins_citations(folder
         run(service.read_slack('acme', index.settings()['slack']['channels']))
         before = {p for p in index.indexed_paths(scan['id'])}
         assert any(p.startswith('jira/') for p in before) and any(p.startswith('slack/') for p in before)
-        choice = {'source_kind':'local', 'local_path':str(folder)}
+        choice = {'source_kind':'local', 'local_path':str(folder), 'add_to_project':True}
         response = owner.post('/api/config', json=choice)
         assert response.status_code == 200 and response.json()['additional_local']
         assert index.settings()['repo'] == 'acme/shop'
+        assert index.settings()['project_name'] == 'shop'
         assert index.active_scan()['id'] == scan['id']
         run(service.read_local())
         assert before <= set(index.indexed_paths(scan['id']))
@@ -332,7 +333,7 @@ def test_project_name_follows_new_selections_and_survives_reconnect(folder, tmp_
         assert owner.get('/api/status').json()['settings']['project_name'] == 'shop'
         assert owner.post('/api/config', json={'source_kind':'local', 'local_path':str(folder)}).status_code == 200
         current = owner.get('/api/status').json()['settings']
-        assert current['project_name'] == folder.name and current['repo'] == 'acme/shop'
+        assert current['project_name'] == folder.name and current['repo'] == settings(folder)['repo']
         added = tmp_path / 'new-local-project'
         added.mkdir()
         assert owner.post('/api/config', json={'source_kind':'local', 'local_path':str(added)}).status_code == 200
@@ -344,11 +345,11 @@ def test_project_name_follows_new_selections_and_survives_reconnect(folder, tmp_
     with OwnerClient(restarted, base_url='http://localhost:8000', headers=headers) as owner:
         assert owner.get('/api/status').json()['stored_project']['project_name'] == added.name
         assert owner.post('/api/config', json=github).status_code == 200
-        assert owner.get('/api/status').json()['settings']['project_name'] == added.name
+        assert owner.get('/api/status').json()['settings']['project_name'] == 'shop'
         assert owner.post('/api/config', json={'repo':'acme/new-repository', 'branch':'main'}).status_code == 200
         current = owner.get('/api/status').json()['settings']
         assert current['project_name'] == 'new-repository'
-        assert current['local']['path'].replace('\\', '/') == str(added).replace('\\', '/')
+        assert not current.get('local') and not current.get('local_path')
 
 
 def test_older_mixed_source_workspace_gets_local_project_name(folder, tmp_path):
@@ -361,10 +362,10 @@ def test_older_mixed_source_workspace_gets_local_project_name(folder, tmp_path):
         assert stored['source_kind'] == 'local'
         assert Path(stored['local_path']) == folder
         assert owner.post('/api/config', json={'repo':'acme/shop', 'branch':'main'}).status_code == 200
-        assert owner.get('/api/status').json()['settings']['project_name'] == folder.name
+        assert owner.get('/api/status').json()['settings']['project_name'] == 'shop'
 
 
-def test_local_connection_survives_restart_with_a_github_repository(folder, tmp_path):
+def test_new_local_project_survives_restart_without_the_previous_github_repository(folder, tmp_path):
     db_path = tmp_path / 'saved-connection.sqlite3'
     headers = {'x-pka-request':'1'}
     github = {'repo':'acme/shop', 'branch':'main'}
@@ -375,7 +376,7 @@ def test_local_connection_survives_restart_with_a_github_repository(folder, tmp_
         assert owner.post('/api/config', json=local).status_code == 200
         current = owner.get('/api/status').json()['settings']
         assert current['selected_source'] == 'local'
-        assert current['repo'] == 'acme/shop'
+        assert current['repo'] == settings(folder)['repo']
 
     restarted = create_app(db_path=db_path, connector_factory=factory)
     with OwnerClient(restarted, base_url='http://localhost:8000', headers=headers) as owner:
@@ -387,10 +388,10 @@ def test_local_connection_survives_restart_with_a_github_repository(folder, tmp_
                      'repo':'', 'branch':'working-tree'}
         assert owner.post('/api/config', json=reconnect).status_code == 200
         assert owner.get('/api/status').json()['settings']['selected_source'] == 'local'
-        # Explicitly choosing GitHub must also survive navigation/restart, even when
-        # the workspace retains the local folder and its display name.
+        # Choosing GitHub starts its own project and survives navigation/restart.
         assert owner.post('/api/config', json=github).status_code == 200
         assert owner.get('/api/status').json()['settings']['selected_source'] == 'github'
+        assert not owner.get('/api/status').json()['settings'].get('local')
 
     restarted = create_app(db_path=db_path, connector_factory=factory)
     with OwnerClient(restarted, base_url='http://localhost:8000', headers=headers) as owner:

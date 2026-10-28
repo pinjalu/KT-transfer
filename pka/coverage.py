@@ -118,7 +118,18 @@ def describe(service):
         name = 'github' if job['kind'] == 'scan' else job['kind']
         if job['state'] in {'queued','running','cancelling','failed','cancelled','interrupted'}:
             sources[name]['attempt'] = {k:job.get(k) for k in ('state','started_at','finished_at','error')}
-    if (index.settings() or {}).get('repo', '').startswith('local:'):
+    settings = index.settings() or {}
+    if settings.get('repo', '').startswith('zip:'):
+        sources['zip'] = sources.pop('github')
+        sources['zip']['source'] = 'zip'
+        archive = settings.get('archive') or {}
+        sources['zip']['notes'].append('Reads the uploaded ZIP snapshot. Upload a new ZIP after changing your project files.')
+        for reason, count in (archive.get('skipped') or {}).items():
+            sources['zip']['details'].append({'name':reason.replace('_', ' '), 'summary':f'{count} file(s) excluded during upload', 'notes':[]})
+        if archive.get('skipped', {}).get('scan_size_limit'):
+            sources['zip']['state'] = 'partial'
+            sources['zip']['notes'].append('Upload extraction reached the file or total text limit; only the retained files were scanned.')
+    elif settings.get('repo', '').startswith('local:'):
         sources['local'] = sources.pop('github')
         sources['local']['source'] = 'local'
         sources['local']['notes'].append('Reads the current working folder, including uncommitted and untracked files. Uses built-in exclusions; custom .gitignore patterns are not applied. Symlinks, junctions and private tool directories are not followed.')

@@ -4,6 +4,7 @@ import time
 from dataclasses import asdict
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
@@ -12,7 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
-from pka import applog, monitoring
+from pka import applog, monitoring, zip_projects, embed
+from pka.plain_language import STYLE_VERSION
 from pka.config import ROOT, KEEP_LOGS, LIMITS, data_dir, log_dir, validate_selection, project_name, selected_source
 from pka import credentials, oauth
 from pka.auth import AuthStore, digest
@@ -20,9 +22,10 @@ from pka import auth_web
 from pka.connectors import registry
 from pka.connectors.base import SourceError
 from pka.connectors.local import is_local, local_selection
-from pka import facts, features, coverage, quality, existing_tests, feature_kt
+from pka import facts, features, coverage, quality, existing_tests, feature_kt, architecture
 from pka.index import Index
 from pka.overview import reading_order, topics_for
+from pka.overview_scope import selected_local, current_local_payload
 from pka.service import Service
 from pka.conversation import Conversation
 from pka.deployment import Hosting
@@ -33,7 +36,12 @@ class Selection(BaseModel):
     branch: str = Field(default='main', max_length=200)
     source_kind: Literal['github', 'local'] = 'github'
     local_path: str = Field(default='', max_length=1000)
+    add_to_project: bool = False
     platforms: list[str] = Field(default_factory=list, max_length=20)
+class SearchMode(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    mode: Literal['basic', 'semantic']
+
 class CredentialUpdate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     values: dict[str, str] = Field(max_length=10)
@@ -181,7 +189,8 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                 return JSONResponse({'detail':'Application request header required.'},status_code=403)
         if request.method not in {'GET','HEAD'}:
             try:
-                if int(request.headers.get('content-length','0')) > 8192:
+                limit = zip_projects.MAX_UPLOAD_BYTES if request.url.path == '/api/zip/upload' and request.method == 'POST' else 8192
+                if int(request.headers.get('content-length','0')) > limit:
                     return JSONResponse({'detail':'Request too large.'},status_code=413)
             except ValueError:
                 return JSONResponse({'detail':'Invalid request size.'},status_code=400)
@@ -289,6 +298,7 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
             # selection: until it is saved, nothing is read and nothing is answered.
             previous = index.settings() or {}
             return {'settings':None,'scan':None,'last_successful_scan':None,'ready':False,
+                    'search_mode':service.search_mode(), 'semantic_available':embed.enabled() and not demo,
                     'knowledge_revision':index.revision,
                     'busy':False,'demo':demo,'limits':asdict(LIMITS),
                     'model':os.getenv('OLLAMA_MODEL','qwen3:1.7b'),
@@ -304,6 +314,7 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                                       'branch':previous.get('branch','')} if previous.get('repo') else None}
         settings = index.settings()
         return {'settings':{**settings, 'project_name':project_name(settings), 'selected_source':selected_source(settings)} if settings else None,
+                'search_mode':service.search_mode(), 'semantic_available':embed.enabled() and not demo,
                 'scan':scan,'last_successful_scan':index.last_successful(),
                 'knowledge_revision':index.revision,
                 'busy':service.busy() or bool(service.task and not service.task.done()),'demo':demo,
@@ -362,27 +373,31 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
                      typed_chars=len(selection.repo))
         async with service.lock:
             previous = index.settings() or {}
-            # A folder is an additional source when a GitHub project is already selected.
-            # Updating it preserves the GitHub scan and all imported Jira/Slack content.
-            if selection.source_kind == 'local' and previous.get('repo') and not is_local(previous['repo']):
+            # Combining projects must be explicit. A normal folder selection starts
+            # its own project instead of renaming an old GitHub snapshot.
+            if selection.add_to_project:
+                if (selection.source_kind != 'local' or not chosen['this_run']
+                        or not previous.get('repo') or is_local(previous['repo'])
+                        or not index.active_scan()):
+                    raise HTTPException(409, 'Read a GitHub project first before adding a folder to it.')
                 index.configure_source('local', {'repo':repo, 'path':repo[6:]})
                 index.configure({'platforms':list(dict.fromkeys([*(previous.get('platforms') or []), 'local'])),
-                                 'project_name':project_name({'repo':repo}), 'selected_source':'local'})
+                                 'project_name':project_name({'repo':previous['repo']}), 'selected_source':'github'})
                 chosen['this_run'] = True
                 return {'ok':True, 'additional_local':True, 'reconnected':False}
-            if selection.source_kind == 'github' and is_local(previous.get('repo')):
-                index.configure_source('local', {'repo':previous['repo'], 'path':previous['repo'][6:]})
-                if 'local' not in platforms:
-                    platforms.append('local')
-            if selection.source_kind == 'github' and previous.get('local') and 'local' not in platforms:
+            changed = (previous.get('repo'), previous.get('branch')) != (repo, branch)
+            if previous.get('repo') != repo:
+                platforms = [selection.source_kind]
+            elif previous.get('local') and 'local' not in platforms:
                 platforms.append('local')
-            # Reconnecting the same anchor keeps a mixed-source workspace's name.
-            # Selecting a different project replaces the previous display name.
-            label = project_name(previous) if previous.get('repo') == repo else project_name({'repo':repo})
+            label = project_name({'repo':repo})
             index.configure({'repo':repo,'branch':branch,'platforms':platforms,'project_name':label,
                 'source_kind':selection.source_kind, 'selected_source':selection.source_kind,
-                'local_path':repo[6:] if is_local(repo) else ''})
+                'local_path':repo[6:] if is_local(repo) else '', 'archive':None})
             service.access_warning = ''
+            if changed:
+                service.job = None
+                service.job_error = service.job_name = ''
             chosen['this_run'] = True
             if is_local(repo) and index.active_scan():
                 try:
@@ -394,9 +409,67 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         # difference decides whether the next thing to do is ask a question or run a scan.
         return {'ok':True,'reconnected':index.active_scan() is not None}
 
+    @app.post('/api/zip/upload')
+    async def upload_zip(request: Request, filename: str = Query(max_length=200)):
+        idle()
+        if demo:
+            raise HTTPException(409, 'Restart without --demo to upload a project ZIP.')
+        if request.headers.get('content-type', '').split(';')[0] not in {'application/zip', 'application/octet-stream'}:
+            raise HTTPException(415, 'Upload the project ZIP file as binary content.')
+        prepared = None
+        async with service.lock:
+            try:
+                with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as stream:
+                    size = 0
+                    async for block in request.stream():
+                        size += len(block)
+                        if size > zip_projects.MAX_UPLOAD_BYTES:
+                            raise HTTPException(413, 'ZIP uploads must be 25 MB or smaller.')
+                        await run_in_threadpool(stream.write, block)
+                    stream.seek(0)
+                    prepared = await run_in_threadpool(zip_projects.prepare, stream, filename, index.path)
+                if not await run_in_threadpool(auth.session, auth_web.token(request, auth), auth_web.origin(request)):
+                    raise HTTPException(401, 'Your session ended. Sign in again before uploading.')
+                previous = index.settings() or {}
+                index.configure({'repo':prepared['repo'], 'branch':'uploaded-snapshot',
+                    'source_kind':'zip', 'selected_source':'zip', 'project_name':filename[:-4],
+                    'platforms':['local'], 'local_path':'', 'local':{},
+                    'archive':{k:v for k,v in prepared.items() if k not in {'repo', 'root'}}})
+                chosen['this_run'] = True
+                service.access_warning = ''
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from None
+            finally:
+                if prepared and (index.settings() or {}).get('repo') != prepared['repo']:
+                    await run_in_threadpool(zip_projects.discard, index.path, prepared['root'])
+        job_id = service.start_job('scan')
+        # Replacing a ZIP releases its previous managed snapshot after the new one is selected.
+        if previous.get('repo', '').startswith('zip:'):
+            try:
+                await run_in_threadpool(zip_projects.discard, index.path, Path(previous['repo'][4:]).parent)
+            except (ValueError, OSError):
+                pass
+        return {'ok':True, 'job_id':job_id, 'project_name':filename[:-4], 'archive':index.settings()['archive']}
+
+    @app.post('/api/zip/resume')
+    async def resume_zip():
+        idle()
+        saved = index.settings() or {}
+        if not saved.get('repo', '').startswith('zip:'):
+            raise HTTPException(409, 'No saved ZIP project. Upload a project ZIP first.')
+        folder = Path(saved['repo'][4:])
+        if not folder.is_dir() or folder.resolve().parent.parent != zip_projects.storage(index.path):
+            raise HTTPException(409, 'The saved ZIP files are unavailable. Upload the ZIP again.')
+        chosen['this_run'] = True
+        if index.active_scan():
+            await service.check_external_access(index.active_scan(), names=('github',))
+            return {'ok':True, 'reconnected':True}
+        return {'ok':True, 'job_id':service.start_job('scan'), 'reconnected':False}
+
     @app.get('/api/local-source')
     async def local_source(request: Request, path: str = Query(max_length=1000), snapshot: str = Query(max_length=64)):
-        if request.state.owner['role'] != 'owner':
+        zip_source = (index.settings() or {}).get('repo', '').startswith('zip:') and not path.startswith('local://')
+        if request.state.owner['role'] != 'owner' and not zip_source:
             raise HTTPException(403, 'Local source files are available only to the app owner.')
         scan = index.active_scan() if chosen['this_run'] else None
         saved = index.source_import('local')
@@ -409,7 +482,7 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
             raise HTTPException(404, 'This file was not indexed in the selected folder.')
         lines = index.file_lines(scan['id'], path)
         service.ensure_current(checked)
-        return {'path':path.split('/', 3)[-1] if additional else path, 'snapshot':snapshot, 'lines':[{'number':n, 'text':text} for n, text in lines],
+        return {'path':path.split('/', 3)[-1] if additional else path, 'snapshot':snapshot, 'source_kind':'zip' if zip_source else 'local', 'lines':[{'number':n, 'text':text} for n, text in lines],
                 'note':'Saved indexed lines. Blank lines and content not indexed may be absent.'}
 
     @app.post('/api/local/read')
@@ -435,6 +508,16 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         if not job or job['kind'] != 'scan':
             raise HTTPException(409, 'No repository scan is running.')
         return service.cancel_job(job['id'])
+
+    @app.post('/api/search-mode')
+    async def search_mode(selection: SearchMode):
+        idle()
+        service.set_search_mode(selection.mode)
+        return {'ok':True, 'search_mode':service.search_mode()}
+
+    @app.post('/api/jobs/{job_id}/basic-search')
+    async def basic_search(job_id: int):
+        return service.use_basic_search(job_id)
 
     @app.post('/api/jobs/{job_id}/cancel')
     async def cancel_job(job_id: int):
@@ -737,8 +820,16 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         scan = index.active_scan()
         if not scan:
             return {'available':False,'reason':'Run a successful scan first.'}
-        await service.check_external_access(scan)
+        selection = selected_local(index, scan)
+        checked = await service.check_external_access(scan, names=() if selection else ('github', 'jira', 'slack'))
+        service.ensure_current(checked)
         cached = index.overview(scan['commit'])
+        if selection:
+            valid = cached and cached.get('overview_scope') == selection['id']
+            cached = await asyncio.to_thread(current_local_payload, index, scan, selection, cached if valid else None)
+            service.ensure_current(checked)
+        elif cached and cached.get('overview_scope', 'workspace') != 'workspace':
+            cached = None
         if cached:
             # The reading order is derived from the indexed paths and no model touches it, so
             # there is no reason for a reader to be shown an old one. It was cached inside a
@@ -747,8 +838,9 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
             # being offered as files to read, the stale list kept offering them. Derived at the
             # moment it is asked for instead, which is one query and a sort.
             cached = {**cached,
+                      'plain_language_update_available':cached.get('explanation_style') != STYLE_VERSION,
                       'routing_changed':bool(cached.get('routing_signature') and cached['routing_signature'] != service.llm.cache_signature()),
-                      'reading_order':reading_order(index.code_paths(scan['id']),
+                      'reading_order':reading_order(selection['paths'] if selection else index.code_paths(scan['id']),
                                                     repo='' if demo else scan['repo'],
                                                     commit='' if demo else scan['commit'])}
         return {'available':bool(cached),'building':service.overview_progress is not None,
@@ -761,7 +853,10 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         if not index.active_scan():
             raise HTTPException(409,'Run a successful scan before building the overview.')
         scan = index.active_scan()
-        present = {p for p in ('slack/','jira/') if index.source_blocks(scan['id'],p)}
+        selection = selected_local(index, scan)
+        if selection and not selection['paths']:
+            raise HTTPException(409, 'Read the selected local folder before building its overview.')
+        present = set() if selection else {p for p in ('slack/','jira/') if index.source_blocks(scan['id'],p)}
         return {'started':True, 'job_id':service.start_job('overview'), 'topics':len(topics_for(present))}
 
     @app.post('/api/ask')
@@ -863,26 +958,69 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         service.ensure_current(checked)
         return payload
 
-    @app.get('/api/features')
-    async def feature_list():
+    def feature_read_pending():
+        job = service.job_status() or {}
+        return (job.get('kind') in {'scan', 'local', 'jira', 'slack'}
+                and job.get('state') in {'queued', 'running', 'cancelling'}) or any(
+                    progress is not None for progress in (service.progress, service.local_progress,
+                                                         service.jira_progress, service.slack_progress))
+
+    async def current_features():
+        if not chosen['this_run']:
+            return None, None, 'Choose a project in Connections first.'
+        if feature_read_pending():
+            return None, None, 'Reading project files. Features will appear after the read finishes.'
         scan = index.active_scan()
         if not scan:
-            return {'available':False,'reason':'Run a successful scan first.','features':[]}
-        await service.check_external_access(scan)
-        payload = features.derive(index,scan,facts.derive(index,scan))
-        return {'available':True,'reason':'',**features.listing(payload)}
+            return None, None, 'Run a successful scan first.'
+        checked = await service.check_external_access(scan)
+        service.ensure_current(checked)
+        # A project change or queued refresh may happen while access is checked.
+        active = index.active_scan()
+        if feature_read_pending() or not active or active['id'] != scan['id']:
+            raise SourceError('stale', 'Project files changed while loading features. Refresh features.')
+        payload = features.derive(index, scan, facts.derive(index, scan))
+        service.ensure_current(checked)
+        scope = {'repo':scan['repo'], 'branch':scan['branch'], 'scan_id':scan['id'],
+                 'commit':scan['commit'], 'knowledge_revision':checked[0]}
+        return payload, scope, ''
+
+    @app.get('/api/features')
+    async def feature_list():
+        payload, scope, reason = await current_features()
+        if payload is None:
+            return {'available':False, 'reason':reason, 'features':[]}
+        return {'available':True,'reason':'',**features.listing(payload), **scope}
+
+    @app.get('/api/architecture')
+    async def current_architecture():
+        if not chosen['this_run']:
+            return {'available':False, 'architecture':None, 'reason':'Choose a project in Connections first.'}
+        if feature_read_pending():
+            return {'available':False, 'architecture':None, 'reason':'Reading project files. Architecture will appear after the read finishes.'}
+        scan = index.active_scan()
+        if not scan:
+            return {'available':False, 'architecture':None, 'reason':'Read this project’s files to build its architecture.'}
+        checked = await service.check_external_access(scan)
+        service.ensure_current(checked)
+        payload = await asyncio.to_thread(architecture.derive, index, scan)
+        service.ensure_current(checked)
+        active = index.active_scan()
+        if feature_read_pending() or not active or active['id'] != scan['id']:
+            raise SourceError('stale', 'Project files changed while drawing the architecture. Refresh architecture.')
+        return {'available':True, 'reason':'', 'architecture':{
+            **payload, 'repo':scan['repo'], 'branch':scan.get('branch'), 'scan_id':scan['id'],
+            'commit':scan['commit'], 'knowledge_revision':checked[0]}}
 
     @app.get('/api/features/{feature_id}')
     async def feature_detail(feature_id: str):
-        scan = index.active_scan()
-        if not scan:
-            raise HTTPException(409,'Run a successful scan first.')
-        await service.check_external_access(scan)
-        payload = features.derive(index,scan,facts.derive(index,scan))
+        payload, scope, reason = await current_features()
+        if payload is None:
+            raise HTTPException(409, reason)
         found = next((f for f in payload['features'] if f['id'] == feature_id),None)
         if not found:
             raise HTTPException(404,'No feature by that name was derived from this scan.')
-        return {**features.detail(found), 'walkthrough_sections': [
+        return {**features.detail(found), **scope, 'walkthrough_sections': [
             {'key':item['key'], 'title':item['title']} for item in feature_kt.SECTIONS]}
 
     @app.post('/api/features/{feature_id}/walkthrough/{section_key}')

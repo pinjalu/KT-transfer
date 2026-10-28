@@ -101,7 +101,7 @@ async def connect(settings: dict, demo: bool = False):
                     actual = {t.name for t in (await session.list_tools()).tools}
                     if actual != TOOL_NAMES:
                         raise SourceError('scope','Unexpected MCP tool set; connection refused.')
-                    yield ConnectorClient(session, local=settings.get('repo', '').startswith('local:') and not demo)
+                    yield ConnectorClient(session, local=settings.get('repo', '').startswith(('local:', 'zip:')) and not demo)
     except Exception as exc:
         safe = source_error_in(exc)
         if safe:

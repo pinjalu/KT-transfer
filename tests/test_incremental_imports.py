@@ -302,3 +302,54 @@ def test_incremental_flow_through_real_mcp_process(setup):
     run(svc.scan())
     assert svc.index.active_scan()['reused'] == 3
     assert svc.index.active_scan()['fetched'] == 0
+
+
+@pytest.mark.parametrize('same_model', [True, False])
+def test_local_refresh_reuses_meaning_index_and_updates_citations(setup, tmp_path, monkeypatch, same_model):
+    from pka import embed
+    svc, source = setup
+    run(svc.scan())
+    folder = tmp_path / 'local'
+    folder.mkdir()
+    for name, text in [('keep.py', 'KEEP = 1'), ('edit.py', 'EDIT = 1'), ('remove.py', 'REMOVED = 1')]:
+        (folder / name).write_text(text)
+    repo, _ = local_selection(str(folder))
+    svc.index.configure_source('local', {'repo':repo, 'path':str(folder)})
+
+    @asynccontextmanager
+    async def factory(cfg, demo=False):
+        yield LocalSource(cfg['repo']) if cfg['repo'].startswith('local:') else source
+    svc.connector_factory = factory
+    monkeypatch.setenv('PKA_EMBED_MODEL', 'fixture-one')
+    calls = []
+    async def vectors(texts):
+        if texts != list(embed.PROBES):
+            calls.extend(texts)
+        return [[1.0, 0.0] for _ in texts]
+    monkeypatch.setattr(embed, 'vectors', vectors)
+    run(svc.read_local())
+    assert len([text for text in calls if text.startswith('local://')]) == 3
+    old_snapshot = svc.index.source_import('local')['snapshot']
+    calls.clear()
+    (folder / 'edit.py').write_text('EDIT = 2')
+    (folder / 'remove.py').unlink()
+    (folder / 'new.py').write_text('NEW = 1')
+    if not same_model:
+        monkeypatch.setenv('PKA_EMBED_MODEL', 'fixture-two')
+    report = run(svc.read_local())
+    snapshot = svc.index.source_import('local')['snapshot']
+    assert snapshot != old_snapshot
+    assert report['reused_vectors'] == (1 if same_model else 0)
+    local_calls = [text for text in calls if text.startswith('local://')]
+    assert len(local_calls) == (2 if same_model else 3)
+    assert all('remove.py' not in text for text in calls)
+    if same_model:
+        assert all('keep.py' not in text for text in calls)
+    with svc.index.db() as db:
+        rows = db.execute("SELECT c.path,c.text,c.url FROM chunks c JOIN vectors v ON c.id=v.chunk_id WHERE c.path LIKE 'local://%'").fetchall()
+    assert len(rows) == 3
+    assert all(snapshot in row['path'] and old_snapshot not in row['url'] for row in rows)
+    assert not any('REMOVED' in row['text'] for row in rows)
+    calls.clear()
+    assert run(svc.read_local())['reused_vectors'] == 3
+    assert calls == [], 'An unchanged folder must not re-embed its document text'

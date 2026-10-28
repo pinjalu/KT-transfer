@@ -446,7 +446,9 @@ def test_overview_records_a_topic_that_has_no_evidence(index):
     """A topic with nothing behind it is reported, never quietly dropped."""
     svc = Service(index, True, connector_factory=fixture_connector)
     run(svc.scan())
-    index.search_many = lambda q, scan, info=None, **kw: []
+    # Neither ranked search nor the introductory topics' direct file context has evidence.
+    scan = index.active_scan()
+    index.activate(scan['id'], [], scan)
     o = run(svc.build_overview())
     assert len(o['sections']) > 0
     assert all(s['error'] and not s['statements'] for s in o['sections'])

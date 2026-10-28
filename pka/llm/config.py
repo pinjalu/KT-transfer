@@ -30,7 +30,7 @@ FEATURES = {'overview':'Project overview', 'ask':'Ask assistant', 'jira':'Jira e
             'business_logic':'Business logic / feature KT', 'tests':'Test suggestions',
             'slack':'Slack decision summaries'}
 SECRETS = {'gemini':'GEMINI_API_KEY', 'groq':'GROQ_API_KEY'}
-PROMPT_VERSION = 'router-3-grounded-explanations'
+PROMPT_VERSION = 'router-4-plain-language'
 
 
 def digest(value):
