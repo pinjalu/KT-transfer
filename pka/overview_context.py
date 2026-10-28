@@ -16,6 +16,7 @@ SETUP_DOC = re.compile(r'(?:readme|start.?here|getting.?started|quick.?start|ins
 SETUP_HEADING = re.compile(r'^\s*#{1,6}\s+.*(?:install|setup|getting started|quick.?start|run|start|requirements|prerequisites)', re.I)
 STRUCTURE_HEADING = re.compile(r'^\s*#{1,6}\s+.*(?:architecture|structure|components|overview)', re.I)
 HELPER = re.compile(r'(^|/)(?:utils?|helpers?|logging|logger|constants)(?:/|\.)', re.I)
+PURPOSE_CODE = {'.py', '.js', '.jsx', '.ts', '.tsx', '.go', '.java', '.cs'}
 
 
 def _excerpt(index, scan, path, topic, anchor=0):
@@ -99,6 +100,32 @@ def select_sources(index, scan, topic, retrieved, facts, roles, paths=None):
     if topic == 'flows':
         from pka.overview_flows import flow_anchors
         anchors = flow_anchors(index, scan, paths, readmes)
+    elif topic == 'purpose':
+        # A framework launcher and a stylesheet say little about the need this
+        # application meets. Start with a real user action and the code handling it.
+        from pka.overview_flows import flow_anchors
+        for path, line in flow_anchors(index, scan, paths, readmes):
+            if PurePosixPath(path).suffix.lower() not in PURPOSE_CODE and path not in readmes:
+                continue
+            add(path, line)
+            if PurePosixPath(path).name.lower() == 'urls.py':
+                route_line = dict(index.file_lines(scan['id'], path)).get(line, '')
+                view_name = re.search(r'\b([A-Z]\w+)\.as_view\s*\(', route_line)
+                # Preserve local:// snapshot prefixes; PurePosixPath collapses //.
+                sibling = path.rsplit('/', 1)[0] + '/views.py'
+                if sibling in known:
+                    declaration = re.compile(r'^\s*(?:class|(?:async\s+)?def)\s+' + re.escape(view_name.group(1)) + r'\b') if view_name else None
+                    at = next((number for number, text in index.file_lines(scan['id'], sibling)
+                               if declaration and declaration.search(text)), 0)
+                    add(sibling, at)
+            if len(anchors) >= 5:
+                break
+        if len(anchors) < 5:
+            for path in paths:
+                if PurePosixPath(path).suffix.lower() in PURPOSE_CODE and PurePosixPath(path).stem.lower() in {'views', 'handlers', 'controller', 'app', 'server', 'main'}:
+                    add(path)
+                if len(anchors) >= 5:
+                    break
     elif topic == 'setup':
         # At most two guides, leaving space for scripts and required settings.
         for path in (readmes[:1] + [p for p in docs if p not in readmes][:1]):
@@ -141,6 +168,13 @@ def select_sources(index, scan, topic, retrieved, facts, roles, paths=None):
                 break
 
     candidates = [_excerpt(index, scan, path, topic, line) for path, line in anchors[:6]]
+    if topic == 'purpose':
+        # Search can still rank a CSS file or an instruction prompt above the handler.
+        # Neither establishes the product's implemented problem or solution.
+        retrieved = [source for source in retrieved
+                     if PurePosixPath(source['path']).suffix.lower() not in {'.css', '.scss', '.less', '.map'}
+                     and not re.search(r'(^|/)prompts?/', source['path'], re.I)
+                     and PurePosixPath(source['path']).stem.lower() not in {'manage', 'wsgi', 'asgi'}]
     if topic == 'flows' and any(PurePosixPath(path).suffix.lower() not in {'.md', '.rst', '.txt'} for path, _ in anchors):
         related_paths = {path for path, _ in anchors}
         retrieved = [source for source in retrieved if source['path'] in related_paths]

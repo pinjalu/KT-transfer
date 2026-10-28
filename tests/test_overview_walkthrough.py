@@ -88,6 +88,29 @@ def test_missing_setup_is_not_replaced_by_another_snapshot_or_test_fixture(tmp_p
     assert sources == []
 
 
+@pytest.mark.parametrize('prefix', ['', 'local://snapshot/'])
+def test_purpose_prefers_django_request_handler_over_stylesheets(tmp_path, prefix):
+    index, scan, _, _, _ = prepared(tmp_path)
+    files = {
+        prefix + 'apps/shop/urls.py': 'from django.urls import path\nfrom .views import SearchView\nurlpatterns = [\n    path("search", SearchView.as_view(), name="search"),\n]\n',
+        prefix + 'apps/shop/views.py': 'class SearchView(View):\n    def post(self, request):\n        company = request.POST["company"]\n        return render(request, "results.html", {"company": company})\n',
+        prefix + 'static/css/main.css': 'body { color: blue; }\n',
+        prefix + 'manage.py': 'from django.core.management import execute_from_command_line\n',
+    }
+    index.activate(scan['id'], [chunk for path, content in files.items()
+                                for chunk in chunk_file(path, content)], scan)
+    found = derive(index, scan)
+    noisy = [{'path':prefix + 'static/css/main.css', 'start':1, 'end':1,
+              'text':files[prefix + 'static/css/main.css'], 'source_id':'S99'}]
+    sources = select_sources(index, scan, 'purpose', noisy, found,
+                             describe(index, scan, found), paths=list(files))
+    selected = {item['path']:item['text'] for item in sources}
+    assert prefix + 'apps/shop/urls.py' in selected
+    assert 'class SearchView' in selected[prefix + 'apps/shop/views.py']
+    assert prefix + 'static/css/main.css' not in selected
+    assert prefix + 'manage.py' not in selected
+
+
 def test_context_does_not_bridge_missing_lines(tmp_path):
     index = Index(tmp_path/'index.sqlite3')
     scan = {'id': 1, 'repo': 'acme/parcels', 'commit': COMMIT, 'status': 'complete'}
@@ -129,6 +152,59 @@ def test_build_supplies_main_files_and_does_not_reuse_old_topic_prompts(tmp_path
     seen.clear()
     cached = asyncio.run(svc.build_overview())
     assert not seen and all(s.get('cache_hit') for s in cached['sections'])
+
+
+def test_overview_retries_a_prompt_echo_with_project_specific_evidence(tmp_path, monkeypatch):
+    from pka import service as module
+    index, _, _, _, _ = prepared(tmp_path)
+    monkeypatch.setattr(module, 'topics_for', lambda present: [TOPICS[0]])
+    calls = []
+
+    @asynccontextmanager
+    async def factory(settings, demo=False):
+        yield FixtureSource()
+
+    async def generator(question, sources):
+        calls.append(question)
+        if len(calls) == 1:
+            return {'statements':[{'text':'**Problem:** Who has a need, and what difficulty are they trying to solve?',
+                                   'source_ids':[sources[0]['source_id']]}], 'missing_information':''}
+        return {'statements':[
+            {'text':'**Problem:** Customers need to look up delivery status by entering a parcel number.',
+             'source_ids':[sources[0]['source_id']]},
+            {'text':'**Solution:** Parcel desk lets customers enter a parcel number and see its saved delivery status.',
+             'source_ids':[sources[0]['source_id']]},
+        ], 'missing_information':''}
+
+    result = asyncio.run(Service(index, connector_factory=factory, generator=generator).build_overview())
+    assert len(calls) == 2
+    assert 'previous response' in calls[1]
+    assert result['sections'][0]['story'] == {'problem':0, 'solution':1}
+    assert not result['sections'][0]['error']
+
+
+def test_repeated_prompt_echo_is_neither_displayed_nor_cached(tmp_path, monkeypatch):
+    from pka import service as module
+    index, _, _, _, _ = prepared(tmp_path)
+    monkeypatch.setattr(module, 'topics_for', lambda present: [TOPICS[0]])
+    calls = []
+
+    @asynccontextmanager
+    async def factory(settings, demo=False):
+        yield FixtureSource()
+
+    async def generator(question, sources):
+        calls.append(question)
+        return {'statements':[{'text':'**Solution:** What does THIS project let that person do to address the problem? Describe the main product, not a list of technologies.',
+                               'source_ids':[sources[0]['source_id']]}], 'missing_information':''}
+
+    result = asyncio.run(Service(index, connector_factory=factory, generator=generator).build_overview())
+    section = result['sections'][0]
+    assert len(calls) == 2
+    assert section['statements'] == []
+    assert 'repeated instructions' in section['error']
+    with index.db() as db:
+        assert db.execute('SELECT COUNT(*) FROM ai_topic_cache').fetchone()[0] == 0
 
 
 def test_flow_reads_the_real_request_and_output_instead_of_logging(tmp_path):

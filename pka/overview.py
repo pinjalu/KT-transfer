@@ -34,25 +34,21 @@ TOPICS = [
             'title heading about summary intro',
         ],
         'test_cap': 0,
-        'ask': '''Explain the WHOLE selected project to a first-time reader before naming its tools.
-Return up to five SHORT statements in this order. Start each statement's text with the exact
-bold heading shown below. Give each statement its own source_ids. One or two plain sentences
-after each heading are enough. Do not combine headings in one statement.
-**Problem:** Who has a need, and what difficulty are they trying to solve? Use the project's
-documentation when it says this. If it does not, explain the narrow need suggested by the
-main implemented behaviour and begin with "The code suggests...". Record the missing
-statement of intent in missing_information. Do not invent a business goal or audience.
-**Solution:** What does THIS project let that person do to address the problem? Use its real
-name when documented. Describe the main product, not a list of technologies.
-**You do (illustrative):** Give one concrete example of what a person types, selects or uploads.
-Use the actual kind of input for this project. Clearly say the example was not run.
-**Project does:** Follow that same input through only the main supported processing steps in
-order. Use everyday words; do not list every file or helper function.
-**You get:** Describe the supported result the person sees or receives. Give sample wording
-only when supported, and label invented wording illustrative, never a real run.
-If any of these five parts is not evidenced, OMIT that statement and name the exact gap in
-missing_information. Never invent users, results, numbers or a connection between imported
-systems. Each statement should be about this project, not general software advice.''',
+        'ask': '''Write a short, concrete story about this selected application from the cited
+files. Describe its actual input, main implemented action and visible output. Documentation
+may state the intended user need; a prompt file alone does not prove implemented behavior.
+Return up to five separate statement objects in this order. Prefix each with the exact bold
+heading below, then write one or two factual sentences in your own words:
+**Problem:** State the specific difficulty the documented user faces. If intent is undocumented,
+infer only a narrow need from a real route or handler and start with "The code suggests...".
+**Solution:** State what this application actually lets that user do. Name the concrete action.
+**You do (illustrative):** Give one realistic input of the type accepted by the code. Say it was not run.
+**Project does:** Follow only the processing steps connected to that input in the cited code.
+**You get:** State the result type the code returns or displays, without inventing a result value.
+Each statement needs its own supporting source_ids. Omit any part the files cannot support
+and name that precise gap in missing_information. Never repeat these instructions, turn a
+heading into a question, or tell the reader how to write an explanation. Never invent a user,
+business goal, result or connection between separate systems.''',
     },
     {
         'key': 'technologies',
@@ -570,33 +566,99 @@ def tidy(statements: list[dict], sources: list[dict],
                   'generic': generic, 'names_unread_files': invented}
 
 
+PURPOSE_LABELS = {'problem': 'problem', 'solution': 'solution',
+                  'you do (illustrative)': 'input', 'project does': 'process',
+                  'you get': 'output'}
+PROMPT_PHRASES = ('who has a need', 'what does this project let',
+                  "use the project's documentation", 'describe the main product',
+                  'record the missing statement', 'give one concrete example',
+                  'use the actual kind of input', 'follow that same input',
+                  'describe the supported result', 'never repeat these instructions')
+
+
+def story_key(text: str) -> str:
+    heading = re.match(r'^\s*\*{0,2}([^:\n]+):\*{0,2}\s+\S', text)
+    return PURPOSE_LABELS.get(heading.group(1).strip().strip('*').lower(), '') if heading else ''
+
+
+def purpose_instruction(text: str) -> bool:
+    """Recognize a model copying the writing prompt instead of describing a project."""
+    plain = re.sub(r'\s+', ' ', re.sub(r'^\s*\*{0,2}[^:\n]+:\*{0,2}\s*', '', text)).strip().lower()
+    prompt = re.sub(r'\s+', ' ', TOPICS[0]['ask']).lower()
+    return bool((len(plain) >= 50 and plain in prompt)
+                or any(phrase in plain for phrase in PROMPT_PHRASES)
+                or (re.match(r'^(?:who|what|how|which)\b', plain) and '?' in plain[:160]))
+
+
+def purpose_needs_retry(answer: dict, section: dict) -> bool:
+    if any(purpose_instruction(item['text']) for item in answer.get('statements', [])):
+        return True
+    return bool(answer.get('statements') and not answer.get('missing_information')
+                and not any(key in section.get('story', {}) for key in ('problem', 'solution')))
+
+
 def section_from(topic: dict, sources: list[dict], answer: dict | None, error: str = '',
                  measure: bool = True, facts=(), paths=(), symbols=()) -> dict:
     """Package one section, keeping its own sources and its own gaps attached to it."""
-    statements, checks = tidy((answer or {}).get('statements', []), sources, measure, facts, paths)
+    raw = (answer or {}).get('statements', [])
+    instruction_count = 0
+    if topic['key'] == 'purpose':
+        instruction_count = sum(purpose_instruction(item['text']) for item in raw)
+        raw = [item for item in raw if not purpose_instruction(item['text'])]
+    statements, checks = tidy(raw, sources, measure, facts, paths)
+    weak_count = 0
+    if topic['key'] == 'purpose' and measure:
+        weak_count = sum(item['support'] == 'check this' for item in statements)
+        statements = [item for item in statements if item['support'] != 'check this']
+        checks['unsupported'] = 0
+        checks['generic'] = sum(not item['about_this_project'] for item in statements)
+        checks['names_unread_files'] = sum(bool(item['files_not_read']) for item in statements)
     for statement in statements:
         statement['function_refs'] = function_references(statement, sources, symbols)
     story = {}
     if topic['key'] == 'purpose':
-        labels = {'problem': 'problem', 'solution': 'solution',
-                  'you do (illustrative)': 'input', 'project does': 'process',
-                  'you get': 'output'}
         for position, statement in enumerate(statements):
-            heading = re.match(r'^\s*\*{0,2}([^:\n]+):\*{0,2}\s+\S', statement['text'])
-            if heading:
-                key = labels.get(heading.group(1).strip().strip('*').lower())
-                if key and key not in story:
-                    story[key] = position
+            key = story_key(statement['text'])
+            if key and key not in story:
+                story[key] = position
+    gap = (answer or {}).get('missing_information', '')
+    if instruction_count or weak_count:
+        withheld = 'Some proposed project claims were withheld because they repeated the writing instructions or their cited files did not support them.'
+        gap = (gap + ' ' + withheld).strip()
     return {
         'key': topic['key'],
         'title': topic['title'],
         'statements': statements,
         'story': story,
         'checks': checks,
-        'missing_information': (answer or {}).get('missing_information', ''),
+        'missing_information': gap,
         'error': error,
         'sources': [{'source_id': s['source_id'], 'path': s['path'], 'start': s['start'],
                      'end': s['end'], 'url': s.get('url'), 'text': s['text'], 'split': s.get('split'),
                      **({k:s[k] for k in ('system_id', 'system_name')} if s.get('system_id') else {})}
                     for s in sources],
     }
+
+
+def hide_unreliable_purpose(payload: dict) -> dict:
+    """Keep old saved prompt echoes off the screen while a corrected build is pending."""
+    def clean(section):
+        if section.get('key') != 'purpose':
+            return section
+        if section.get('system_sections'):
+            parts = [clean(part) for part in section['system_sections']]
+            return {**section, 'system_sections': parts,
+                    'statements': [item for part in parts for item in part['statements']]}
+        kept = [item for item in section.get('statements', [])
+                if not purpose_instruction(item['text']) and item.get('support') != 'check this']
+        if len(kept) == len(section.get('statements', [])):
+            return section
+        story = {}
+        for position, item in enumerate(kept):
+            key = story_key(item['text'])
+            if key and key not in story:
+                story[key] = position
+        gap = (section.get('missing_information', '') + ' '
+               'An earlier AI explanation contained instructions or claims without enough source support. Update the saved explanation.').strip()
+        return {**section, 'statements': kept, 'story': story, 'missing_information': gap}
+    return {**payload, 'sections': [clean(section) for section in payload.get('sections', [])]}

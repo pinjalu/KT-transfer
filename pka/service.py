@@ -23,7 +23,7 @@ from pka.roles import describe as describe_roles
 from pka.overview_context import select_sources as overview_sources, source_systems
 from pka.overview_scope import selected_local, apply_metadata, current_local_payload
 from pka.overview import (TOPICS, reading_order, section_from, tidy, topics_for,
-                          walkthrough)
+                          walkthrough, purpose_needs_retry)
 from pka.overview_references import definitions as function_definitions, references as function_references
 from pka.plain_language import STYLE_VERSION
 from pka.mcp_client import connect
@@ -1258,7 +1258,7 @@ class Service:
                 topic_states[topic['key']]['state'] = 'retrieving'
                 self.overview_progress = {'phase':'Writing project overview','done':done,'total':len(topics),'topics':topic_states}
                 scoped_paths = system['paths'] if system else paths
-                scoped_symbols = function_symbols.get(system['id'] if system else systems[0]['id'], [])
+                scoped_symbols = function_symbols.get(system['id'] if system else systems[0]['id'] if systems else '', [])
                 scoped_facts = system.get('facts', []) if system else facts
                 scoped_roles = system.get('roles', {}) if system else roles
                 sources = self.index.search_many(topic['queries'], scan,
@@ -1302,6 +1302,14 @@ class Service:
                         section = section_from(topic, sources, answer,
                                                measure=not self.demo, facts=scoped_facts, paths=scoped_paths,
                                                symbols=scoped_symbols)
+                        if topic['key'] == 'purpose' and not self.demo and purpose_needs_retry(answer, section):
+                            retry_topic = {**topic, 'ask':topic['ask'] + '\n\nThe previous response repeated instructions or did not explain the project. Write concrete claims from these source excerpts, or name the missing evidence. Do not copy any instruction text.'}
+                            answer = await generate_topic(retry_topic, sources)
+                            section = section_from(topic, sources, answer,
+                                                   measure=True, facts=scoped_facts, paths=scoped_paths,
+                                                   symbols=scoped_symbols)
+                            if purpose_needs_retry(answer, section):
+                                section['error'] = 'The AI repeated instructions instead of giving a supported project explanation. Retry after adding project documentation or more relevant source files.'
                         if generation_metadata(answer): section['generation'] = generation_metadata(answer)
                         applog.event('overview.topic', topic=topic['key'], sources=len(sources),
                                      statements=len(section['statements']),

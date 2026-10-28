@@ -188,9 +188,9 @@ describe('interactive overview', () => {
   it('offers a rebuild for an older explanation without quietly generating new content', async () => {
     body.plain_language_update_available = true
     await render()
-    expect(container.textContent).toContain('source-linked graphs, an ER diagram')
-    expect(container.textContent).toContain('every discovered main feature in Step by step')
-    expect(container.textContent).toContain('Source references will use names instead of numbers')
+    expect(container.textContent).toContain('project-specific problem and solution')
+    expect(container.textContent).toContain('Unsupported or instruction-like claims are hidden')
+    expect(container.textContent).toContain('named source links remain available')
     expect(container.querySelector('.ov-saved-state')?.textContent).toContain('Explanation update available')
     expect(post).not.toHaveBeenCalled()
     await click('Update saved explanation')

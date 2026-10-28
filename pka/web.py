@@ -24,7 +24,7 @@ from pka.connectors.base import SourceError
 from pka.connectors.local import is_local, local_selection
 from pka import facts, features, coverage, quality, existing_tests, feature_kt, architecture
 from pka.index import Index
-from pka.overview import reading_order, topics_for
+from pka.overview import reading_order, topics_for, hide_unreliable_purpose
 from pka.overview_scope import selected_local, current_local_payload
 from pka.service import Service
 from pka.conversation import Conversation
@@ -831,6 +831,8 @@ def create_app(demo=False, db_path=None, connector_factory=None, *, auth_store=N
         elif cached and cached.get('overview_scope', 'workspace') != 'workspace':
             cached = None
         if cached:
+            if cached.get('explanation_style') != STYLE_VERSION:
+                cached = hide_unreliable_purpose(cached)
             # The reading order is derived from the indexed paths and no model touches it, so
             # there is no reason for a reader to be shown an old one. It was cached inside a
             # payload that only a model rebuild replaces, which meant a correction to it could

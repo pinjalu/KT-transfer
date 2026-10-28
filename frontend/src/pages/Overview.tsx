@@ -130,7 +130,7 @@ export function Overview() {
       {body && <>
         {body.scope_update_available && <p role="status">Showing only {body.project_name}, your selected local folder. Build its overview to generate explanations from these files.</p>}
         {body.plain_language_update_available && !building && <Card>
-          <p role="status"><strong>Your saved explanation needs an update.</strong> Rebuild it to show source-linked graphs, an ER diagram where data relationships are declared, and every discovered main feature in Step by step. Source references will use names instead of numbers. Connected systems remain separate.</p>
+          <p role="status"><strong>Your saved explanation needs an update.</strong> Rebuild it for a project-specific problem and solution grounded in the main code paths. The diagrams, feature flows and named source links remain available. Unsupported or instruction-like claims are hidden until then.</p>
           <Button kind="primary" icon="refresh" disabled={busy} onClick={build}>Update saved explanation</Button>
         </Card>}
         {body.routing_changed && <p role="status">AI routing or explanation settings changed since this overview was saved. Rebuild to apply the latest settings.</p>}
